@@ -1,0 +1,8 @@
+# Normalize line endings.
+* text=auto
+
+# Exclude development-only files from `git archive` ZIP builds.
+.gitignore export-ignore
+.gitattributes export-ignore
+/tests export-ignore
+/*.md export-ignore

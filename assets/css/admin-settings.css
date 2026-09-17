@@ -1,0 +1,484 @@
+/**
+ * Auto Plate Designer — admin settings styles.
+ * Enqueued only on the plugin settings screen.
+ */
+
+.apd-wrap .apd-tab {
+	max-width: 1200px;
+}
+
+.apd-wrap .apd-form {
+	margin-top: 1.5em;
+}
+
+.apd-media-field {
+	display: flex;
+	flex-wrap: wrap;
+	align-items: center;
+	gap: 8px;
+}
+
+.apd-media-preview img {
+	display: block;
+	max-width: 220px;
+	height: auto;
+	border: 1px solid #dcdcde;
+	background: #fff;
+}
+
+.apd-design-thumb {
+	display: block;
+	width: 96px;
+	height: 48px;
+	object-fit: cover;
+	border: 1px solid #dcdcde;
+	background: #fff;
+}
+
+.apd-text-box-wrap {
+	max-width: var(--apd-canvas-max, 500px);
+	margin: 8px 0 12px;
+}
+
+.apd-plate-studio {
+	background: #fff;
+	border: 1px solid #dcdcde;
+	border-radius: 12px;
+	padding: 28px 32px;
+	max-width: none;
+	width: 100%;
+	box-sizing: border-box;
+}
+
+.apd-form .form-table tr:has(.apd-plate-studio) th {
+	display: none;
+}
+
+.apd-form .form-table tr.apd-studio-row td {
+	padding-left: 0;
+	padding-right: 0;
+}
+
+.apd-text-box-wrap--studio,
+.apd-plate-studio .apd-text-box-wrap {
+	max-width: var(--apd-canvas-max, 500px);
+	margin: 0 auto;
+}
+
+.apd-text-box-stage {
+	position: relative;
+	width: 100%;
+	background: #111;
+	border: 1px solid #dcdcde;
+	overflow: hidden;
+	user-select: none;
+	touch-action: none;
+	box-sizing: border-box;
+}
+
+.apd-plate-studio .apd-text-box-stage {
+	background: #fff;
+	border: 1px solid #c3c4c7;
+	border-radius: 4% / 18%;
+	box-shadow: 0 8px 24px rgba(15, 23, 42, 0.08);
+	width: 100%;
+	max-width: var(--apd-canvas-max, 500px);
+}
+
+.apd-text-box-stage img {
+	display: block;
+	width: 100%;
+	height: 100%;
+	object-fit: contain;
+	pointer-events: none;
+}
+
+.apd-text-box-schematic {
+	position: absolute;
+	inset: 0;
+	background: #f3f3f3;
+	border-radius: 4% / 16%;
+	overflow: hidden;
+	pointer-events: none;
+}
+
+.apd-plate-studio .apd-text-box-schematic {
+	background: #fff;
+	border-radius: inherit;
+}
+
+.apd-frame-fill {
+	position: absolute;
+	inset: 0;
+	border-radius: inherit;
+	box-shadow: inset 0 0 0 var(--apd-frame-px, 0px) var(--apd-frame-color, #000);
+	pointer-events: none;
+}
+
+.apd-frame-box {
+	position: absolute;
+	box-sizing: border-box;
+	border: 1px dashed rgba(17, 17, 17, 0.35);
+	pointer-events: none;
+	z-index: 2;
+}
+
+.apd-frame-handle {
+	position: absolute;
+	width: 10px;
+	height: 10px;
+	background: #1d2327;
+	border: 1px solid #fff;
+	box-sizing: border-box;
+	pointer-events: auto;
+	z-index: 4;
+}
+
+.apd-frame-handle[data-apd-frame-handle="nw"] {
+	top: -5px;
+	left: -5px;
+	cursor: nwse-resize;
+}
+
+.apd-frame-handle[data-apd-frame-handle="ne"] {
+	top: -5px;
+	right: -5px;
+	cursor: nesw-resize;
+}
+
+.apd-frame-handle[data-apd-frame-handle="sw"] {
+	bottom: -5px;
+	left: -5px;
+	cursor: nesw-resize;
+}
+
+.apd-frame-handle[data-apd-frame-handle="se"] {
+	bottom: -5px;
+	right: -5px;
+	cursor: nwse-resize;
+}
+
+.apd-band-box {
+	position: absolute;
+	box-sizing: border-box;
+	overflow: hidden;
+	cursor: move;
+	z-index: 3;
+	background: #003399;
+	box-shadow: inset 0 0 0 2px rgba(255, 255, 255, 0.65);
+}
+
+.apd-band-box img,
+.apd-band-box-fill {
+	display: block;
+	width: 100%;
+	height: 100%;
+	object-fit: cover;
+	pointer-events: none;
+}
+
+.apd-band-box-fill {
+	background: #003399;
+}
+
+.apd-band-box .apd-text-box-handle {
+	background: #dba617;
+}
+
+[data-apd-frame-controls].is-disabled {
+	opacity: 0.45;
+	pointer-events: none;
+}
+
+.apd-text-box-sample {
+	display: flex;
+	width: 100%;
+	height: 100%;
+	align-items: center;
+	justify-content: center;
+	padding: 0 4px;
+	color: #111;
+	font-weight: 700;
+	font-size: 72%;
+	font-family: "Arial Narrow", "Helvetica Condensed", Oswald, sans-serif;
+	line-height: 1;
+	letter-spacing: 0.08em;
+	pointer-events: none;
+	overflow: hidden;
+	white-space: nowrap;
+}
+
+.apd-text-box {
+	position: absolute;
+	box-sizing: border-box;
+	border: 2px dashed #2271b1;
+	background: rgba(34, 113, 177, 0.12);
+	cursor: move;
+	z-index: 5;
+}
+
+.apd-text-box-handle {
+	position: absolute;
+	width: 10px;
+	height: 10px;
+	background: #2271b1;
+	border: 1px solid #fff;
+	box-sizing: border-box;
+}
+
+.apd-text-box-handle[data-apd-handle="nw"] {
+	top: -6px;
+	left: -6px;
+	cursor: nwse-resize;
+}
+
+.apd-text-box-handle[data-apd-handle="ne"] {
+	top: -6px;
+	right: -6px;
+	cursor: nesw-resize;
+}
+
+.apd-text-box-handle[data-apd-handle="sw"] {
+	bottom: -6px;
+	left: -6px;
+	cursor: nesw-resize;
+}
+
+.apd-text-box-handle[data-apd-handle="se"] {
+	bottom: -6px;
+	right: -6px;
+	cursor: nwse-resize;
+}
+
+.apd-text-box-actions {
+	margin: 12px 0 16px;
+}
+
+.apd-metric-grid,
+.apd-text-box-fields {
+	display: grid;
+	grid-template-columns: repeat(auto-fill, minmax(11.5rem, 1fr));
+	gap: 12px;
+	margin: 0 0 16px;
+	align-items: stretch;
+}
+
+.apd-metric,
+label.apd-metric {
+	display: flex !important;
+	flex-direction: column;
+	align-items: stretch !important;
+	justify-content: flex-start;
+	gap: 8px;
+	width: auto !important;
+	max-width: none;
+	margin: 0;
+	padding: 10px 12px;
+	background: #fff;
+	border: 1px solid #dcdcde;
+	border-radius: 8px;
+	box-sizing: border-box;
+	float: none !important;
+	font-size: 12px;
+	font-weight: 600;
+	line-height: 1.35;
+	color: #1d2327;
+	cursor: default;
+}
+
+.apd-metric__control {
+	display: flex;
+	align-items: center;
+	gap: 8px;
+	min-width: 0;
+}
+
+.apd-metric__control input,
+.apd-metric__control select {
+	flex: 1 1 auto;
+	width: 100%;
+	min-width: 0;
+	max-width: 100%;
+	margin: 0;
+	font-weight: 400;
+}
+
+.apd-metric__unit {
+	flex: 0 0 auto;
+	color: #646970;
+	font-weight: 500;
+}
+
+.apd-table-scroll {
+	overflow-x: auto;
+	-webkit-overflow-scrolling: touch;
+	margin: 0 0 1.5em;
+}
+
+.apd-table-scroll .widefat {
+	margin: 0;
+	min-width: 36rem;
+}
+
+.apd-zone-row {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 8px;
+	align-items: center;
+	margin: 0 0 12px;
+	padding: 12px;
+	background: #fff;
+	border: 1px solid #dcdcde;
+}
+
+.apd-zone-row input[type="number"] {
+	width: 5.5em;
+}
+
+.apd-color-list {
+	list-style: none;
+	margin: 0 0 1.5em;
+	padding: 0;
+}
+
+.apd-color-list li {
+	display: flex;
+	flex-wrap: wrap;
+	align-items: center;
+	gap: 8px 12px;
+	margin: 0;
+	padding: 8px 0;
+}
+
+.apd-swatch {
+	width: 22px;
+	height: 22px;
+	border: 0;
+	border-radius: 2px;
+	flex: 0 0 auto;
+}
+
+.apd-swatch-shop-preview {
+	display: flex;
+	flex-wrap: wrap;
+	align-items: center;
+	gap: 10px;
+	min-height: 100px;
+}
+
+.apd-swatch-shop-preview .apd-swatch {
+	width: var(--apd-swatch-size, 28px);
+	height: var(--apd-swatch-size, 28px);
+	border: 1px solid var(--apd-swatch-border, #000000);
+	border-radius: var(--apd-swatch-radius, 50%);
+	box-sizing: border-box;
+}
+
+.apd-palette-groups {
+	display: grid;
+	grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+	gap: 1.25rem;
+	margin-top: 1.5em;
+	max-width: 1100px;
+}
+
+.apd-palette-group {
+	background: #fff;
+	border: 1px solid #dcdcde;
+	padding: 12px 16px 8px;
+}
+
+.apd-color-list--compact {
+	margin: 0;
+}
+
+.apd-color-list--compact li {
+	margin: 0;
+	padding: 4px 0;
+}
+
+.apd-palette-color-picks {
+	display: grid;
+	grid-template-columns: repeat(auto-fill, minmax(12rem, 1fr));
+	gap: 10px;
+}
+
+.apd-choice-list {
+	display: flex;
+	flex-direction: column;
+	align-items: flex-start;
+	gap: 8px;
+	margin: 0;
+	padding: 0;
+	border: 0;
+}
+
+.apd-choice-list label,
+label.apd-choice,
+.apd-palette-color-picks label {
+	display: inline-flex !important;
+	align-items: flex-start;
+	gap: 8px;
+	width: auto !important;
+	max-width: 100%;
+	float: none !important;
+	box-sizing: border-box;
+	cursor: pointer;
+	white-space: normal;
+}
+
+.apd-product-metabox p {
+	margin: 0 0 12px;
+}
+
+.apd-product-metabox .apd-choice {
+	align-items: flex-start;
+}
+
+.apd-palette-color-picks label {
+	margin: 0;
+	padding: 8px 10px;
+	background: #fff;
+	border: 1px solid #dcdcde;
+	border-radius: 8px;
+	min-width: 0;
+}
+
+.apd-wrap .form-table input.regular-text,
+.apd-wrap .form-table input[type="text"],
+.apd-wrap .form-table textarea.large-text {
+	max-width: 100%;
+}
+
+.apd-wrap .form-table .description {
+	max-width: 40rem;
+}
+
+@media (max-width: 782px) {
+	.apd-plate-studio {
+		padding: 16px 12px;
+		border-radius: 8px;
+	}
+
+	.apd-metric-grid,
+	.apd-text-box-fields {
+		grid-template-columns: repeat(auto-fill, minmax(9.5rem, 1fr));
+		gap: 10px;
+	}
+
+	.apd-wrap .form-table td {
+		padding-bottom: 16px;
+	}
+
+	.apd-wrap .form-table input.regular-text,
+	.apd-wrap .form-table input[type="text"],
+	.apd-wrap .form-table textarea.large-text,
+	.apd-wrap .form-table select {
+		width: 100%;
+		max-width: 100%;
+	}
+
+	.apd-choice {
+		white-space: normal;
+	}
+}

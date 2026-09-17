@@ -1,0 +1,470 @@
+/**
+ * Auto Plate Designer — frontend configurator styles.
+ * Enqueued only on product pages with the configurator enabled.
+ */
+
+.woocommerce div.product form.cart,
+.wp-block-add-to-cart-form form.cart,
+form.cart {
+	display: flex;
+	flex-wrap: wrap;
+	align-items: center;
+	gap: 0.75rem 1rem;
+}
+
+.apd-configurator {
+	margin: 0 0 1.25rem;
+	max-width: none;
+	flex: 1 0 100%;
+	width: 100%;
+}
+
+.apd-product-layout {
+	display: grid;
+	grid-template-columns: minmax(0, 1fr);
+	gap: 1.5rem 2.25rem;
+	align-items: start;
+	width: 100%;
+	max-width: var(--wp--style--global--wide-size, 80rem) !important;
+	margin-left: auto;
+	margin-right: auto;
+	margin-bottom: 2rem;
+	box-sizing: border-box;
+}
+
+@media (min-width: 960px) {
+	.apd-product-layout {
+		grid-template-columns: minmax(0, 1fr) minmax(16rem, 22rem);
+	}
+}
+
+.apd-product-layout__preview,
+.apd-product-layout__details {
+	min-width: 0;
+}
+
+.apd-product-layout__preview {
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	width: 100%;
+}
+
+.apd-product-layout__details :is(.wp-block-post-title, h1.product_title, .product_title) {
+	overflow-wrap: break-word;
+	word-break: normal;
+	hyphens: auto;
+}
+
+.apd-product-layout__preview .apd-preview {
+	margin: 0;
+	width: min(100%, var(--apd-canvas-max, 500px));
+	max-width: var(--apd-canvas-max, 500px);
+}
+
+@media (min-width: 960px) {
+	.apd-product-layout__preview {
+		position: sticky;
+		top: var(--apd-chrome-top, 6.5rem);
+		align-self: start;
+		box-sizing: border-box;
+		padding: 0 0.85rem;
+		min-height: var(--apd-stage-h, calc(100svh - 8.5rem));
+		height: var(--apd-stage-h, calc(100svh - 8.5rem));
+		max-height: var(--apd-stage-h, calc(100svh - 8.5rem));
+	}
+
+	.apd-product-layout__preview .apd-preview {
+		width: min(100%, var(--apd-canvas-max, 500px));
+		max-width: var(--apd-canvas-max, 500px);
+		flex: 0 1 auto;
+		margin: 0;
+	}
+
+	.apd-product-layout__preview .apd-canvas-frame {
+		flex: 0 1 auto;
+		width: 100%;
+	}
+}
+
+.apd-preview {
+	margin: 0 0 1.5rem;
+	padding: 0.5rem;
+	background: #ffffff;
+	border-radius: 12px;
+	display: flex;
+	justify-content: center;
+	align-items: center;
+	width: 100%;
+	max-width: var(--apd-canvas-max, 500px);
+	box-sizing: border-box;
+	box-shadow: 0 0 0 1px #ececec;
+}
+
+.apd-canvas-frame {
+	width: 100%;
+	max-width: none;
+	min-width: 0;
+	flex: 1 1 auto;
+	aspect-ratio: var(--apd-ratio, 520 / 110);
+	line-height: 0;
+}
+
+.apd-canvas {
+	display: block;
+	width: 100% !important;
+	height: 100% !important;
+	max-width: none !important;
+	max-height: none !important;
+	background: transparent;
+}
+
+.apd-fields {
+	margin-top: 1.25rem;
+	display: grid;
+	gap: 1rem;
+}
+
+.apd-configurator:not(:has(.apd-preview)) .apd-fields {
+	margin-top: 0;
+}
+
+.apd-field.is-disabled {
+	opacity: 0.45;
+	pointer-events: none;
+}
+
+.apd-field.is-disabled button {
+	cursor: not-allowed;
+}
+
+.apd-field {
+	margin: 0;
+	min-width: 0;
+	width: 100%;
+}
+
+.apd-fields .form-row {
+	float: none;
+	width: 100%;
+	max-width: 100%;
+}
+
+.apd-field.apd-swatches,
+.apd-field.apd-presets {
+	border: 0;
+	padding: 0;
+	min-inline-size: 0;
+}
+
+.woocommerce div.product form.cart .apd-configurator .form-row label,
+.woocommerce form.cart .apd-configurator .apd-field label,
+.woocommerce form.cart .apd-configurator .apd-field legend,
+.wp-block-add-to-cart-form form.cart .apd-configurator .apd-field label,
+.wp-block-add-to-cart-form form.cart .apd-configurator .apd-field legend,
+.apd-configurator .apd-field > label,
+.apd-configurator .apd-field > legend {
+	display: inline-block !important;
+	width: auto !important;
+	max-width: 100%;
+	float: none;
+	margin: 0 0 0.35rem;
+}
+
+.apd-configurator label.apd-choice {
+	display: inline-flex !important;
+	align-items: center;
+	gap: 0.5rem;
+	margin: 0 !important;
+	cursor: pointer;
+}
+
+.apd-configurator label.apd-choice input[type="checkbox"] {
+	width: 1.15rem;
+	height: 1.15rem;
+	min-height: 0;
+	padding: 0;
+	appearance: auto;
+	-webkit-appearance: checkbox;
+	accent-color: #1e1e1e;
+}
+
+.apd-field input[type="text"],
+.apd-field textarea,
+.apd-field select,
+body.apd-configurator-product form.cart .quantity .qty,
+body.apd-configurator-product form.cart input.qty,
+body.apd-configurator-product form.cart input.input-text:not([type="hidden"]) {
+	appearance: none;
+	-webkit-appearance: none;
+	box-sizing: border-box;
+	width: 100%;
+	max-width: 100%;
+	min-height: 2.75rem;
+	padding: 0.55rem 0.85rem;
+	border: 1px solid #8c8f94;
+	border-radius: 8px;
+	background: #fff;
+	color: inherit;
+	font: inherit;
+	line-height: 1.4;
+	box-shadow: none;
+}
+
+.apd-field select {
+	background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'%3E%3Cpath fill='%231e1e1e' d='M1.4 0 6 4.6 10.6 0 12 1.4 6 8 0 1.4z'/%3E%3C/svg%3E");
+	background-repeat: no-repeat;
+	background-position: right 0.85rem center;
+	background-size: 0.75rem;
+	padding-right: 2.25rem;
+}
+
+.apd-field input[type="text"]:focus,
+.apd-field textarea:focus,
+.apd-field select:focus,
+body.apd-configurator-product form.cart .quantity .qty:focus,
+body.apd-configurator-product form.cart input.qty:focus,
+body.apd-configurator-product form.cart input.input-text:not([type="hidden"]):focus {
+	outline: 2px solid #1e1e1e;
+	outline-offset: 1px;
+	border-color: #1e1e1e;
+}
+
+body.apd-configurator-product form.cart .quantity .qty,
+body.apd-configurator-product form.cart input.qty {
+	width: 5rem;
+	max-width: 5rem;
+	text-align: center;
+}
+
+.apd-count {
+	display: block;
+	margin-top: 0.35rem;
+	opacity: 0.75;
+}
+
+.apd-count.is-over {
+	opacity: 1;
+	font-weight: 600;
+}
+
+.apd-swatch-list,
+.apd-preset-list {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 0.5rem;
+}
+
+.apd-swatch {
+	width: var(--apd-swatch-size, 1.75rem);
+	height: var(--apd-swatch-size, 1.75rem);
+	border: 1px solid var(--apd-swatch-border, #000000);
+	border-radius: var(--apd-swatch-radius, 50%);
+	box-sizing: border-box;
+	padding: 0;
+	cursor: pointer;
+}
+
+.apd-swatch[aria-pressed="true"] {
+	outline: 3px solid #2271b1;
+	outline-offset: 2px;
+}
+
+.apd-preset {
+	display: flex;
+	flex-direction: column;
+	align-items: center;
+	gap: 0.25rem;
+	min-width: 3.5rem;
+	padding: 0.35rem;
+	border: 1px solid #dcdcde;
+	background: #fff;
+	cursor: pointer;
+}
+
+.apd-preset[aria-pressed="true"] {
+	border-color: #2271b1;
+	box-shadow: 0 0 0 2px #2271b1;
+}
+
+.apd-preset img {
+	width: 2.5rem;
+	height: 1.6rem;
+	object-fit: cover;
+}
+
+.apd-country {
+	border: 0;
+	padding: 0;
+	min-inline-size: 0;
+}
+
+.apd-country-current {
+	display: inline-flex;
+	align-items: stretch;
+	gap: 0.75rem;
+	padding: 0;
+	overflow: hidden;
+	border: 1px solid #dcdcde;
+	background: #fff;
+	cursor: pointer;
+	max-width: 100%;
+}
+
+.apd-country-current:hover,
+.apd-country-current:focus-visible {
+	border-color: #2271b1;
+}
+
+.apd-country-current [data-apd-country-thumb] {
+	display: none !important;
+}
+
+.apd-country-current canvas.apd-country-thumb,
+.apd-country-option img {
+	display: block;
+	flex: 0 0 auto;
+	width: auto;
+	height: var(--apd-band-h, 4.5rem);
+	object-fit: cover;
+	object-position: center;
+	background: #003399;
+}
+
+.apd-country-current canvas.apd-country-thumb {
+	width: var(--apd-band-w, auto);
+	height: var(--apd-band-h, 4.5rem);
+}
+
+.apd-country-current [data-apd-country-code],
+.apd-country-current .apd-country-change {
+	align-self: center;
+}
+
+.apd-country-current [data-apd-country-code] {
+	margin-left: 0.15rem;
+}
+
+.apd-country-current .apd-country-change {
+	margin-right: 0.85rem;
+}
+
+.apd-country-option img {
+	height: 8.75rem;
+	width: calc(8.75rem * 40 / 110);
+}
+
+.apd-country-change {
+	text-decoration: underline;
+	font-size: 0.95em;
+}
+
+.apd-dialog[hidden] {
+	display: none !important;
+}
+
+.apd-dialog {
+	position: fixed;
+	inset: 0;
+	z-index: 100000;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	padding: 1.25rem;
+	box-sizing: border-box;
+}
+
+.apd-dialog-backdrop {
+	position: absolute;
+	inset: 0;
+	background: rgba(0, 0, 0, 0.45);
+}
+
+.apd-dialog-panel {
+	position: relative;
+	z-index: 1;
+	width: min(40rem, 100%);
+	max-height: min(36rem, 90vh);
+	overflow: auto;
+	background: #fff;
+	border-radius: 12px;
+	box-shadow: 0 16px 48px rgba(0, 0, 0, 0.25);
+	padding: 1rem 1.15rem 1.25rem;
+}
+
+.apd-dialog-head {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	gap: 1rem;
+	margin-bottom: 0.85rem;
+}
+
+.apd-dialog-head h2 {
+	margin: 0;
+	font-size: 1.2rem;
+}
+
+.apd-dialog-close {
+	border: 0;
+	background: transparent;
+	font-size: 1.75rem;
+	line-height: 1;
+	cursor: pointer;
+	padding: 0 0.25rem;
+}
+
+.apd-country-grid {
+	display: grid;
+	grid-template-columns: repeat(auto-fill, minmax(5.5rem, 1fr));
+	gap: 0.65rem;
+}
+
+.apd-country-option {
+	min-width: 0;
+	width: 100%;
+	padding: 0.45rem 0.35rem 0.4rem;
+}
+
+body.apd-dialog-open {
+	overflow: hidden;
+}
+
+.apd-design {
+	min-width: 5.5rem;
+}
+
+.apd-design img {
+	width: 5rem;
+	height: 2.5rem;
+	object-fit: cover;
+}
+
+body.apd-hide-product-image .wp-block-woocommerce-product-image-gallery,
+body.apd-hide-product-image .wp-block-woocommerce-product-gallery,
+body.apd-hide-product-image .woocommerce-product-gallery,
+body.apd-hide-product-image div.product div.images {
+	display: none !important;
+}
+
+body.apd-hide-product-image .wp-block-columns:has(.wp-block-woocommerce-product-image-gallery),
+body.apd-hide-product-image .wp-block-columns:has(.wp-block-woocommerce-product-gallery) {
+	display: block;
+}
+
+body.apd-hide-product-image .wp-block-columns:has(.wp-block-woocommerce-product-image-gallery) > .wp-block-column:has(.wp-block-woocommerce-product-image-gallery),
+body.apd-hide-product-image .wp-block-columns:has(.wp-block-woocommerce-product-gallery) > .wp-block-column:has(.wp-block-woocommerce-product-gallery) {
+	display: none !important;
+}
+
+body.apd-hide-product-image .wp-block-columns:has(.wp-block-woocommerce-product-image-gallery) > .wp-block-column,
+body.apd-hide-product-image .wp-block-columns:has(.wp-block-woocommerce-product-gallery) > .wp-block-column {
+	flex-basis: 100% !important;
+	width: 100% !important;
+	max-width: 100% !important;
+}
+
+body.apd-hide-product-image div.product div.summary {
+	float: none;
+	width: 100%;
+}
