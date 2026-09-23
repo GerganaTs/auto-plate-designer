@@ -19,7 +19,7 @@ if ( ! is_array( $editing ) ) {
 		'name'                 => '',
 		'country_code'         => '',
 		'image_id'             => 0,
-		'band_ratio'           => APD_Formats::eu_band_ratio( 520, 110 ),
+		'band_ratio'           => APD_Presets::STANDARD_BAND_RATIO,
 		'side'                 => 'left',
 		'allowed_format_types' => array( 'eu' ),
 		'active'               => true,
@@ -32,7 +32,7 @@ $allowed     = isset( $editing['allowed_format_types'] ) && is_array( $editing['
 ?>
 <div class="apd-tab">
 	<h2><?php esc_html_e( 'Country presets', 'auto-plate-designer' ); ?></h2>
-	<p class="description"><?php esc_html_e( 'Country bands are shown on EU and motorcycle plates. USA, SUV, street, color, and holder formats never display these presets.', 'auto-plate-designer' ); ?></p>
+	<p class="description"><?php esc_html_e( 'Country bands are shown on EU, EU motorcycle, and EU SUV plates. USA plates, types without a preset, street, color, and holder formats never display these presets.', 'auto-plate-designer' ); ?></p>
 
 	<div class="apd-table-scroll">
 	<table class="widefat striped">
@@ -120,6 +120,7 @@ $allowed     = isset( $editing['allowed_format_types'] ) && is_array( $editing['
 							</span>
 						</label>
 					</div>
+					<p class="description"><?php esc_html_e( 'Standard EU band ratio is 0.08 (≈40 mm on a 520×110 plate). Side is usually Left.', 'auto-plate-designer' ); ?></p>
 				</td>
 			</tr>
 			<tr>
@@ -127,9 +128,10 @@ $allowed     = isset( $editing['allowed_format_types'] ) && is_array( $editing['
 				<td>
 					<div class="apd-choice-list">
 						<label class="apd-choice"><input type="checkbox" name="apd_preset[allowed_format_types][]" value="eu" <?php checked( in_array( 'eu', $allowed, true ) ); ?>> <?php esc_html_e( 'EU plates', 'auto-plate-designer' ); ?></label>
-						<label class="apd-choice"><input type="checkbox" name="apd_preset[allowed_format_types][]" value="moto" <?php checked( in_array( 'moto', $allowed, true ) || ( in_array( 'eu', $allowed, true ) && ! in_array( 'moto', $allowed, true ) && array( 'eu' ) === array_values( $allowed ) ) ); ?>> <?php esc_html_e( 'Motorcycle plates', 'auto-plate-designer' ); ?></label>
+						<label class="apd-choice"><input type="checkbox" name="apd_preset[allowed_format_types][]" value="moto" <?php checked( in_array( 'moto', $allowed, true ) || ( in_array( 'eu', $allowed, true ) && ! in_array( 'moto', $allowed, true ) && array( 'eu' ) === array_values( $allowed ) ) ); ?>> <?php esc_html_e( 'EU motorcycle plates', 'auto-plate-designer' ); ?></label>
+						<label class="apd-choice"><input type="checkbox" name="apd_preset[allowed_format_types][]" value="suv_eu" <?php checked( in_array( 'suv_eu', $allowed, true ) ); ?>> <?php esc_html_e( 'EU SUV plates', 'auto-plate-designer' ); ?></label>
 					</div>
-					<p class="description"><?php esc_html_e( 'American and SUV plates do not use a country band.', 'auto-plate-designer' ); ?></p>
+					<p class="description"><?php esc_html_e( 'Every active preset is shown on EU, EU motorcycle, and EU SUV products. Types without a preset never display these.', 'auto-plate-designer' ); ?></p>
 				</td>
 			</tr>
 			<tr>

@@ -13,6 +13,13 @@ defined( 'ABSPATH' ) || exit;
 final class APD_Presets {
 
 	/**
+	 * Standard euroband width as a fraction of a 520×110 EU plate (~40 mm).
+	 *
+	 * Use this in the presets admin field so editors always see 0.08.
+	 */
+	public const STANDARD_BAND_RATIO = 0.08;
+
+	/**
 	 * Singleton instance.
 	 *
 	 * @var APD_Presets|null
@@ -55,6 +62,10 @@ final class APD_Presets {
 	 * @return array<int, array<string, mixed>>
 	 */
 	public static function active_for_format( $format_type ) {
+		if ( ! APD_Formats::uses_country_band( $format_type ) ) {
+			return array();
+		}
+
 		$out = array();
 
 		foreach ( self::all() as $preset ) {
@@ -62,25 +73,7 @@ final class APD_Presets {
 				continue;
 			}
 
-			$allowed = isset( $preset['allowed_format_types'] ) && is_array( $preset['allowed_format_types'] )
-				? $preset['allowed_format_types']
-				: array( 'eu' );
-
-			if ( ! APD_Formats::uses_country_band( $format_type ) ) {
-				continue;
-			}
-
-			$matches = in_array( $format_type, $allowed, true );
-
-			// Legacy rows stored only "eu" before motorcycle existed.
-			if ( ! $matches && 'moto' === $format_type && array( 'eu' ) === array_values( $allowed ) ) {
-				$matches = true;
-			}
-
-			if ( ! $matches ) {
-				continue;
-			}
-
+			// Every active country preset is shown on EU, motorcycle, and EU SUV plates.
 			$out[] = $preset;
 		}
 
@@ -240,7 +233,7 @@ final class APD_Presets {
 			$allowed_types = array( 'eu' );
 		}
 
-		$band_ratio = isset( $raw['band_ratio'] ) && is_numeric( $raw['band_ratio'] ) ? (float) $raw['band_ratio'] : APD_Formats::eu_band_ratio( 520, 110 );
+		$band_ratio = isset( $raw['band_ratio'] ) && is_numeric( $raw['band_ratio'] ) ? (float) $raw['band_ratio'] : self::STANDARD_BAND_RATIO;
 
 		if ( $band_ratio < 0.05 ) {
 			$band_ratio = 0.05;

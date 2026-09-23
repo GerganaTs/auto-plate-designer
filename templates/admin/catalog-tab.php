@@ -27,15 +27,24 @@ $published   = APD_Catalog::published_slugs();
 					<td>
 						<label class="apd-choice">
 							<input type="checkbox" name="apd_catalog[published][]" value="<?php echo esc_attr( $slug ); ?>" <?php checked( in_array( $slug, $published, true ) ); ?>>
+							<?php esc_html_e( 'Publish in the shop', 'auto-plate-designer' ); ?>
+						</label>
+						<?php
+						$type_labels = array();
+
+						foreach ( APD_Catalog::format_types_for_kind( isset( $def['kind'] ) ? (string) $def['kind'] : '' ) as $type ) {
+							$type_labels[] = APD_Formats::type_label( $type );
+						}
+						?>
+						<p class="description">
 							<?php
 							printf(
-								/* translators: 1: category slug, 2: format kind */
-								esc_html__( 'Publish in the shop (slug: %1$s, type: %2$s)', 'auto-plate-designer' ),
-								esc_html( $slug ),
-								esc_html( isset( $def['kind'] ) ? $def['kind'] : '' )
+								/* translators: %s: comma-separated format type labels */
+								esc_html__( 'Format types in this category: %s', 'auto-plate-designer' ),
+								esc_html( implode( ', ', $type_labels ) )
 							);
 							?>
-						</label>
+						</p>
 					</td>
 				</tr>
 			<?php endforeach; ?>

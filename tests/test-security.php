@@ -107,9 +107,12 @@ apd_assert( true === APD_Security::validate_layout( 'multiline_text' ), 'Accepts
 apd_assert( apd_is_error( APD_Security::validate_layout( 'custom_hack' ) ), 'Rejects unknown layout' );
 apd_assert( true === APD_Security::validate_format_type( 'holder' ), 'Accepts holder format type' );
 apd_assert( true === APD_Security::validate_format_type( 'eu' ), 'Accepts EU format type' );
+apd_assert( true === APD_Security::validate_format_type( 'eu_plain' ), 'Accepts car plate without preset' );
 apd_assert( true === APD_Security::validate_format_type( 'color' ), 'Accepts color format type' );
 apd_assert( true === APD_Security::validate_format_type( 'moto' ), 'Accepts motorcycle format type' );
+apd_assert( true === APD_Security::validate_format_type( 'moto_plain' ), 'Accepts motorcycle without preset' );
 apd_assert( true === APD_Security::validate_format_type( 'suv' ), 'Accepts SUV format type' );
+apd_assert( true === APD_Security::validate_format_type( 'suv_eu' ), 'Accepts EU SUV format type' );
 apd_assert( apd_is_error( APD_Security::validate_format_type( 'pwn' ) ), 'Rejects unknown format type' );
 
 $png = base64_decode( 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==', true );

@@ -38,3 +38,5 @@ dist/
 # WordPress core / local site files (must never live in this repo)
 wp-config.php
 wp-content/
+
+readme.txt

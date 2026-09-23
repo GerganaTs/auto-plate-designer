@@ -115,15 +115,22 @@ $holder = APD_Formats::sanitize(
 		'name'          => 'Grey holder',
 		'type'          => 'holder',
 		'base_image_id' => 0,
+		'width'         => 800,
+		'height'        => 400,
 	)
 );
 
-if ( ! is_wp_error( $holder ) ) {
-	fwrite( STDERR, "HOLDER_SHOULD_REQUIRE_IMAGE\n" );
+if ( is_wp_error( $holder ) || 0 !== (int) $holder['base_image_id'] || 520 !== (int) $holder['width'] || 260 !== (int) $holder['height'] ) {
+	fwrite( STDERR, "HOLDER_OPTIONAL_IMAGE_FAIL\n" );
 	exit( 1 );
 }
 
-echo 'HOLDER_REQUIRES_IMAGE' . PHP_EOL;
+if ( abs( (float) $holder['text_box']['y'] - 77.3 ) > 0.1 ) {
+	fwrite( STDERR, "HOLDER_STRIP_BOX_FAIL\n" );
+	exit( 1 );
+}
+
+echo 'HOLDER_OPTIONAL_IMAGE' . PHP_EOL;
 
 if ( true !== APD_Security::validate_format_type( 'holder' ) ) {
 	fwrite( STDERR, "HOLDER_TYPE_REJECTED\n" );
@@ -174,8 +181,13 @@ if ( APD_Formats::uses_country_band( 'us' ) || APD_Formats::uses_country_band( '
 	exit( 1 );
 }
 
-if ( ! APD_Formats::uses_country_band( 'eu' ) || ! APD_Formats::uses_country_band( 'moto' ) ) {
+if ( ! APD_Formats::uses_country_band( 'eu' ) || ! APD_Formats::uses_country_band( 'moto' ) || ! APD_Formats::uses_country_band( 'suv_eu' ) ) {
 	fwrite( STDERR, "COUNTRY_BAND_EU_FAIL\n" );
+	exit( 1 );
+}
+
+if ( APD_Formats::uses_country_band( 'moto_plain' ) || ! APD_Formats::uses_painted_plate( 'moto_plain' ) ) {
+	fwrite( STDERR, "MOTO_PLAIN_FLAGS_FAIL\n" );
 	exit( 1 );
 }
 
@@ -264,7 +276,7 @@ $eu_default_box = APD_Formats::default_text_box(
 	)
 );
 
-if ( 18.0 !== $eu_default_box['x'] || 79.0 !== $eu_default_box['width'] || 19.0 !== $eu_default_box['y'] ) {
+if ( 18.0 !== $eu_default_box['x'] || 79.0 !== $eu_default_box['width'] || 11.0 !== $eu_default_box['y'] || 78.0 !== $eu_default_box['height'] ) {
 	fwrite( STDERR, "FORMAT_TEXT_BOX_DEFAULT_FAIL\n" );
 	exit( 1 );
 }
@@ -348,6 +360,15 @@ if ( empty( $defs['plates-moto']['kind'] ) || 'moto' !== $defs['plates-moto']['k
 
 if ( empty( $defs['plates-suv']['kind'] ) || 'suv' !== $defs['plates-suv']['kind'] ) {
 	fwrite( STDERR, "CATALOG_SUV_FAIL\n" );
+	exit( 1 );
+}
+
+$eu_types   = APD_Catalog::format_types_for_kind( 'eu' );
+$moto_types = APD_Catalog::format_types_for_kind( 'moto' );
+$suv_types  = APD_Catalog::format_types_for_kind( 'suv' );
+
+if ( array( 'eu', 'eu_plain' ) !== $eu_types || array( 'moto', 'moto_plain' ) !== $moto_types || array( 'suv_eu', 'suv' ) !== $suv_types ) {
+	fwrite( STDERR, 'CATALOG_TYPES_FAIL ' . wp_json_encode( array( $eu_types, $moto_types, $suv_types ) ) . PHP_EOL );
 	exit( 1 );
 }
 

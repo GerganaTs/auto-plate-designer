@@ -10,7 +10,8 @@
 
 defined( 'ABSPATH' ) || exit;
 
-$fonts = isset( $settings['fonts'] ) && is_array( $settings['fonts'] ) ? $settings['fonts'] : array();
+$fonts     = isset( $settings['fonts'] ) && is_array( $settings['fonts'] ) ? $settings['fonts'] : array();
+$show_form = isset( $_GET['add'] ); // phpcs:ignore WordPress.Security.NonceVerification.Recommended
 ?>
 <div class="apd-tab">
 	<h2><?php esc_html_e( 'Fonts', 'auto-plate-designer' ); ?></h2>
@@ -29,7 +30,7 @@ $fonts = isset( $settings['fonts'] ) && is_array( $settings['fonts'] ) ? $settin
 		</thead>
 		<tbody>
 			<?php if ( empty( $fonts ) ) : ?>
-				<tr><td colspan="5"><?php esc_html_e( 'No fonts yet. Add a local .woff2 file below.', 'auto-plate-designer' ); ?></td></tr>
+				<tr><td colspan="5"><?php esc_html_e( 'No fonts yet.', 'auto-plate-designer' ); ?></td></tr>
 			<?php else : ?>
 				<?php foreach ( $fonts as $font ) : ?>
 					<?php
@@ -56,6 +57,15 @@ $fonts = isset( $settings['fonts'] ) && is_array( $settings['fonts'] ) ? $settin
 		</tbody>
 	</table>
 	</div>
+
+	<?php if ( ! $show_form ) : ?>
+		<p class="apd-toolbar">
+			<a class="button button-primary" href="<?php echo esc_url( add_query_arg( 'add', '1', $apd_admin->tab_url( 'fonts' ) ) ); ?>"><?php esc_html_e( 'Add font', 'auto-plate-designer' ); ?></a>
+		</p>
+	<?php else : ?>
+		<p class="apd-toolbar">
+			<a class="button" href="<?php echo esc_url( $apd_admin->tab_url( 'fonts' ) ); ?>"><?php esc_html_e( 'Cancel', 'auto-plate-designer' ); ?></a>
+		</p>
 
 	<h3><?php esc_html_e( 'Add font', 'auto-plate-designer' ); ?></h3>
 
@@ -103,4 +113,5 @@ $fonts = isset( $settings['fonts'] ) && is_array( $settings['fonts'] ) ? $settin
 
 		<?php submit_button( __( 'Add font', 'auto-plate-designer' ) ); ?>
 	</form>
+	<?php endif; ?>
 </div>

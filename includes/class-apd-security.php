@@ -504,18 +504,12 @@ final class APD_Security {
 	}
 
 	/**
-	 * Validate a format type slug.
-	 *
-	 * @param mixed $type Raw input.
-	 * @return true|WP_Error
-	 */
-	/**
 	 * Known format type slugs. Extra values from the filter are ignored.
 	 *
 	 * @return array<int, string>
 	 */
 	public static function allowed_format_types() {
-		$known = array( 'eu', 'us', 'moto', 'suv', 'custom', 'color', 'holder' );
+		$known = array( 'eu', 'eu_plain', 'us', 'moto', 'moto_plain', 'suv_eu', 'suv', 'custom', 'color', 'holder' );
 
 		/**
 		 * Filter the format types offered in admin and accepted on save.

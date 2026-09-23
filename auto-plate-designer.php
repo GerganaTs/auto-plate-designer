@@ -29,7 +29,7 @@ define( 'APD_PLUGIN_BASENAME', plugin_basename( __FILE__ ) );
 define( 'APD_PLUGIN_DIR', plugin_dir_path( __FILE__ ) );
 define( 'APD_PLUGIN_URL', plugin_dir_url( __FILE__ ) );
 define( 'APD_OPTION_KEY', 'apd_settings' );
-define( 'APD_CACHE_KEY', 'apd_settings_cache_v13' );
+define( 'APD_CACHE_KEY', 'apd_settings_cache_v14' );
 
 require_once APD_PLUGIN_DIR . 'includes/class-apd-security.php';
 require_once APD_PLUGIN_DIR . 'includes/class-apd-plugin.php';

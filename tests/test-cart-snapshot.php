@@ -242,4 +242,40 @@ APD_Formats::delete( $other['id'] );
 $product->delete( true );
 
 echo 'FINGERPRINT_OK' . PHP_EOL;
+
+$png = base64_decode( 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==', true );
+$stored = APD_WooCommerce::store_preview_png( 'data:image/png;base64,' . base64_encode( $png ) );
+$kept   = APD_WooCommerce::preview_url_from_config( array( 'preview_url' => $stored ) );
+$thumb  = APD_WooCommerce::preview_img_html( $kept );
+
+if ( '' === $stored || $kept !== $stored || false === strpos( $thumb, 'apd-config-preview' ) || false === strpos( $thumb, 'apd-previews/' ) ) {
+	fwrite( STDERR, "PREVIEW_THUMB_FAIL {$stored}\n" );
+	exit( 1 );
+}
+
+if ( '' !== APD_WooCommerce::store_preview_png( 'data:image/svg+xml;base64,PHN2Zz4=' ) ) {
+	fwrite( STDERR, "PREVIEW_REJECT_FAIL\n" );
+	exit( 1 );
+}
+
+if ( '' !== APD_WooCommerce::preview_url_from_config( array( 'preview_url' => 'https://evil.example/apd-previews/' . str_repeat( 'a', 64 ) . '.png' ) ) ) {
+	fwrite( STDERR, "PREVIEW_URL_GUARD_FAIL\n" );
+	exit( 1 );
+}
+
+$upload = wp_upload_dir();
+$file   = trailingslashit( $upload['basedir'] ) . 'apd-previews/' . basename( (string) wp_parse_url( $stored, PHP_URL_PATH ) );
+
+if ( is_file( $file ) ) {
+	unlink( $file );
+}
+
+$shop_css = file_get_contents( APD_PLUGIN_DIR . 'assets/css/configurator.css' );
+
+if ( false === strpos( $shop_css, 'img[src*="apd-previews"]' ) || false === strpos( $shop_css, 'img.apd-config-preview' ) ) {
+	fwrite( STDERR, "PREVIEW_CSS_FAIL\n" );
+	exit( 1 );
+}
+
+echo 'PREVIEW_IMAGE_OK' . PHP_EOL;
 echo 'ALL_OK' . PHP_EOL;

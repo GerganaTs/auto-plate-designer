@@ -12,9 +12,12 @@ defined( 'ABSPATH' ) || exit;
 $designs     = APD_Designs::all();
 $us_formats  = APD_Formats::of_type( 'us' );
 $edit_id     = isset( $_GET['edit'] ) ? sanitize_text_field( wp_unslash( $_GET['edit'] ) ) : ''; // phpcs:ignore WordPress.Security.NonceVerification.Recommended
+$is_add      = isset( $_GET['add'] ); // phpcs:ignore WordPress.Security.NonceVerification.Recommended
 $editing     = '' !== $edit_id ? APD_Designs::get( $edit_id ) : null;
+$is_edit     = is_array( $editing );
+$show_form   = $is_edit || $is_add;
 
-if ( ! is_array( $editing ) ) {
+if ( ! $is_edit ) {
 	$editing = array(
 		'id'                   => '',
 		'name'                 => '',
@@ -114,6 +117,15 @@ $apd_design_scope = static function ( $design ) {
 	</table>
 	</div>
 
+	<?php if ( ! $show_form ) : ?>
+		<p class="apd-toolbar">
+			<a class="button button-primary" href="<?php echo esc_url( add_query_arg( 'add', '1', $apd_admin->tab_url( 'designs' ) ) ); ?>"><?php esc_html_e( 'Add design', 'auto-plate-designer' ); ?></a>
+		</p>
+	<?php else : ?>
+		<p class="apd-toolbar">
+			<a class="button" href="<?php echo esc_url( $apd_admin->tab_url( 'designs' ) ); ?>"><?php esc_html_e( 'Cancel', 'auto-plate-designer' ); ?></a>
+		</p>
+
 	<h3><?php echo $editing['id'] ? esc_html__( 'Edit design', 'auto-plate-designer' ) : esc_html__( 'Add design', 'auto-plate-designer' ); ?></h3>
 
 	<form method="post" action="<?php echo esc_url( $apd_admin->tab_url( 'designs' ) ); ?>" class="apd-form">
@@ -194,4 +206,5 @@ $apd_design_scope = static function ( $design ) {
 
 		<?php submit_button( $editing['id'] ? __( 'Update design', 'auto-plate-designer' ) : __( 'Add design', 'auto-plate-designer' ) ); ?>
 	</form>
+	<?php endif; ?>
 </div>

@@ -22,6 +22,7 @@ final class APD_Admin_Settings {
 	const META_HIDE_IMAGE   = '_apd_hide_image';
 	const META_COLOR_FIELDS = '_apd_color_fields';
 	const META_PALETTE_IDS  = '_apd_palette_ids';
+	const META_DEFAULT_TEXT = '_apd_default_text';
 
 	const PRODUCT_NONCE_ACTION = 'apd_product_meta';
 
@@ -158,31 +159,49 @@ final class APD_Admin_Settings {
 			true
 		);
 
-		$caps  = array();
-		$sizes = array();
+		$caps       = array();
+		$sizes      = array();
+		$type_caps  = array();
+		$text_boxes = array();
 
 		foreach ( APD_Security::allowed_format_types() as $type ) {
-			$caps[ $type ]  = APD_Formats::color_field_capabilities( $type );
-			$size           = APD_Formats::default_size( $type );
-			$sizes[ $type ] = array( $size['width'], $size['height'] );
+			$caps[ $type ]      = APD_Formats::color_field_capabilities( $type );
+			$size               = APD_Formats::default_size( $type );
+			$sizes[ $type ]     = array( $size['width'], $size['height'] );
+			$type_caps[ $type ] = APD_Formats::js_capabilities( $type );
+			$text_boxes[ $type ] = APD_Formats::default_text_box(
+				$type,
+				array(
+					'width'     => $size['width'],
+					'height'    => $size['height'],
+					'band_side' => 'left',
+				)
+			);
 		}
 
 		wp_localize_script(
 			'apd-admin-settings',
 			'apdAdmin',
 			array(
-				'confirmDelete'    => __( 'Delete this item? This cannot be undone.', 'auto-plate-designer' ),
-				'selectImage'      => __( 'Select image', 'auto-plate-designer' ),
-				'selectFont'       => __( 'Select WOFF2 font', 'auto-plate-designer' ),
-				'colorCaps'        => $caps,
-				'defaultSizes'     => $sizes,
-				'canvasMaxPx'      => APD_Formats::CANVAS_DISPLAY_MAX_PX,
-				'plateColorLabel'  => __( 'Plate color', 'auto-plate-designer' ),
-				'stripColorLabel'  => __( 'Text background', 'auto-plate-designer' ),
-				'holderImageLabel' => __( 'Holder photo', 'auto-plate-designer' ),
-				'holderImageHelp'  => __( 'Photo of the holder. Shopper text is drawn on the bottom strip unless you move the text area.', 'auto-plate-designer' ),
-				'suvImageLabel'    => __( 'Plate graphic', 'auto-plate-designer' ),
-				'suvImageHelp'     => __( 'Upload the full SUV / crossover plate image. Shoppers only change the text in the number area.', 'auto-plate-designer' ),
+				'confirmDelete'     => __( 'Delete this item? This cannot be undone.', 'auto-plate-designer' ),
+				'selectImage'       => __( 'Select image', 'auto-plate-designer' ),
+				'selectFont'        => __( 'Select WOFF2 font', 'auto-plate-designer' ),
+				'colorCaps'         => $caps,
+				'defaultSizes'      => $sizes,
+				'typeCapabilities'   => $type_caps,
+				'defaultTextBoxes'   => $text_boxes,
+				'canvasMaxPx'        => APD_Formats::CANVAS_DISPLAY_MAX_PX,
+				'sampleFontFill'     => APD_Formats::SAMPLE_FONT_FILL,
+				'adminSamplePainted' => APD_Formats::ADMIN_SAMPLE_PAINTED,
+				'adminSampleSuv'    => APD_Formats::ADMIN_SAMPLE_SUV,
+				'plateColorLabel'   => __( 'Plate color', 'auto-plate-designer' ),
+				'stripColorLabel'   => __( 'White strip color', 'auto-plate-designer' ),
+				'holderImageLabel'  => __( 'Holder photo', 'auto-plate-designer' ),
+				'holderImageHelp'   => __( 'The standard car holder is already shown. Upload a PNG, JPEG, or WebP photo to replace it. An SVG plugin is not needed.', 'auto-plate-designer' ),
+				'holderImageUrl'    => APD_Formats::bundled_holder_image_url(),
+				'holderStrip'       => APD_Formats::holder_strip_box(),
+				'suvImageLabel'     => __( 'Plate graphic', 'auto-plate-designer' ),
+				'suvImageHelp'      => __( 'Upload the full SUV / crossover plate image. Shoppers only change the text in the number area.', 'auto-plate-designer' ),
 			)
 		);
 	}
@@ -265,13 +284,23 @@ final class APD_Admin_Settings {
 			wp_die( esc_html( $check->get_error_message() ), '', array( 'response' => 403 ) );
 		}
 
-		$action = sanitize_key( wp_unslash( $_POST['apd_settings_action'] ) );
-		$result = null;
+		$action      = sanitize_key( wp_unslash( $_POST['apd_settings_action'] ) );
+		$result      = null;
+		$tab         = '';
+		$return_args = array();
 
 		switch ( $action ) {
 			case 'save_format':
-				$result = APD_Formats::save( $this->unslash_array( isset( $_POST['apd_format'] ) ? $_POST['apd_format'] : array() ) );
-				$tab    = 'formats';
+				$posted    = $this->unslash_array( isset( $_POST['apd_format'] ) ? $_POST['apd_format'] : array() );
+				$uploaded  = $this->attach_uploaded_base_image( $posted );
+				$result    = is_wp_error( $uploaded ) ? $uploaded : APD_Formats::save( $uploaded );
+				$tab       = 'formats';
+				$posted_id = isset( $posted['id'] ) ? sanitize_text_field( (string) $posted['id'] ) : '';
+				if ( is_wp_error( $result ) ) {
+					$return_args = '' !== $posted_id ? array( 'edit' => $posted_id ) : array( 'add' => '1' );
+				} elseif ( '' !== $posted_id && is_array( $result ) && ! empty( $result['id'] ) ) {
+					$return_args = array( 'edit' => $result['id'] );
+				}
 				break;
 			case 'save_preset':
 				$result = APD_Presets::save( $this->unslash_array( isset( $_POST['apd_preset'] ) ? $_POST['apd_preset'] : array() ) );
@@ -280,10 +309,22 @@ final class APD_Admin_Settings {
 			case 'save_design':
 				$result = APD_Designs::save( $this->unslash_array( isset( $_POST['apd_design'] ) ? $_POST['apd_design'] : array() ) );
 				$tab    = 'designs';
+				if ( is_wp_error( $result ) ) {
+					$posted_id   = isset( $_POST['apd_design']['id'] ) ? sanitize_text_field( wp_unslash( $_POST['apd_design']['id'] ) ) : '';
+					$return_args = '' !== $posted_id ? array( 'edit' => $posted_id ) : array( 'add' => '1' );
+				} elseif ( is_array( $result ) && ! empty( $result['id'] ) ) {
+					$return_args = array( 'edit' => $result['id'] );
+				}
 				break;
 			case 'save_palette':
 				$result = APD_Color_Palettes::save( $this->unslash_array( isset( $_POST['apd_palette'] ) ? $_POST['apd_palette'] : array() ) );
 				$tab    = 'palette';
+				if ( is_wp_error( $result ) ) {
+					$posted_id   = isset( $_POST['apd_palette']['id'] ) ? sanitize_text_field( wp_unslash( $_POST['apd_palette']['id'] ) ) : '';
+					$return_args = '' !== $posted_id ? array( 'edit' => $posted_id ) : array( 'add' => '1' );
+				} elseif ( is_array( $result ) && ! empty( $result['id'] ) ) {
+					$return_args = array( 'edit' => $result['id'] );
+				}
 				break;
 			case 'save_swatch_display':
 				$result = APD_Color_Palettes::save_swatch_display( $this->unslash_array( isset( $_POST['apd_swatch'] ) ? $_POST['apd_swatch'] : array() ) );
@@ -298,9 +339,12 @@ final class APD_Admin_Settings {
 				);
 
 				if ( is_wp_error( $color_id ) ) {
-					$result = $color_id;
+					$result      = $color_id;
+					$posted_id   = isset( $posted['id'] ) ? sanitize_text_field( (string) $posted['id'] ) : '';
+					$return_args = '' !== $posted_id ? array( 'edit_color' => $posted_id ) : array( 'add_color' => '1' );
 				} else {
-					$result = true;
+					$result      = true;
+					$return_args = array( 'edit_color' => $color_id );
 
 					if ( empty( $posted['id'] ) && ! empty( $posted['palette_ids'] ) && is_array( $posted['palette_ids'] ) ) {
 						$attached = APD_Color_Palettes::attach_color_to_palettes( $color_id, $posted['palette_ids'] );
@@ -313,6 +357,9 @@ final class APD_Admin_Settings {
 			case 'save_font':
 				$result = $this->save_font_row();
 				$tab    = 'fonts';
+				if ( is_wp_error( $result ) ) {
+					$return_args = array( 'add' => '1' );
+				}
 				break;
 			case 'save_limits':
 				$result = $this->save_limits_tab();
@@ -327,10 +374,10 @@ final class APD_Admin_Settings {
 		}
 
 		if ( is_wp_error( $result ) ) {
-			$this->redirect( $tab, 'error', $result->get_error_message() );
+			$this->redirect( $tab, 'error', $result->get_error_message(), $return_args );
 		}
 
-		$this->redirect( $tab, 'updated', __( 'Settings saved.', 'auto-plate-designer' ) );
+		$this->redirect( $tab, 'updated', __( 'Settings saved.', 'auto-plate-designer' ), $return_args );
 	}
 
 	/**
@@ -407,6 +454,7 @@ final class APD_Admin_Settings {
 		$format       = (string) get_post_meta( $post->ID, self::META_FORMAT, true );
 		$layouts      = get_post_meta( $post->ID, self::META_LAYOUTS, true );
 		$hide_image   = 'no' !== get_post_meta( $post->ID, self::META_HIDE_IMAGE, true );
+		$default_text = (string) get_post_meta( $post->ID, self::META_DEFAULT_TEXT, true );
 		$formats    = APD_Formats::all();
 		$available  = array( 'text_only', 'text_image_text', 'image_text', 'multiline_text' );
 
@@ -429,6 +477,8 @@ final class APD_Admin_Settings {
 		echo '<p><label class="apd-choice"><input type="checkbox" name="apd_enabled" value="1" ' . checked( $enabled, true, false ) . '> ';
 		echo esc_html__( 'Enable plate configurator', 'auto-plate-designer' );
 		echo '</label></p>';
+
+		echo '<div class="apd-product-metabox__options" data-apd-product-options' . ( $enabled ? '' : ' hidden' ) . '>';
 
 		if ( $enabled && function_exists( 'wc_get_product' ) ) {
 			$wc_product = wc_get_product( $post->ID );
@@ -466,6 +516,25 @@ final class APD_Admin_Settings {
 		if ( empty( $formats ) ) {
 			echo '<p class="description">' . esc_html__( 'Add formats under WooCommerce → Auto Plate Designer first.', 'auto-plate-designer' ) . '</p>';
 		}
+
+		$selected_format = '' !== $format ? APD_Formats::get( $format ) : null;
+		$selected_type   = is_array( $selected_format ) && isset( $selected_format['type'] ) ? (string) $selected_format['type'] : '';
+		$suv_default     = APD_Formats::is_suv_kind( $selected_type );
+		$suv_rows        = APD_Formats::suv_plate_rows( $default_text );
+		$single_text     = str_replace( array( "\r\n", "\r", "\n" ), ' ', $default_text );
+
+		echo '<p data-apd-default-single' . ( $suv_default ? ' hidden' : '' ) . '><label for="apd_default_text">' . esc_html__( 'Initial plate text', 'auto-plate-designer' ) . '</label><br>';
+		echo '<input type="text" class="widefat" id="apd_default_text" name="apd_default_text" value="' . esc_attr( $single_text ) . '" maxlength="32" autocomplete="off"' . ( $suv_default ? ' disabled' : '' ) . '>';
+		echo '</p>';
+		echo '<div class="apd-default-rows" data-apd-default-rows' . ( $suv_default ? '' : ' hidden' ) . '>';
+		echo '<p><label for="apd_default_text_row_1">' . esc_html__( 'First row', 'auto-plate-designer' ) . '</label><br>';
+		echo '<input type="text" class="widefat" id="apd_default_text_row_1" name="apd_default_text_row_1" value="' . esc_attr( $suv_rows[0] ) . '" maxlength="32" autocomplete="off"' . ( $suv_default ? '' : ' disabled' ) . '>';
+		echo '</p>';
+		echo '<p><label for="apd_default_text_row_2">' . esc_html__( 'Second row', 'auto-plate-designer' ) . '</label><br>';
+		echo '<input type="text" class="widefat" id="apd_default_text_row_2" name="apd_default_text_row_2" value="' . esc_attr( $suv_rows[1] ) . '" maxlength="32" autocomplete="off"' . ( $suv_default ? '' : ' disabled' ) . '>';
+		echo '</p>';
+		echo '</div>';
+		echo '<p class="description">' . esc_html__( 'Shown on the product page until the shopper types their own plate. Leave blank to use the format sample.', 'auto-plate-designer' ) . '</p>';
 
 		$purpose_labels = array(
 			'text'       => __( 'Text color', 'auto-plate-designer' ),
@@ -527,6 +596,7 @@ final class APD_Admin_Settings {
 		echo '</div>';
 
 		echo '</div>';
+		echo '</div>';
 	}
 
 	/**
@@ -584,6 +654,38 @@ final class APD_Admin_Settings {
 			$format_type = is_array( $format_row ) && isset( $format_row['type'] ) ? (string) $format_row['type'] : '';
 		}
 
+		$multiline   = is_array( $format_row ) && ! empty( $format_row['multiline'] );
+		$max_chars   = is_array( $format_row ) && isset( $format_row['max_chars'] ) ? (int) $format_row['max_chars'] : 12;
+		$text_limit  = $max_chars > 0 ? $max_chars : 12;
+
+		if ( APD_Formats::is_suv_kind( $format_type ) ) {
+			$row_limits = APD_Formats::suv_row_limits( is_array( $format_row ) ? $format_row : array( 'type' => $format_type ) );
+			$row1       = isset( $_POST['apd_default_text_row_1'] ) ? (string) wp_unslash( $_POST['apd_default_text_row_1'] ) : ''; // phpcs:ignore WordPress.Security.ValidatedSanitizedInput.InputNotSanitized
+			$row2       = isset( $_POST['apd_default_text_row_2'] ) ? (string) wp_unslash( $_POST['apd_default_text_row_2'] ) : ''; // phpcs:ignore WordPress.Security.ValidatedSanitizedInput.InputNotSanitized
+			$clean_text = APD_Formats::limit_suv_rows( $row1, $row2, $row_limits[0], $row_limits[1] );
+			$multiline  = true;
+			$text_limit = $row_limits[0] + $row_limits[1] + ( false !== strpos( $clean_text, "\n" ) ? 1 : 0 );
+		} else {
+			$posted_text = isset( $_POST['apd_default_text'] ) ? (string) wp_unslash( $_POST['apd_default_text'] ) : ''; // phpcs:ignore WordPress.Security.ValidatedSanitizedInput.InputNotSanitized
+			$clean_text  = APD_Security::sanitize_plate_text( $posted_text, $multiline );
+			if ( $max_chars > 0 ) {
+				$length = function_exists( 'mb_strlen' ) ? mb_strlen( $clean_text, 'UTF-8' ) : strlen( $clean_text );
+				if ( $length > $max_chars ) {
+					$clean_text = function_exists( 'mb_substr' ) ? mb_substr( $clean_text, 0, $max_chars, 'UTF-8' ) : substr( $clean_text, 0, $max_chars );
+				}
+			}
+		}
+
+		$text_ok = APD_Security::validate_plate_text(
+			$clean_text,
+			array(
+				'max_length'  => $text_limit,
+				'multiline'   => $multiline,
+				'allow_empty' => true,
+			)
+		);
+		update_post_meta( $product_id, self::META_DEFAULT_TEXT, is_wp_error( $text_ok ) ? '' : $clean_text );
+
 		$posted_palettes = isset( $_POST['apd_palette_ids'] ) && is_array( $_POST['apd_palette_ids'] )
 			? wp_unslash( $_POST['apd_palette_ids'] ) // phpcs:ignore WordPress.Security.ValidatedSanitizedInput.InputNotSanitized
 			: array();
@@ -606,6 +708,31 @@ final class APD_Admin_Settings {
 		if ( 'yes' === $enabled && is_array( $format_row ) && isset( $format_row['type'] ) ) {
 			APD_Catalog::maybe_assign_product_term( $product_id, $format_row['type'] );
 		}
+	}
+
+	/**
+	 * Plate text shown on the product page until the shopper edits it.
+	 *
+	 * @param int                    $product_id Product ID.
+	 * @param array<string, mixed>|null $format  Format row.
+	 * @return string
+	 */
+	public static function product_initial_text( $product_id, $format = null ) {
+		$product_id = absint( $product_id );
+		$stored     = $product_id ? trim( (string) get_post_meta( $product_id, self::META_DEFAULT_TEXT, true ) ) : '';
+
+		if ( '' !== $stored ) {
+			return $stored;
+		}
+
+		if ( ! is_array( $format ) && $product_id ) {
+			$format_id = (string) get_post_meta( $product_id, self::META_FORMAT, true );
+			$format    = '' !== $format_id ? APD_Formats::get( $format_id ) : null;
+		}
+
+		$type = is_array( $format ) && isset( $format['type'] ) ? (string) $format['type'] : 'eu';
+
+		return APD_Formats::sample_plate_text( $type );
 	}
 
 	/**
@@ -701,20 +828,7 @@ final class APD_Admin_Settings {
 			$fields = is_array( $stored ) ? $stored : array();
 		}
 
-		$fields = APD_Formats::sanitize_color_fields( $fields, $type );
-
-		if ( is_array( $format ) && ! empty( $format['no_frame'] ) ) {
-			$fields = array_values(
-				array_filter(
-					$fields,
-					static function ( $field ) {
-						return 'border' !== $field;
-					}
-				)
-			);
-		}
-
-		return $fields;
+		return APD_Formats::sanitize_color_fields( $fields, $type );
 	}
 
 	/**
@@ -850,6 +964,48 @@ final class APD_Admin_Settings {
 		unset( $tab );
 
 		include $template;
+	}
+
+	/**
+	 * Store a holder or SUV photo posted with the format form.
+	 *
+	 * @param array<string, mixed> $posted Format fields.
+	 * @return array<string, mixed>|WP_Error
+	 */
+	private function attach_uploaded_base_image( $posted ) {
+		if ( empty( $_FILES['apd_base_image'] ) || ! isset( $_FILES['apd_base_image']['error'] ) ) { // phpcs:ignore WordPress.Security.NonceVerification.Missing
+			return $posted;
+		}
+
+		$error = (int) $_FILES['apd_base_image']['error']; // phpcs:ignore WordPress.Security.ValidatedSanitizedInput.InputNotSanitized, WordPress.Security.NonceVerification.Missing
+
+		if ( UPLOAD_ERR_NO_FILE === $error ) {
+			return $posted;
+		}
+
+		if ( UPLOAD_ERR_OK !== $error ) {
+			return new WP_Error(
+				'apd_upload',
+				__( 'The photo could not be uploaded. Use a PNG, JPEG, or WebP image.', 'auto-plate-designer' )
+			);
+		}
+
+		require_once ABSPATH . 'wp-admin/includes/file.php';
+		require_once ABSPATH . 'wp-admin/includes/media.php';
+		require_once ABSPATH . 'wp-admin/includes/image.php';
+
+		$attachment_id = media_handle_upload( 'apd_base_image', 0 );
+
+		if ( is_wp_error( $attachment_id ) ) {
+			return new WP_Error(
+				'apd_upload',
+				__( 'The photo could not be uploaded. Use a PNG, JPEG, or WebP image.', 'auto-plate-designer' )
+			);
+		}
+
+		$posted['base_image_id'] = (int) $attachment_id;
+
+		return $posted;
 	}
 
 	/**
@@ -1133,7 +1289,7 @@ final class APD_Admin_Settings {
 	 * @param string $type    updated|error.
 	 * @param string $message Notice text.
 	 */
-	private function redirect( $tab, $type, $message ) {
+	private function redirect( $tab, $type, $message, $extra = array() ) {
 		set_transient(
 			'apd_admin_notice_' . get_current_user_id(),
 			array(
@@ -1143,7 +1299,13 @@ final class APD_Admin_Settings {
 			30
 		);
 
-		wp_safe_redirect( $this->tab_url( $tab ) );
+		$url = $this->tab_url( $tab );
+
+		if ( is_array( $extra ) && ! empty( $extra ) ) {
+			$url = add_query_arg( $extra, $url );
+		}
+
+		wp_safe_redirect( $url );
 		exit;
 	}
 

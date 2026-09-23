@@ -53,6 +53,7 @@ final class APD_WooCommerce {
 	 */
 	private function __construct() {
 		add_action( 'wp_enqueue_scripts', array( $this, 'enqueue_assets' ) );
+		add_action( 'admin_enqueue_scripts', array( $this, 'enqueue_order_styles' ) );
 		add_action( 'wp', array( $this, 'maybe_remove_classic_gallery' ) );
 		add_filter( 'body_class', array( $this, 'body_class' ) );
 		add_action( 'woocommerce_before_add_to_cart_button', array( $this, 'render_configurator' ) );
@@ -67,6 +68,11 @@ final class APD_WooCommerce {
 		add_filter( 'woocommerce_get_item_data', array( $this, 'display_cart_item_data' ), 10, 2 );
 		add_action( 'woocommerce_checkout_create_order_line_item', array( $this, 'add_order_item_meta' ), 10, 4 );
 		add_filter( 'woocommerce_hidden_order_itemmeta', array( $this, 'hide_order_item_meta' ) );
+		add_filter( 'woocommerce_cart_item_thumbnail', array( $this, 'cart_item_thumbnail' ), 10, 2 );
+		add_filter( 'woocommerce_store_api_cart_item_images', array( $this, 'store_api_cart_images' ), 10, 2 );
+		add_filter( 'woocommerce_admin_order_item_thumbnail', array( $this, 'admin_order_item_thumbnail' ), 10, 3 );
+		add_filter( 'woocommerce_order_item_thumbnail', array( $this, 'order_item_thumbnail' ), 10, 2 );
+		add_filter( 'woocommerce_order_item_name', array( $this, 'order_item_name' ), 10, 2 );
 		add_action( 'woocommerce_cart_loaded_from_session', array( $this, 'audit_cart_configs' ), 20, 1 );
 		add_action( 'woocommerce_check_cart_items', array( $this, 'check_cart_items' ) );
 		add_action( 'woocommerce_before_calculate_totals', array( $this, 'audit_cart_configs' ), 5, 1 );
@@ -169,9 +175,51 @@ final class APD_WooCommerce {
 	}
 
 	/**
-	 * Scripts and styles on configurable product pages only.
+	 * Styles that keep a configured plate visible in the cart and on orders.
+	 */
+	private function enqueue_preview_style() {
+		$css_file = APD_PLUGIN_DIR . 'assets/css/configurator.css';
+		$deps     = array();
+
+		foreach ( array( 'woocommerce-general', 'wc-blocks-style' ) as $handle ) {
+			if ( wp_style_is( $handle, 'registered' ) ) {
+				$deps[] = $handle;
+			}
+		}
+
+		wp_enqueue_style(
+			'apd-configurator',
+			APD_PLUGIN_URL . 'assets/css/configurator.css',
+			$deps,
+			is_readable( $css_file ) ? (string) filemtime( $css_file ) : APD_VERSION
+		);
+	}
+
+	/**
+	 * Same plate image on the WooCommerce order screen.
+	 *
+	 * @param string $hook Current admin page hook.
+	 */
+	public function enqueue_order_styles( $hook ) {
+		unset( $hook );
+
+		$screen = function_exists( 'get_current_screen' ) ? get_current_screen() : null;
+
+		if ( ! $screen || ( false === strpos( (string) $screen->id, 'shop_order' ) && false === strpos( (string) $screen->id, 'wc-orders' ) ) ) {
+			return;
+		}
+
+		$this->enqueue_preview_style();
+	}
+
+	/**
+	 * Shop styles, including the configured-plate thumbnail used in the cart.
 	 */
 	public function enqueue_assets() {
+		if ( function_exists( 'WC' ) ) {
+			$this->enqueue_preview_style();
+		}
+
 		if ( ! function_exists( 'is_product' ) || ! is_product() ) {
 			return;
 		}
@@ -188,17 +236,9 @@ final class APD_WooCommerce {
 			return;
 		}
 
-		$css_file = APD_PLUGIN_DIR . 'assets/css/configurator.css';
-		$js_file  = APD_PLUGIN_DIR . 'assets/js/configurator.js';
+		$js_file = APD_PLUGIN_DIR . 'assets/js/configurator.js';
 
-		$style_deps = wp_style_is( 'woocommerce-general', 'registered' ) ? array( 'woocommerce-general' ) : array();
-
-		wp_enqueue_style(
-			'apd-configurator',
-			APD_PLUGIN_URL . 'assets/css/configurator.css',
-			$style_deps,
-			is_readable( $css_file ) ? (string) filemtime( $css_file ) : APD_VERSION
-		);
+		$this->enqueue_preview_style();
 
 		$faces = '';
 
@@ -206,7 +246,7 @@ final class APD_WooCommerce {
 			$faces .= sprintf(
 				'@font-face{font-family:%1$s;src:url(%2$s) format("woff2");font-weight:%3$d;font-style:%4$s;font-display:swap;}',
 				wp_json_encode( $font['family'] ),
-				wp_json_encode( $font['url'] ),
+				wp_json_encode( isset( $font['url'] ) ? (string) $font['url'] : '' ),
 				(int) $font['weight'],
 				'italic' === $font['style'] ? 'italic' : 'normal'
 			);
@@ -435,6 +475,198 @@ final class APD_WooCommerce {
 		}
 
 		$item->add_meta_data( '_apd_config', wp_json_encode( $config ), true );
+	}
+
+	/**
+	 * Replace the product photo with the plate the shopper configured.
+	 *
+	 * @param string               $thumbnail Existing HTML.
+	 * @param array<string, mixed> $cart_item Cart line.
+	 * @return string
+	 */
+	public function cart_item_thumbnail( $thumbnail, $cart_item ) {
+		$url = self::preview_url_from_config( isset( $cart_item[ self::CART_KEY ] ) ? $cart_item[ self::CART_KEY ] : null );
+
+		return '' === $url ? $thumbnail : self::preview_img_html( $url );
+	}
+
+	/**
+	 * Same configured plate for the block cart, mini-cart, and checkout.
+	 *
+	 * @param array<int, object>   $images    Product images.
+	 * @param array<string, mixed> $cart_item Cart line.
+	 * @return array<int, object>
+	 */
+	public function store_api_cart_images( $images, $cart_item ) {
+		$url = self::preview_url_from_config( isset( $cart_item[ self::CART_KEY ] ) ? $cart_item[ self::CART_KEY ] : null );
+
+		if ( '' === $url ) {
+			return $images;
+		}
+
+		$image = ( ! empty( $images[0] ) && is_object( $images[0] ) ) ? clone $images[0] : new stdClass();
+		if ( ! isset( $image->id ) ) {
+			$image->id = 0;
+		}
+		$image->src       = $url;
+		$image->thumbnail = $url;
+		$image->srcset    = '';
+		$image->sizes     = '';
+		if ( ! isset( $image->name ) ) {
+			$image->name = '';
+		}
+		if ( ! isset( $image->alt ) ) {
+			$image->alt = '';
+		}
+
+		return array( $image );
+	}
+
+	/**
+	 * Configured plate on the admin order line.
+	 *
+	 * @param string                $thumbnail Existing HTML.
+	 * @param int                   $item_id   Order item ID.
+	 * @param WC_Order_Item_Product $item      Order line.
+	 * @return string
+	 */
+	public function admin_order_item_thumbnail( $thumbnail, $item_id, $item ) {
+		unset( $item_id );
+		$url = self::preview_url_from_order_item( $item );
+
+		return '' === $url ? $thumbnail : self::preview_img_html( $url );
+	}
+
+	/**
+	 * Configured plate in order emails.
+	 *
+	 * @param string                $thumbnail Existing HTML.
+	 * @param WC_Order_Item_Product $item      Order line.
+	 * @return string
+	 */
+	public function order_item_thumbnail( $thumbnail, $item ) {
+		$url = self::preview_url_from_order_item( $item );
+
+		return '' === $url ? $thumbnail : self::preview_img_html( $url );
+	}
+
+	/**
+	 * Configured plate beside the name on customer order pages.
+	 *
+	 * Emails and the admin order screen already have a thumbnail column.
+	 *
+	 * @param string                $name Item name HTML.
+	 * @param WC_Order_Item_Product $item Order line.
+	 * @return string
+	 */
+	public function order_item_name( $name, $item ) {
+		if ( is_admin() || did_action( 'woocommerce_email_header' ) || doing_action( 'woocommerce_email_order_details' ) ) {
+			return $name;
+		}
+
+		$url = self::preview_url_from_order_item( $item );
+
+		return '' === $url ? $name : self::preview_img_html( $url ) . $name;
+	}
+
+	/**
+	 * Saved plate image for a cart configuration.
+	 *
+	 * @param mixed $config Cart config.
+	 * @return string
+	 */
+	public static function preview_url_from_config( $config ) {
+		if ( ! is_array( $config ) || empty( $config['preview_url'] ) ) {
+			return '';
+		}
+
+		$url    = (string) $config['preview_url'];
+		$upload = wp_upload_dir();
+		$base   = trailingslashit( $upload['baseurl'] ) . 'apd-previews/';
+
+		if ( 0 !== strpos( $url, $base ) || ! preg_match( '#/apd-previews/[a-f0-9]{64}\.png$#', $url ) ) {
+			return '';
+		}
+
+		return $url;
+	}
+
+	/**
+	 * Saved plate image for an order line.
+	 *
+	 * @param mixed $item Order item.
+	 * @return string
+	 */
+	public static function preview_url_from_order_item( $item ) {
+		if ( ! $item instanceof WC_Order_Item ) {
+			return '';
+		}
+
+		$raw = $item->get_meta( '_apd_config', true );
+
+		if ( ! is_string( $raw ) || '' === $raw ) {
+			return '';
+		}
+
+		$config = json_decode( $raw, true );
+
+		return self::preview_url_from_config( $config );
+	}
+
+	/**
+	 * Image tag for a stored plate preview.
+	 *
+	 * @param string $url Preview URL.
+	 * @return string
+	 */
+	public static function preview_img_html( $url ) {
+		return '<img class="apd-config-preview" src="' . esc_url( $url ) . '" alt="" width="180" style="display:block;width:180px;max-width:100%;height:auto;background:#fff;" />';
+	}
+
+	/**
+	 * Write a shopper's canvas snapshot and return its URL.
+	 *
+	 * @param string $data_url data:image/png;base64,...
+	 * @return string Empty when the payload is not a small PNG.
+	 */
+	public static function store_preview_png( $data_url ) {
+		$check = APD_Security::validate_png_data_url( $data_url, 1500000 );
+
+		if ( is_wp_error( $check ) ) {
+			return '';
+		}
+
+		$raw = base64_decode( substr( $data_url, strlen( 'data:image/png;base64,' ) ), true );
+
+		if ( ! is_string( $raw ) || '' === $raw ) {
+			return '';
+		}
+
+		$upload = wp_upload_dir();
+
+		if ( ! empty( $upload['error'] ) ) {
+			return '';
+		}
+
+		$dir = trailingslashit( $upload['basedir'] ) . 'apd-previews';
+
+		if ( ! wp_mkdir_p( $dir ) ) {
+			return '';
+		}
+
+		$name = hash( 'sha256', $raw ) . '.png';
+		$path = $dir . '/' . $name;
+
+		if ( ! is_file( $path ) ) {
+			// phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_file_put_contents
+			$written = file_put_contents( $path, $raw );
+
+			if ( false === $written ) {
+				return '';
+			}
+		}
+
+		return trailingslashit( $upload['baseurl'] ) . 'apd-previews/' . $name;
 	}
 
 	/**
@@ -683,9 +915,10 @@ final class APD_WooCommerce {
 			'format_type'      => isset( $format['type'] ) ? (string) $format['type'] : '',
 			'width'            => isset( $format['width'] ) ? (int) $format['width'] : 0,
 			'height'           => isset( $format['height'] ) ? (int) $format['height'] : 0,
-			'border_width'     => ! empty( $format['no_frame'] ) ? 0 : ( isset( $format['border_width'] ) ? (int) $format['border_width'] : 0 ),
+			'border_width'     => isset( $format['border_width'] ) ? (int) $format['border_width'] : 0,
 			'border_color'     => isset( $format['border_color'] ) ? (string) $format['border_color'] : '',
 			'no_frame'         => ! empty( $format['no_frame'] ),
+			'frame_choice'     => ! isset( $format['type'] ) || APD_Formats::offers_frame_choice( (string) $format['type'] ),
 			'band_ratio'       => isset( $format['band_ratio'] ) ? (float) $format['band_ratio'] : 0,
 			'band_side'        => isset( $format['band_side'] ) ? (string) $format['band_side'] : '',
 			'band_box'         => isset( $format['band_box'] ) && is_array( $format['band_box'] ) ? $format['band_box'] : array(),
@@ -766,6 +999,37 @@ final class APD_WooCommerce {
 	}
 
 	/**
+	 * Latest styled configuration for this product already in the cart.
+	 *
+	 * WooCommerce redirects back to the product after add to cart. The
+	 * configurator uses this snapshot so the preview stays styled.
+	 *
+	 * @param int $product_id Product ID.
+	 * @return array<string, mixed>
+	 */
+	public static function latest_cart_config( $product_id ) {
+		$product_id = absint( $product_id );
+
+		if ( $product_id < 1 || ! function_exists( 'WC' ) || ! WC()->cart ) {
+			return array();
+		}
+
+		$found = array();
+
+		foreach ( WC()->cart->get_cart() as $item ) {
+			$item_product = isset( $item['product_id'] ) ? (int) $item['product_id'] : 0;
+
+			if ( $item_product !== $product_id || empty( $item[ self::CART_KEY ] ) || ! is_array( $item[ self::CART_KEY ] ) ) {
+				continue;
+			}
+
+			$found = $item[ self::CART_KEY ];
+		}
+
+		return $found;
+	}
+
+	/**
 	 * Payload for JS and the PHP template.
 	 *
 	 * @param int $product_id Product ID.
@@ -793,6 +1057,8 @@ final class APD_WooCommerce {
 			'layouts'      => $layouts,
 			'color_fields' => APD_Admin_Settings::product_color_fields( $product_id ),
 			'palettes'     => APD_Admin_Settings::product_offered_colors( $product_id ),
+			'default_text' => APD_Admin_Settings::product_initial_text( $product_id, $format ),
+			'cart_restore' => self::latest_cart_config( $product_id ),
 			'rules'    => APD_Security::frontend_text_rules(),
 			'minFont'  => $min,
 			'i18n'     => array(
@@ -807,7 +1073,8 @@ final class APD_WooCommerce {
 				'textColor'     => __( 'Text color', 'auto-plate-designer' ),
 				'borderColor'   => __( 'Border color', 'auto-plate-designer' ),
 				'plateColor'    => __( 'Plate color', 'auto-plate-designer' ),
-				'stripColor'    => __( 'Text background', 'auto-plate-designer' ),
+				'stripColor'    => __( 'White strip color', 'auto-plate-designer' ),
+				'frameLabel'    => __( 'Add frame', 'auto-plate-designer' ),
 				'chars'         => __( '%1$s / %2$s characters', 'auto-plate-designer' ),
 				'invalid'       => __( 'Please enter valid plate text before adding to cart.', 'auto-plate-designer' ),
 			),
@@ -835,16 +1102,46 @@ final class APD_WooCommerce {
 			return new WP_Error( 'apd_format_missing', __( 'This product has no plate format.', 'auto-plate-designer' ) );
 		}
 
-		$payload    = APD_Formats::frontend_payload( $format );
-		$max_chars  = (int) $payload['max_chars'];
+		$payload     = APD_Formats::frontend_payload( $format );
+		$max_chars   = (int) $payload['max_chars'];
 		$allow_empty = ! empty( $payload['allow_empty'] );
-		$multiline  = ! empty( $payload['multiline'] );
-		$text       = isset( $_POST['apd_text'] ) ? (string) wp_unslash( $_POST['apd_text'] ) : ''; // phpcs:ignore WordPress.Security.ValidatedSanitizedInput.InputNotSanitized
+		$multiline   = ! empty( $payload['multiline'] );
+		$format_type = isset( $format['type'] ) ? (string) $format['type'] : '';
+		$text        = isset( $_POST['apd_text'] ) ? (string) wp_unslash( $_POST['apd_text'] ) : ''; // phpcs:ignore WordPress.Security.ValidatedSanitizedInput.InputNotSanitized
+		$length_limit = $max_chars;
+
+		if ( APD_Formats::is_suv_kind( $format_type ) && ( isset( $_POST['apd_text_row_1'] ) || isset( $_POST['apd_text_row_2'] ) ) ) {
+			$row_limits = APD_Formats::suv_row_limits( $format );
+			$row1       = isset( $_POST['apd_text_row_1'] ) ? (string) wp_unslash( $_POST['apd_text_row_1'] ) : ''; // phpcs:ignore WordPress.Security.ValidatedSanitizedInput.InputNotSanitized
+			$row2       = isset( $_POST['apd_text_row_2'] ) ? (string) wp_unslash( $_POST['apd_text_row_2'] ) : ''; // phpcs:ignore WordPress.Security.ValidatedSanitizedInput.InputNotSanitized
+			$row1_clean = APD_Security::sanitize_plate_text( $row1, false );
+			$row2_clean = APD_Security::sanitize_plate_text( $row2, false );
+			$row_length = static function ( $value ) {
+				return function_exists( 'mb_strlen' ) ? mb_strlen( $value, 'UTF-8' ) : strlen( $value );
+			};
+
+			foreach ( array( array( $row1_clean, $row_limits[0] ), array( $row2_clean, $row_limits[1] ) ) as $row_check ) {
+				if ( $row_length( $row_check[0] ) > $row_check[1] ) {
+					return APD_Security::validate_plate_text(
+						$row_check[0],
+						array(
+							'max_length'  => $row_check[1],
+							'multiline'   => false,
+							'allow_empty' => true,
+						)
+					);
+				}
+			}
+
+			$text         = APD_Formats::join_suv_rows( $row1_clean, $row2_clean );
+			$multiline    = true;
+			$length_limit = $row_limits[0] + $row_limits[1] + ( false !== strpos( $text, "\n" ) ? 1 : 0 );
+		}
 
 		$text_check = APD_Security::validate_plate_text(
 			$text,
 			array(
-				'max_length'  => $max_chars,
+				'max_length'  => $length_limit,
 				'multiline'   => $multiline,
 				'allow_empty' => $allow_empty,
 			)
@@ -919,20 +1216,29 @@ final class APD_WooCommerce {
 			}
 		}
 
-		$color_fields = APD_Admin_Settings::product_color_fields( $product_id );
-		$no_frame     = APD_Formats::uses_painted_plate( $type ) && ! empty( $format['no_frame'] );
-		$text_color   = $this->snapshot_palette_color( $product_id, 'apd_text_color', 'text', in_array( 'text', $color_fields, true ) );
-		$border_color = $this->snapshot_palette_color( $product_id, 'apd_border_color', 'border', ! $no_frame && in_array( 'border', $color_fields, true ) );
-		$fill_color   = $this->snapshot_palette_color( $product_id, 'apd_background_color', 'background', in_array( 'background', $color_fields, true ) );
+		$color_fields  = APD_Admin_Settings::product_color_fields( $product_id );
+		$frame_chosen  = APD_Formats::offers_frame_choice( $type ) && isset( $_POST['apd_frame'] ) && '1' === sanitize_text_field( wp_unslash( $_POST['apd_frame'] ) );
+		$admin_border  = isset( $format['border_width'] ) ? (int) $format['border_width'] : 0;
+		$text_color    = $this->snapshot_palette_color( $product_id, 'apd_text_color', 'text', in_array( 'text', $color_fields, true ) );
+		$border_color  = $this->snapshot_palette_color( $product_id, 'apd_border_color', 'border', $frame_chosen && in_array( 'border', $color_fields, true ) );
+		$fill_color    = $this->snapshot_palette_color( $product_id, 'apd_background_color', 'background', in_array( 'background', $color_fields, true ) );
+
+		if ( $frame_chosen && '' === $border_color['hex'] && isset( $format['border_color'] ) ) {
+			$border_color['hex'] = (string) $format['border_color'];
+		}
+
+		$posted_preview = isset( $_POST['apd_preview'] ) ? (string) wp_unslash( $_POST['apd_preview'] ) : ''; // phpcs:ignore WordPress.Security.ValidatedSanitizedInput.InputNotSanitized
+		$preview_url    = self::store_preview_png( $posted_preview );
 
 		return array(
 			'format_id'              => $format['id'],
+			'preview_url'            => $preview_url,
 			'format_name'            => isset( $format['name'] ) ? (string) $format['name'] : '',
 			'format_type'            => $type,
 			'format_type_label'      => APD_Formats::type_label( $type ),
 			'format_width'           => isset( $format['width'] ) ? (int) $format['width'] : 0,
 			'format_height'          => isset( $format['height'] ) ? (int) $format['height'] : 0,
-			'format_border_width'    => $no_frame ? 0 : ( isset( $format['border_width'] ) ? (int) $format['border_width'] : 0 ),
+			'format_border_width'    => $frame_chosen ? $admin_border : 0,
 			'format_border_color'    => isset( $format['border_color'] ) ? (string) $format['border_color'] : '',
 			'format_band_ratio'      => isset( $format['band_ratio'] ) ? (float) $format['band_ratio'] : 0,
 			'format_band_side'       => isset( $format['band_side'] ) ? (string) $format['band_side'] : '',
@@ -947,7 +1253,7 @@ final class APD_WooCommerce {
 			'design_code'            => $design_code,
 			'text_box'               => $design_box,
 			'color_fields'           => $color_fields,
-			'no_frame'               => $no_frame,
+			'no_frame'               => ! $frame_chosen,
 			'text_color'             => $text_color['hex'],
 			'text_color_label'       => $text_color['label'],
 			'border_color'           => $border_color['hex'],
@@ -991,9 +1297,20 @@ final class APD_WooCommerce {
 		}
 
 		if ( ! empty( $config['text'] ) ) {
+			$text_value = (string) $config['text'];
+
+			if ( false !== strpos( $text_value, "\n" ) ) {
+				$text_parts = explode( "\n", $text_value, 2 );
+				$text_value = $text_parts[0];
+
+				if ( isset( $text_parts[1] ) && '' !== $text_parts[1] ) {
+					$text_value .= ' / ' . $text_parts[1];
+				}
+			}
+
 			$rows[] = array(
 				'key'   => __( 'Text', 'auto-plate-designer' ),
-				'value' => (string) $config['text'],
+				'value' => $text_value,
 			);
 		}
 
@@ -1034,10 +1351,10 @@ final class APD_WooCommerce {
 			);
 		}
 
-		if ( ! empty( $config['no_frame'] ) ) {
+		if ( APD_Formats::offers_frame_choice( $type ) ) {
 			$rows[] = array(
 				'key'   => __( 'Frame', 'auto-plate-designer' ),
-				'value' => __( 'Without frame', 'auto-plate-designer' ),
+				'value' => ! empty( $config['no_frame'] ) ? __( 'Without frame', 'auto-plate-designer' ) : __( 'With frame', 'auto-plate-designer' ),
 			);
 		}
 
@@ -1053,7 +1370,7 @@ final class APD_WooCommerce {
 
 		if ( self::config_includes_color( $config, 'background' ) && ! empty( $config['background_color'] ) ) {
 			$fill_key = 'holder' === $type
-				? __( 'Text background', 'auto-plate-designer' )
+				? __( 'White strip color', 'auto-plate-designer' )
 				: __( 'Plate color', 'auto-plate-designer' );
 
 			$rows[] = array(

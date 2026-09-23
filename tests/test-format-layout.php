@@ -131,7 +131,7 @@ if ( abs( (float) $bare['band_box']['width'] - 15 ) > 0.2 || 'right' !== $bare['
 $payload_bare = APD_Formats::frontend_payload( $bare );
 $payload_on   = APD_Formats::frontend_payload( $framed );
 
-if ( empty( $payload_bare['no_frame'] ) || 0 !== (int) $payload_bare['border_width'] ) {
+if ( empty( $payload_bare['no_frame'] ) || 12 !== (int) $payload_bare['border_width'] || empty( $payload_bare['frame_choice'] ) ) {
 	fwrite( STDERR, "PAYLOAD_NO_FRAME_FAIL\n" );
 	exit( 1 );
 }
@@ -159,6 +159,30 @@ if ( is_wp_error( $color ) || ! empty( $color['band_box'] ) || true !== $color['
 	exit( 1 );
 }
 
+$eu_plain = APD_Formats::sanitize(
+	array(
+		'name' => 'Car without preset',
+		'type' => 'eu_plain',
+	)
+);
+$color_box = APD_Formats::default_text_box( 'color' );
+$plain_box = APD_Formats::default_text_box( 'eu_plain' );
+
+if ( is_wp_error( $eu_plain ) || 520 !== (int) $eu_plain['width'] || 110 !== (int) $eu_plain['height'] || ! empty( $eu_plain['band_box'] ) ) {
+	fwrite( STDERR, "EU_PLAIN_SAVE_FAIL\n" );
+	exit( 1 );
+}
+
+if ( APD_Formats::uses_country_band( 'eu_plain' ) || ! APD_Formats::uses_painted_plate( 'eu_plain' ) || APD_Formats::uses_two_rows( 'eu_plain' ) || 'eu' !== APD_Formats::catalog_kind( 'eu_plain' ) ) {
+	fwrite( STDERR, "EU_PLAIN_FLAGS_FAIL\n" );
+	exit( 1 );
+}
+
+if ( APD_Formats::default_color_fields( 'eu_plain' ) !== APD_Formats::default_color_fields( 'color' ) || $plain_box !== $color_box ) {
+	fwrite( STDERR, "EU_PLAIN_STUDIO_FAIL\n" );
+	exit( 1 );
+}
+
 $us = APD_Formats::sanitize(
 	array(
 		'name'     => 'US no frame ignored',
@@ -169,6 +193,12 @@ $us = APD_Formats::sanitize(
 
 if ( is_wp_error( $us ) || ! empty( $us['no_frame'] ) || APD_Formats::uses_frame( $us ) ) {
 	fwrite( STDERR, "US_NO_FRAME_IGNORED_FAIL\n" );
+	exit( 1 );
+}
+
+$us_payload = APD_Formats::frontend_payload( $us );
+if ( ! empty( $us_payload['frame_choice'] ) || APD_Formats::offers_frame_choice( 'us' ) || APD_Formats::offers_frame_choice( 'holder' ) || ! APD_Formats::offers_frame_choice( 'eu' ) ) {
+	fwrite( STDERR, "US_FRAME_CHOICE_FAIL\n" );
 	exit( 1 );
 }
 
@@ -228,12 +258,12 @@ echo 'US_SAVE_WITHOUT_BAND_OK' . PHP_EOL;
 
 $moto = APD_Formats::sanitize(
 	array(
-		'name' => 'Moto 24x13',
+		'name' => 'Moto 199x154',
 		'type' => 'moto',
 	)
 );
 
-if ( is_wp_error( $moto ) || 240 !== (int) $moto['width'] || 130 !== (int) $moto['height'] ) {
+if ( is_wp_error( $moto ) || 199 !== (int) $moto['width'] || 154 !== (int) $moto['height'] ) {
 	fwrite( STDERR, 'MOTO_DEFAULT_SIZE_FAIL ' . wp_json_encode( $moto ) . PHP_EOL );
 	exit( 1 );
 }
@@ -245,6 +275,122 @@ if ( ! APD_Formats::uses_country_band( 'moto' ) || ! APD_Formats::uses_painted_p
 
 echo 'MOTO_TYPE_OK' . PHP_EOL;
 
+$two_row_types = array( 'moto', 'moto_plain', 'suv', 'suv_eu' );
+$single_types  = array( 'eu', 'eu_plain', 'us', 'color', 'custom', 'holder' );
+
+foreach ( $two_row_types as $two_type ) {
+	if ( ! APD_Formats::uses_two_rows( $two_type ) ) {
+		fwrite( STDERR, "TWO_ROW_FLAG_FAIL {$two_type}\n" );
+		exit( 1 );
+	}
+	$two_box = APD_Formats::sanitize_text_box( array(), $two_type );
+	if ( ! isset( $two_box['letter_align'], $two_box['number_align'] ) || 'justify' !== $two_box['letter_align'] || 'justify' !== $two_box['number_align'] ) {
+		fwrite( STDERR, 'TWO_ROW_ALIGN_FAIL ' . wp_json_encode( $two_box ) . PHP_EOL );
+		exit( 1 );
+	}
+}
+
+foreach ( $single_types as $single_type ) {
+	if ( APD_Formats::uses_two_rows( $single_type ) ) {
+		fwrite( STDERR, "SINGLE_ROW_FLAG_FAIL {$single_type}\n" );
+		exit( 1 );
+	}
+}
+
+$us_keeps_align = APD_Formats::sanitize_text_box(
+	array(
+		'align'        => 'justify',
+		'letter_align' => 'justify',
+	),
+	'us'
+);
+
+if ( isset( $us_keeps_align['letter_align'] ) || 'center' !== $us_keeps_align['align'] ) {
+	fwrite( STDERR, 'US_ROW_ALIGN_LEAK ' . wp_json_encode( $us_keeps_align ) . PHP_EOL );
+	exit( 1 );
+}
+
+echo 'TWO_ROW_LAYOUT_OK' . PHP_EOL;
+
+$moto_plain = APD_Formats::sanitize(
+	array(
+		'name' => 'Moto no preset',
+		'type' => 'moto_plain',
+	)
+);
+
+if ( is_wp_error( $moto_plain ) || 199 !== (int) $moto_plain['width'] || 154 !== (int) $moto_plain['height'] ) {
+	fwrite( STDERR, 'MOTO_PLAIN_DEFAULT_SIZE_FAIL ' . wp_json_encode( $moto_plain ) . PHP_EOL );
+	exit( 1 );
+}
+
+if ( APD_Formats::uses_country_band( 'moto_plain' ) || ! APD_Formats::uses_painted_plate( 'moto_plain' ) || APD_Formats::uses_base_image( 'moto_plain' ) ) {
+	fwrite( STDERR, "MOTO_PLAIN_FLAGS_FAIL\n" );
+	exit( 1 );
+}
+
+if ( 'moto' !== APD_Formats::catalog_kind( 'moto_plain' ) ) {
+	fwrite( STDERR, "MOTO_PLAIN_CATALOG_KIND_FAIL\n" );
+	exit( 1 );
+}
+
+echo 'MOTO_PLAIN_TYPE_OK' . PHP_EOL;
+
+$suv_eu = APD_Formats::sanitize(
+	array(
+		'name' => 'SUV EU',
+		'type' => 'suv_eu',
+	)
+);
+
+if ( is_wp_error( $suv_eu ) || 280 !== (int) $suv_eu['width'] || 200 !== (int) $suv_eu['height'] ) {
+	fwrite( STDERR, 'SUV_EU_DEFAULT_SIZE_FAIL ' . wp_json_encode( $suv_eu ) . PHP_EOL );
+	exit( 1 );
+}
+
+if ( abs( (float) $suv_eu['band_box']['height'] - 50 ) > 0.2 || abs( (float) $suv_eu['band_box']['y'] ) > 0.1 || abs( (float) $suv_eu['band_box']['width'] - 13 ) > 0.4 ) {
+	fwrite( STDERR, 'SUV_EU_BAND_ROW_FAIL ' . wp_json_encode( $suv_eu['band_box'] ) . PHP_EOL );
+	exit( 1 );
+}
+
+if ( (float) $suv_eu['text_box']['x'] > 8 || (float) $suv_eu['text_box']['width'] < 85 ) {
+	fwrite( STDERR, 'SUV_EU_TEXT_SPAN_FAIL ' . wp_json_encode( $suv_eu['text_box'] ) . PHP_EOL );
+	exit( 1 );
+}
+
+if ( abs( (float) $moto['band_box']['height'] - 100 ) > 0.2 ) {
+	fwrite( STDERR, 'MOTO_BAND_STILL_FULL_FAIL ' . wp_json_encode( $moto['band_box'] ) . PHP_EOL );
+	exit( 1 );
+}
+
+if ( ! APD_Formats::uses_country_band( 'suv_eu' ) || ! APD_Formats::uses_painted_plate( 'suv_eu' ) || APD_Formats::uses_base_image( 'suv_eu' ) ) {
+	fwrite( STDERR, "SUV_EU_FLAGS_FAIL\n" );
+	exit( 1 );
+}
+
+if ( 'suv' !== APD_Formats::catalog_kind( 'suv_eu' ) ) {
+	fwrite( STDERR, "SUV_EU_CATALOG_KIND_FAIL\n" );
+	exit( 1 );
+}
+
+$suv_eu_payload = APD_Formats::frontend_payload( $suv_eu );
+if ( empty( $suv_eu_payload['capabilities']['country_band'] ) || empty( $suv_eu_payload['capabilities']['painted'] ) ) {
+	fwrite( STDERR, "SUV_EU_PAYLOAD_CAPS_FAIL\n" );
+	exit( 1 );
+}
+
+if ( APD_Formats::admin_sample_plate_text( 'eu' ) !== 'CA 1234' || APD_Formats::admin_sample_plate_text( 'moto' ) !== 'CA 1234' || APD_Formats::admin_sample_plate_text( 'suv' ) !== 'CAAA 1234' || APD_Formats::admin_sample_plate_text( 'suv_eu' ) !== 'CAAA 1234' ) {
+	fwrite( STDERR, "ADMIN_SAMPLE_TEXT_FAIL\n" );
+	exit( 1 );
+}
+
+if ( abs( APD_Formats::SAMPLE_FONT_FILL - 0.9 ) > 0.001 ) {
+	fwrite( STDERR, "SAMPLE_FONT_FILL_FAIL\n" );
+	exit( 1 );
+}
+
+echo 'ADMIN_STUDIO_SAMPLE_OK' . PHP_EOL;
+
 $suv_missing = APD_Formats::sanitize(
 	array(
 		'name' => 'SUV type C',
@@ -252,24 +398,60 @@ $suv_missing = APD_Formats::sanitize(
 	)
 );
 
-if ( ! is_wp_error( $suv_missing ) ) {
-	fwrite( STDERR, "SUV_SHOULD_REQUIRE_IMAGE\n" );
+if ( is_wp_error( $suv_missing ) || 0 !== (int) $suv_missing['base_image_id'] || array( 5, 4 ) !== APD_Formats::suv_row_limits( $suv_missing ) || 9 !== (int) $suv_missing['max_chars'] ) {
+	fwrite( STDERR, "SUV_PHOTO_NOT_REQUIRED\n" );
+	exit( 1 );
+}
+
+$suv_rows = APD_Formats::sanitize(
+	array(
+		'name'            => 'SUV row caps',
+		'type'            => 'suv_eu',
+		'max_chars_row_1' => 8,
+		'max_chars_row_2' => 3,
+	)
+);
+$suv_rows_payload = is_wp_error( $suv_rows ) ? array() : APD_Formats::frontend_payload( $suv_rows );
+if ( is_wp_error( $suv_rows ) || array( 8, 3 ) !== $suv_rows_payload['row_max_chars'] || 11 !== (int) $suv_rows_payload['max_chars'] || "CA AA\n123" !== APD_Formats::limit_suv_rows( 'CA AAA', '12345', 5, 3 ) ) {
+	fwrite( STDERR, "SUV_ROW_LIMITS_FAIL\n" );
 	exit( 1 );
 }
 
 $suv_size = APD_Formats::default_size( 'suv' );
-if ( 340 !== $suv_size['width'] || 200 !== $suv_size['height'] ) {
+if ( 280 !== $suv_size['width'] || 200 !== $suv_size['height'] ) {
 	fwrite( STDERR, "SUV_DEFAULT_SIZE_FAIL\n" );
 	exit( 1 );
 }
 
-if ( ! APD_Formats::uses_base_image( 'suv' ) || APD_Formats::uses_country_band( 'suv' ) || APD_Formats::uses_painted_plate( 'suv' ) || APD_Formats::uses_plate_designs( 'suv' ) ) {
+if ( APD_Formats::uses_base_image( 'suv' ) || APD_Formats::uses_country_band( 'suv' ) || ! APD_Formats::uses_painted_plate( 'suv' ) || APD_Formats::uses_plate_designs( 'suv' ) ) {
 	fwrite( STDERR, "SUV_FLAGS_FAIL\n" );
 	exit( 1 );
 }
 
-if ( array( 'text' ) !== APD_Formats::color_field_capabilities( 'suv' ) ) {
+if ( array( 'text', 'border', 'background' ) !== APD_Formats::color_field_capabilities( 'suv' ) ) {
 	fwrite( STDERR, "SUV_COLOR_CAPS_FAIL\n" );
+	exit( 1 );
+}
+
+$preset_backup = APD_Plugin::get_settings();
+$preset_probe  = $preset_backup;
+$preset_probe['presets'][] = array(
+	'id'                   => 'probe-eu-only',
+	'name'                 => 'Probe',
+	'country_code'         => 'DE',
+	'active'               => 1,
+	'allowed_format_types' => array( 'eu' ),
+	'image_id'             => 0,
+	'side'                 => 'left',
+	'band_ratio'           => 0.08,
+);
+APD_Plugin::save_settings( $preset_probe );
+$suv_eu_ids = wp_list_pluck( APD_Presets::active_for_format( 'suv_eu' ), 'id' );
+$moto_ids   = wp_list_pluck( APD_Presets::active_for_format( 'moto' ), 'id' );
+$plain_ids  = APD_Presets::active_for_format( 'suv' );
+APD_Plugin::save_settings( $preset_backup );
+if ( ! in_array( 'probe-eu-only', $suv_eu_ids, true ) || ! in_array( 'probe-eu-only', $moto_ids, true ) || ! empty( $plain_ids ) ) {
+	fwrite( STDERR, "PRESET_ON_EU_BAND_FAIL\n" );
 	exit( 1 );
 }
 
@@ -309,15 +491,31 @@ if ( abs( ( $centered['x'] + ( $centered['width'] / 2 ) ) - $mid_x ) > 0.6 || ab
 }
 
 $holder_region = APD_Formats::text_area_region( array( 'type' => 'holder' ) );
-if ( abs( $holder_region['y'] - 82 ) > 0.1 || abs( $holder_region['height'] - 18 ) > 0.1 ) {
+$holder_strip  = APD_Formats::holder_strip_box();
+$holder_size   = APD_Formats::default_size( 'holder' );
+if ( abs( $holder_region['y'] - $holder_strip['y'] ) > 0.1 || abs( $holder_region['height'] - $holder_strip['height'] ) > 0.1 ) {
 	fwrite( STDERR, "HOLDER_REGION_FAIL\n" );
+	exit( 1 );
+}
+if ( 520 !== (int) $holder_size['width'] || 260 !== (int) $holder_size['height'] || '' === APD_Formats::bundled_holder_image_url() ) {
+	fwrite( STDERR, "HOLDER_STANDARD_FAIL\n" );
 	exit( 1 );
 }
 
 echo 'CENTER_TEXT_BOX_OK' . PHP_EOL;
 
-if ( 500 !== APD_Formats::CANVAS_DISPLAY_MAX_PX ) {
+if ( 500 !== APD_Formats::CANVAS_DISPLAY_MAX_PX || 106 !== APD_Formats::CANVAS_DISPLAY_MAX_H_PX ) {
 	fwrite( STDERR, "CANVAS_MAX_FAIL\n" );
+	exit( 1 );
+}
+
+$eu_display    = APD_Formats::canvas_display_width( 520, 110 );
+$moto_display  = APD_Formats::canvas_display_width( 199, 154 );
+$us_display    = APD_Formats::canvas_display_width( 305, 152 );
+$suv_display   = APD_Formats::canvas_display_width( 280, 200 );
+$holder_display = APD_Formats::canvas_display_width( 520, 260 );
+if ( 500 !== $eu_display || $eu_display !== $moto_display || $eu_display !== $us_display || $eu_display !== $suv_display || $eu_display !== $holder_display ) {
+	fwrite( STDERR, "CANVAS_DISPLAY_FAIL eu={$eu_display} moto={$moto_display} us={$us_display}\n" );
 	exit( 1 );
 }
 

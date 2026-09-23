@@ -130,6 +130,28 @@ final class APD_Catalog {
 	}
 
 	/**
+	 * Format types that are filed in this catalog category.
+	 *
+	 * @param string $kind Catalog kind, such as eu or moto.
+	 * @return array<int, string>
+	 */
+	public static function format_types_for_kind( $kind ) {
+		$kind  = (string) $kind;
+		$types = class_exists( 'APD_Security' ) ? APD_Security::allowed_format_types() : array( $kind );
+		$match = array();
+
+		foreach ( $types as $type ) {
+			$resolved = class_exists( 'APD_Formats' ) ? APD_Formats::catalog_kind( $type ) : (string) $type;
+
+			if ( $resolved === $kind ) {
+				$match[] = (string) $type;
+			}
+		}
+
+		return $match;
+	}
+
+	/**
 	 * Published category slugs from settings.
 	 *
 	 * @return array<int, string>
@@ -238,6 +260,10 @@ final class APD_Catalog {
 	 */
 	public static function maybe_assign_product_term( $product_id, $kind ) {
 		$product_id = absint( $product_id );
+
+		if ( class_exists( 'APD_Formats' ) ) {
+			$kind = APD_Formats::catalog_kind( $kind );
+		}
 
 		if ( $product_id < 1 || ! taxonomy_exists( 'product_cat' ) ) {
 			return;

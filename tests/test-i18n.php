@@ -33,13 +33,32 @@ $required = array(
 	'Without frame'      => 'Без рамка',
 	'Width'              => 'Широчина',
 	'Height'             => 'Височина',
-	'Country band'       => 'Държавна лента',
+	'Country band'       => 'Държава на регистрация',
+	'First row'          => 'Първи ред',
+	'Second row'         => 'Втори ред',
+	'Characters per row' => 'Символи на ред',
+	'First row maximum'  => 'Максимум за първи ред',
+	'Second row maximum' => 'Максимум за втори ред',
+	'Shoppers cannot type more than this on that row.' => 'Клиентът не може да въведе повече символи на този ред.',
+	'Add Format'         => 'Добави формат',
+	'Select type'        => 'Избери тип',
+	'Country preset'     => 'Държавен пресет',
 	'Add format'         => 'Добави формат',
 	'Update format'      => 'Обнови формат',
 	'Maximum characters' => 'Максимален брой символи',
 	'Fonts'              => 'Шрифтове',
 	'Catalog'            => 'Каталог',
 	'Color palette'      => 'Цветна палета',
+	'Add design'         => 'Добави дизайн',
+	'Add palette'        => 'Добави палета',
+	'Add font'           => 'Добави шрифт',
+	'1. Shop buttons'    => '1. Бутони в магазина',
+	'2. Color library'   => '2. Библиотека с цветове',
+	'3. Named palettes'  => '3. Именувани палети',
+	'Remove'             => 'Премахни',
+	'Space between'      => 'С разстояние',
+	'Letters'            => 'Букви',
+	'Numbers'            => 'Цифри',
 	'Country presets'    => 'Държавни пресети',
 	'Text color'         => 'Цвят на текста',
 	'Border color'       => 'Цвят на рамката',
@@ -49,9 +68,15 @@ $required = array(
 	'Band width'         => 'Широчина на лентата',
 	'Band height'        => 'Височина на лентата',
 	'Center text area'   => 'Центрирай текстовата област',
-	'Motorcycle plate'   => 'Номер за мотор',
-	'SUV / crossover plate' => 'SUV / кросоувър номер',
-	'Plate holder'       => 'Стойка за номер',
+	'EU motorcycle plate' => 'EU табела за мотор',
+	'Motorcycle plate without preset' => 'Табела за мотор без пресет',
+	'EU SUV plate'       => 'EU табела за SUV',
+	'SUV plate without preset' => 'Табела за SUV без пресет',
+	'Car plate holders'  => 'Стойки за автомобилни номера',
+	'Car plate without preset' => 'Авто табела без пресет',
+	'Publish in the shop' => 'Публикувай в магазина',
+	'Format types in this category: %s' => 'Типове формати в тази категория: %s',
+	'Add frame'          => 'Добави рамка',
 );
 
 $missing = array();
@@ -114,9 +139,11 @@ load_plugin_textdomain(
 $translated = __( 'Formats', 'auto-plate-designer' );
 $without    = __( 'Without frame', 'auto-plate-designer' );
 $default    = __( 'Default color', 'auto-plate-designer' );
+$country    = __( 'Country band', 'auto-plate-designer' );
+$row_label  = __( 'First row', 'auto-plate-designer' );
 
-if ( 'Формати' !== $translated || 'Без рамка' !== $without || 'Цвят по подразбиране' !== $default ) {
-	fwrite( STDERR, "WP_TRANSLATE_FAIL Formats={$translated} Without={$without} Default={$default}\n" );
+if ( 'Формати' !== $translated || 'Без рамка' !== $without || 'Цвят по подразбиране' !== $default || 'Държава на регистрация' !== $country || 'Първи ред' !== $row_label ) {
+	fwrite( STDERR, "WP_TRANSLATE_FAIL Formats={$translated} Without={$without} Default={$default} Country={$country} Row={$row_label}\n" );
 	exit( 1 );
 }
 
