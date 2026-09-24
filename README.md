@@ -48,6 +48,10 @@ Plugin strings use the `auto-plate-designer` text domain. Bulgarian translations
 
 Holders use the bundled car-holder photo at 520×260. Shoppers change the strip text and the strip color. The color follows the rounded ends of the white bar. Single-line text is centered on the ink of the glyphs.
 
+## Updates
+
+The plugin is not on WordPress.org. wp-admin compares the installed `Version` with tags on [github.com/GerganaTs/auto-plate-designer](https://github.com/GerganaTs/auto-plate-designer). A tag such as `v1.0.1` shows an Update button when it is newer than the copy on the site. Before tagging, set the same number in the plugin header and in `APD_VERSION`. Replacing the plugin this way keeps the saved formats in the database. Deleting the plugin from the Plugins screen removes them.
+
 ## Catalog
 
 The plugin creates WooCommerce categories for EU, USA, motorcycle, SUV, street, color, and holder plates, and assigns a configured product to the matching category.

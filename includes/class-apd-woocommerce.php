@@ -1172,16 +1172,16 @@ final class APD_WooCommerce {
 		if ( APD_Formats::uses_country_band( isset( $format['type'] ) ? (string) $format['type'] : '' ) ) {
 			$preset_id = isset( $_POST['apd_preset_id'] ) ? sanitize_text_field( wp_unslash( $_POST['apd_preset_id'] ) ) : '';
 
-			foreach ( $payload['presets'] as $preset ) {
-				if ( $preset['id'] === $preset_id ) {
-					$preset_label = $preset['name'];
-					break;
-				}
+		foreach ( $payload['presets'] as $preset ) {
+			if ( $preset['id'] === $preset_id ) {
+				$preset_label = $preset['name'];
+				break;
 			}
+		}
 
-			if ( '' === $preset_label && ! empty( $payload['presets'] ) ) {
-				$preset_id    = $payload['presets'][0]['id'];
-				$preset_label = $payload['presets'][0]['name'];
+		if ( '' === $preset_label && ! empty( $payload['presets'] ) ) {
+			$preset_id    = $payload['presets'][0]['id'];
+			$preset_label = $payload['presets'][0]['name'];
 			}
 		}
 

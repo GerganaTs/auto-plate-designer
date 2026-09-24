@@ -1,7 +1,8 @@
 <?php
 /**
  * Plugin Name:       Auto Plate Designer
- * Plugin URI:        https://example.com/auto-plate-designer
+ * Plugin URI:        https://github.com/GerganaTs/auto-plate-designer
+ * Update URI:        https://github.com/GerganaTs/auto-plate-designer
  * Description:       WooCommerce product configurator for custom vehicle plates with real-time canvas preview.
  * Version:           1.0.0
  * Requires at least: 6.0
@@ -32,7 +33,10 @@ define( 'APD_OPTION_KEY', 'apd_settings' );
 define( 'APD_CACHE_KEY', 'apd_settings_cache_v14' );
 
 require_once APD_PLUGIN_DIR . 'includes/class-apd-security.php';
+require_once APD_PLUGIN_DIR . 'includes/class-apd-updater.php';
 require_once APD_PLUGIN_DIR . 'includes/class-apd-plugin.php';
+
+APD_Updater::register();
 
 register_activation_hook( APD_PLUGIN_FILE, array( 'APD_Plugin', 'activate' ) );
 register_deactivation_hook( APD_PLUGIN_FILE, array( 'APD_Plugin', 'deactivate' ) );

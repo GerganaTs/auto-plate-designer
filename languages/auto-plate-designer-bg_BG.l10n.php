@@ -14,6 +14,8 @@ return array(
 		'First row maximum'                                => 'Максимум за първи ред',
 		'Second row maximum'                              => 'Максимум за втори ред',
 		'Shoppers cannot type more than this on that row.' => 'Клиентът не може да въведе повече символи на този ред.',
+		'Details are on the GitHub tag.'                => 'Подробностите са в тага в GitHub.',
+		'WooCommerce product configurator for custom vehicle plates.' => 'Конфигуратор на WooCommerce за персонални автомобилни номера.',
 		'Change country'                                   => 'Смени държавата',
 		'Choose country'                                   => 'Избери държава',
 		'Close'                                            => 'Затвори',
