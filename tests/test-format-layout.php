@@ -497,7 +497,24 @@ if ( abs( $holder_region['y'] - $holder_strip['y'] ) > 0.1 || abs( $holder_regio
 	fwrite( STDERR, "HOLDER_REGION_FAIL\n" );
 	exit( 1 );
 }
-if ( 520 !== (int) $holder_size['width'] || 260 !== (int) $holder_size['height'] || '' === APD_Formats::bundled_holder_image_url() ) {
+$holder_limit_row = APD_Formats::sanitize(
+	array(
+		'name'      => 'Holder limit',
+		'type'      => 'holder',
+		'max_chars' => 24,
+	)
+);
+if ( ! is_wp_error( $holder_limit_row ) ) {
+	$holder_limit_row['max_chars'] = 24;
+}
+$holder_limit_payload = is_wp_error( $holder_limit_row ) ? array() : APD_Formats::frontend_payload( $holder_limit_row );
+
+if ( APD_Formats::HOLDER_TEXT_MAX !== APD_Formats::holder_text_limit() || APD_Formats::HOLDER_TEXT_MAX !== (int) $holder_limit_payload['max_chars'] || (string) APD_Formats::HOLDER_TEXT_MAX !== APD_Formats::max_chars_label( array( 'type' => 'holder', 'max_chars' => 24 ) ) ) {
+	fwrite( STDERR, "HOLDER_TEXT_LIMIT_FAIL\n" );
+	exit( 1 );
+}
+
+if ( 520 !== (int) $holder_size['width'] || 260 !== (int) $holder_size['height'] || false === strpos( APD_Formats::bundled_holder_image_url(), 'gray-plate-holder-hole.png' ) ) {
 	fwrite( STDERR, "HOLDER_STANDARD_FAIL\n" );
 	exit( 1 );
 }

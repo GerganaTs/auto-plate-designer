@@ -18,6 +18,7 @@ $layout_labels = array(
 	'text_image_text' => __( 'Text / image / text', 'auto-plate-designer' ),
 	'image_text'      => __( 'Image / text', 'auto-plate-designer' ),
 	'multiline_text'  => __( 'Multiline text', 'auto-plate-designer' ),
+	'holder'          => __( 'Holder', 'auto-plate-designer' ),
 );
 ?>
 <div class="apd-tab">

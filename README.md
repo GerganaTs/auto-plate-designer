@@ -46,7 +46,7 @@ Plugin strings use the `auto-plate-designer` text domain. Bulgarian translations
 
 ## Holders
 
-Holders use the bundled car-holder photo at 520×260. Shoppers change the strip text and the strip color. The color follows the rounded ends of the white bar. Single-line text is centered on the ink of the glyphs.
+Holders use the bundled gray mask at 520×260 (`gray-plate-holder-hole.png`). Opaque plastic takes the holder-color palette; the plate windows and the strip slot stay empty. Shoppers then set the strip color and the strip text. The strip color follows the rounded ends of that slot. Single-line text is centered on the ink of the glyphs.
 
 ## Updates
 

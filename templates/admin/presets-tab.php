@@ -9,11 +9,14 @@
 
 defined( 'ABSPATH' ) || exit;
 
-$presets = APD_Presets::all();
-$edit_id = isset( $_GET['edit'] ) ? sanitize_text_field( wp_unslash( $_GET['edit'] ) ) : ''; // phpcs:ignore WordPress.Security.NonceVerification.Recommended
-$editing = '' !== $edit_id ? APD_Presets::get( $edit_id ) : null;
+$presets   = APD_Presets::all();
+$edit_id   = isset( $_GET['edit'] ) ? sanitize_text_field( wp_unslash( $_GET['edit'] ) ) : ''; // phpcs:ignore WordPress.Security.NonceVerification.Recommended
+$is_add    = isset( $_GET['add'] ); // phpcs:ignore WordPress.Security.NonceVerification.Recommended
+$editing   = '' !== $edit_id ? APD_Presets::get( $edit_id ) : null;
+$is_edit   = is_array( $editing );
+$show_form = $is_edit || $is_add;
 
-if ( ! is_array( $editing ) ) {
+if ( ! $is_edit ) {
 	$editing = array(
 		'id'                   => '',
 		'name'                 => '',
@@ -66,6 +69,15 @@ $allowed     = isset( $editing['allowed_format_types'] ) && is_array( $editing['
 		</tbody>
 	</table>
 	</div>
+
+	<?php if ( ! $show_form ) : ?>
+		<p>
+			<a class="button button-primary" href="<?php echo esc_url( add_query_arg( 'add', '1', $apd_admin->tab_url( 'presets' ) ) ); ?>"><?php esc_html_e( 'Add preset', 'auto-plate-designer' ); ?></a>
+		</p>
+	<?php else : ?>
+		<p>
+			<a class="button" href="<?php echo esc_url( $apd_admin->tab_url( 'presets' ) ); ?>"><?php esc_html_e( 'Cancel', 'auto-plate-designer' ); ?></a>
+		</p>
 
 	<h3><?php echo $editing['id'] ? esc_html__( 'Edit preset', 'auto-plate-designer' ) : esc_html__( 'Add preset', 'auto-plate-designer' ); ?></h3>
 
@@ -142,4 +154,5 @@ $allowed     = isset( $editing['allowed_format_types'] ) && is_array( $editing['
 
 		<?php submit_button( $editing['id'] ? __( 'Update preset', 'auto-plate-designer' ) : __( 'Add preset', 'auto-plate-designer' ) ); ?>
 	</form>
+	<?php endif; ?>
 </div>

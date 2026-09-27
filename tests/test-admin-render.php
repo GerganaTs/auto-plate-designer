@@ -53,6 +53,7 @@ $tabs  = array( 'formats', 'catalog', 'presets', 'designs', 'palette', 'fonts', 
 
 $gated_add = array(
 	'formats' => 'Add Format',
+	'presets' => 'Add preset',
 	'designs' => 'Add design',
 	'fonts'   => 'Add font',
 );
@@ -81,6 +82,11 @@ foreach ( $tabs as $tab ) {
 	}
 
 	echo 'TAB_OK ' . $tab . ' len=' . strlen( $html ) . PHP_EOL;
+
+	if ( 'limits' === $tab && ( false === strpos( $html, 'name="apd_limits[layouts][holder][max_chars]"' ) || false === strpos( $html, 'value="' . APD_Formats::HOLDER_TEXT_MAX . '"' ) ) ) {
+		fwrite( STDERR, "HOLDER_LAYOUT_LIMIT_FAIL\n" );
+		exit( 1 );
+	}
 }
 
 $_GET['tab'] = 'formats';
@@ -135,13 +141,40 @@ $format_ok = false !== strpos( $html, 'name="apd_format[no_frame]"' )
 	&& false !== strpos( $html, 'apd-table-scroll' )
 	&& false === strpos( $html, 'Base image' );
 
-echo $format_ok ? "FORMAT_ROW_OK\n" : "FORMAT_ROW_MISSING\n";
+$fonts_preselected = true;
 
-if ( ! $format_ok ) {
+if ( preg_match_all( '/<input type="checkbox" name="apd_format\[font_ids\]\[\]"[^>]*>/', $html, $font_inputs ) && ! empty( $font_inputs[0] ) ) {
+	foreach ( $font_inputs[0] as $font_input ) {
+		if ( false === strpos( $font_input, 'checked=' ) ) {
+			$fonts_preselected = false;
+			break;
+		}
+	}
+}
+
+echo $format_ok ? "FORMAT_ROW_OK\n" : "FORMAT_ROW_MISSING\n";
+echo $fonts_preselected ? "FONT_PRESELECT_OK\n" : "FONT_PRESELECT_FAIL\n";
+
+if ( false === strpos( $html, 'data-apd-fonts-all' ) || false === strpos( $html, 'Select all fonts' ) || preg_match( '/name="apd_format\[font_ids_all\]"[^>]*checked/', $html ) ) {
+	fwrite( STDERR, "FONT_FOLLOW_CHECKBOX_FAIL\n" );
+	exit( 1 );
+}
+
+if ( false === strpos( $html, 'name="apd_base_image"' ) || false === strpos( $html, 'name="apd_format[base_image_id]"' ) || false === strpos( $html, 'data-apd-media="image"' ) ) {
+	fwrite( STDERR, "HOLDER_IMAGE_FIELDS_FAIL\n" );
+	exit( 1 );
+}
+
+if ( ! $format_ok || ! $fonts_preselected ) {
 	exit( 1 );
 }
 
 $admin_js = file_get_contents( APD_PLUGIN_DIR . 'assets/js/admin-settings.js' );
+if ( false === strpos( $admin_js, 'bindSelectAllFonts' ) || false === strpos( $admin_js, 'data-apd-fonts-all' ) || false === strpos( $admin_js, 'master.checked = false' ) || false === strpos( $admin_js, 'box.checked = master.checked' ) ) {
+	fwrite( STDERR, "FONT_FOLLOW_JS_FAIL\n" );
+	exit( 1 );
+}
+
 if ( false === strpos( $admin_js, 'adminSampleSuv' ) || false === strpos( $admin_js, 'CAAA 1234' ) || false === strpos( $admin_js, 'toggleSuvCharLimits' ) ) {
 	fwrite( STDERR, "SUV_STUDIO_JS_FAIL\n" );
 	exit( 1 );
@@ -179,6 +212,8 @@ $admin->render_page();
 $html = ob_get_clean();
 unset( $_GET['add'] );
 $palette_ok = false !== strpos( $html, 'apd_palette[purpose]' )
+	&& false !== strpos( $html, 'value="holder"' )
+	&& false !== strpos( $html, 'Holder color' )
 	&& false !== strpos( $html, 'apd_palette[name]' )
 	&& false !== strpos( $html, 'apd_palette[color_ids][]' )
 	&& false !== strpos( $html, 'apd_swatch[size]' )

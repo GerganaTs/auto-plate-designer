@@ -72,6 +72,7 @@ $i18n = array(
 	'borderColor'   => 'Border color',
 	'plateColor'    => 'Plate color',
 	'stripColor'    => 'White strip color',
+	'holderColor'   => 'Holder color',
 	'frameLabel'    => 'Frame',
 	'chars'         => '%1$s / %2$s characters',
 	'invalid'       => 'Please enter valid plate text before adding to cart.',
@@ -283,8 +284,35 @@ if ( false === strpos( $suv_html, 'name="apd_text_row_1"' ) || false === strpos(
 	exit( 1 );
 }
 
+$holder_payload                         = $apd_payload;
+$holder_payload['format']['type']       = 'holder';
+$holder_payload['color_fields']         = array( 'text', 'background', 'holder' );
+$holder_payload['palettes']['holder']   = array(
+	array(
+		'id'    => 'body',
+		'hex'   => '#000000',
+		'label' => 'Black',
+	),
+);
+$holder_payload['palettes']['background'] = array(
+	array(
+		'id'    => 'white',
+		'hex'   => '#FFFFFF',
+		'label' => 'White',
+	),
+);
+$apd_payload = $holder_payload;
+ob_start();
+include APD_PLUGIN_DIR . 'templates/product-configurator.php';
+$holder_html = ob_get_clean();
+
+if ( false === strpos( $holder_html, 'name="apd_holder_color"' ) || false === strpos( $holder_html, '>Holder color<' ) || false === strpos( $holder_html, 'name="apd_background_color"' ) || false === strpos( $holder_html, '>White strip color<' ) || strpos( $holder_html, 'name="apd_holder_color"' ) > strpos( $holder_html, 'name="apd_background_color"' ) || false !== strpos( $holder_html, 'name="apd_border_color"' ) || false !== strpos( $holder_html, 'name="apd_frame"' ) ) {
+	fwrite( STDERR, "SHOP_HOLDER_COLORS_FAIL\n" );
+	exit( 1 );
+}
+
 $shop_js = file_get_contents( APD_PLUGIN_DIR . 'assets/js/configurator.js' );
-if ( false === strpos( $shop_js, 'groups.join' ) || false === strpos( $shop_js, 'bindStayOnProduct' ) || false === strpos( $shop_js, "format.type === 'us'" ) || false === strpos( $shop_js, "new CustomEvent('wc-blocks_added_to_cart', { bubbles: true })" ) || false === strpos( $shop_js, 'placeBandInsideFrame' ) || false === strpos( $shop_js, 'apd-band-layer' ) || false === strpos( $shop_js, 'plateSnapshot' ) || false === strpos( $shop_js, 'drawImageCover' ) || false === strpos( $shop_js, 'rowsForPlate' ) || false === strpos( $shop_js, 'syncSuvRows' ) || false === strpos( $shop_js, 'rowLimit' ) || false === strpos( $shop_js, 'plateGlyphs' ) || false === strpos( $shop_js, 'clampBoxInsideFrame' ) ) {
+if ( false === strpos( $shop_js, 'groups.join' ) || false === strpos( $shop_js, 'bindStayOnProduct' ) || false === strpos( $shop_js, "format.type === 'us'" ) || false === strpos( $shop_js, "new CustomEvent('wc-blocks_added_to_cart', { bubbles: true })" ) || false === strpos( $shop_js, 'placeBandInsideFrame' ) || false === strpos( $shop_js, 'apd-band-layer' ) || false === strpos( $shop_js, 'plateSnapshot' ) || false === strpos( $shop_js, 'drawImageCover' ) || false === strpos( $shop_js, 'rowsForPlate' ) || false === strpos( $shop_js, 'syncSuvRows' ) || false === strpos( $shop_js, 'rowLimit' ) || false === strpos( $shop_js, 'plateGlyphs' ) || false === strpos( $shop_js, 'clampBoxInsideFrame' ) || false === strpos( $shop_js, 'paintHolderBody' ) || false === strpos( $shop_js, "source-in" ) ) {
 	fwrite( STDERR, "SHOP_JS_RULES_FAIL\n" );
 	exit( 1 );
 }

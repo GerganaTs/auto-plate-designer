@@ -82,6 +82,11 @@ final class APD_Formats {
 	public const ADMIN_SAMPLE_PAINTED = 'CA 1234';
 
 	/**
+	 * Default strip length for holders. The Limits tab can raise or lower it.
+	 */
+	public const HOLDER_TEXT_MAX = 100;
+
+	/**
 	 * Four letters on the first SUV row, shown as two pairs.
 	 */
 	public const ADMIN_SAMPLE_SUV = 'CAAA 1234';
@@ -351,8 +356,13 @@ final class APD_Formats {
 			$row_1_max = self::int_in_range( isset( $raw['max_chars_row_1'] ) ? $raw['max_chars_row_1'] : self::SUV_ROW_1_MAX, 1, APD_Security::ABSOLUTE_MAX_CHARS, self::SUV_ROW_1_MAX );
 			$row_2_max = self::int_in_range( isset( $raw['max_chars_row_2'] ) ? $raw['max_chars_row_2'] : self::SUV_ROW_2_MAX, 1, APD_Security::ABSOLUTE_MAX_CHARS, self::SUV_ROW_2_MAX );
 			$max_chars = min( APD_Security::ABSOLUTE_MAX_CHARS, $row_1_max + $row_2_max );
+		} elseif ( 'holder' === $type ) {
+			$max_chars = self::holder_text_limit();
 		}
-		$font_ids    = self::sanitize_font_ids( isset( $raw['font_ids'] ) ? $raw['font_ids'] : array() );
+		$font_ids_all = ! empty( $raw['font_ids_all'] );
+		$font_ids     = $font_ids_all
+			? self::all_font_ids()
+			: self::sanitize_font_ids( isset( $raw['font_ids'] ) ? $raw['font_ids'] : array() );
 		$normalized  = array(
 			'type'       => $type,
 			'band_ratio' => $band_ratio,
@@ -378,6 +388,7 @@ final class APD_Formats {
 			'max_chars_row_1'  => $row_1_max,
 			'max_chars_row_2'  => $row_2_max,
 			'font_ids'         => $font_ids,
+			'font_ids_all'     => $font_ids_all,
 			'price_adjustment' => round( $price, 2 ),
 		);
 	}
@@ -447,7 +458,7 @@ final class APD_Formats {
 			case 'us':
 				return 8;
 			case 'holder':
-				return 24;
+				return self::HOLDER_TEXT_MAX;
 			case 'custom':
 				return 40;
 			default:
@@ -593,12 +604,39 @@ final class APD_Formats {
 	}
 
 	/**
+	 * Character cap for the holder strip, from Limits → Per-layout limits.
+	 *
+	 * @return int
+	 */
+	public static function holder_text_limit() {
+		$settings = APD_Plugin::get_settings();
+		$row      = isset( $settings['limits']['layouts']['holder'] ) && is_array( $settings['limits']['layouts']['holder'] )
+			? $settings['limits']['layouts']['holder']
+			: array();
+		$chars    = isset( $row['max_chars'] ) ? (int) $row['max_chars'] : self::HOLDER_TEXT_MAX;
+
+		if ( $chars < 1 ) {
+			$chars = self::HOLDER_TEXT_MAX;
+		}
+
+		if ( $chars > APD_Security::ABSOLUTE_MAX_CHARS ) {
+			$chars = APD_Security::ABSOLUTE_MAX_CHARS;
+		}
+
+		return $chars;
+	}
+
+	/**
 	 * Characters column for the formats list.
 	 *
 	 * @param array<string, mixed> $format Format row.
 	 * @return string
 	 */
 	public static function max_chars_label( $format ) {
+		if ( 'holder' === ( isset( $format['type'] ) ? (string) $format['type'] : '' ) ) {
+			return (string) self::holder_text_limit();
+		}
+
 		if ( self::is_suv_kind( isset( $format['type'] ) ? (string) $format['type'] : '' ) ) {
 			$limits = self::suv_row_limits( $format );
 
@@ -1221,7 +1259,7 @@ final class APD_Formats {
 			case 'us':
 				return array( 'text' );
 			case 'holder':
-				return array( 'text', 'background' );
+				return array( 'text', 'background', 'holder' );
 			case 'eu':
 			case 'moto':
 			case 'moto_plain':
@@ -1253,7 +1291,7 @@ final class APD_Formats {
 			case 'us':
 				return array( 'text' );
 			case 'holder':
-				return array( 'text', 'background' );
+				return array( 'text', 'background', 'holder' );
 			case 'eu':
 			case 'moto':
 			case 'moto_plain':
@@ -1289,6 +1327,56 @@ final class APD_Formats {
 		}
 
 		return array_values( array_unique( $clean ) );
+	}
+
+	/**
+	 * Add a newly created font to every format that follows the full library.
+	 *
+	 * @param array<int, array<string, mixed>> $formats Format rows.
+	 * @param string                            $font_id New font ID.
+	 * @return array<int, array<string, mixed>>
+	 */
+	public static function grant_font_to_following_formats( $formats, $font_id ) {
+		if ( ! is_array( $formats ) ) {
+			return array();
+		}
+
+		$font_id = sanitize_text_field( (string) $font_id );
+
+		if ( '' === $font_id ) {
+			return $formats;
+		}
+
+		foreach ( $formats as $index => $format ) {
+			if ( ! is_array( $format ) || empty( $format['font_ids_all'] ) ) {
+				continue;
+			}
+
+			$ids   = isset( $format['font_ids'] ) && is_array( $format['font_ids'] ) ? $format['font_ids'] : array();
+			$ids[] = $font_id;
+			$formats[ $index ]['font_ids'] = array_values( array_unique( array_map( 'strval', $ids ) ) );
+		}
+
+		return $formats;
+	}
+
+	/**
+	 * Every font ID currently in the library.
+	 *
+	 * @return array<int, string>
+	 */
+	private static function all_font_ids() {
+		$settings = APD_Plugin::get_settings();
+		$fonts    = isset( $settings['fonts'] ) && is_array( $settings['fonts'] ) ? $settings['fonts'] : array();
+		$ids      = array();
+
+		foreach ( $fonts as $font ) {
+			if ( isset( $font['id'] ) && '' !== (string) $font['id'] ) {
+				$ids[] = (string) $font['id'];
+			}
+		}
+
+		return array_values( array_unique( $ids ) );
 	}
 
 	/**
@@ -1556,12 +1644,14 @@ final class APD_Formats {
 	}
 
 	/**
-	 * URL of the bundled car plate holder photo, or an empty string.
+	 * URL of the gray holder mask used for body recoloring.
+	 *
+	 * Opaque pixels are the plastic. The plate windows and the strip slot stay transparent.
 	 *
 	 * @return string
 	 */
 	public static function bundled_holder_image_url() {
-		$relative = 'assets/images/car-plate-holder.png';
+		$relative = 'assets/images/gray-plate-holder-hole.png';
 
 		if ( ! is_readable( APD_PLUGIN_DIR . $relative ) ) {
 			return '';
@@ -1623,7 +1713,9 @@ final class APD_Formats {
 	public static function frontend_payload( $format ) {
 		$settings = APD_Plugin::get_settings();
 		$library  = isset( $settings['fonts'] ) && is_array( $settings['fonts'] ) ? $settings['fonts'] : array();
-		$selected = isset( $format['font_ids'] ) && is_array( $format['font_ids'] ) ? $format['font_ids'] : array();
+		$selected = ! empty( $format['font_ids_all'] )
+			? array()
+			: ( isset( $format['font_ids'] ) && is_array( $format['font_ids'] ) ? $format['font_ids'] : array() );
 		$fonts    = array();
 
 		foreach ( $library as $font ) {
@@ -1656,6 +1748,8 @@ final class APD_Formats {
 
 		if ( self::is_suv_kind( $type ) ) {
 			$max_chars = $row_limits[0] + $row_limits[1];
+		} elseif ( 'holder' === $type ) {
+			$max_chars = self::holder_text_limit();
 		}
 		$image_id  = ( self::uses_base_image( $type ) && isset( $format['base_image_id'] ) ) ? absint( $format['base_image_id'] ) : 0;
 		$image_url = $image_id ? wp_get_attachment_image_url( $image_id, 'full' ) : '';

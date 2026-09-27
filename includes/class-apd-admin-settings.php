@@ -298,32 +298,33 @@ final class APD_Admin_Settings {
 				$posted_id = isset( $posted['id'] ) ? sanitize_text_field( (string) $posted['id'] ) : '';
 				if ( is_wp_error( $result ) ) {
 					$return_args = '' !== $posted_id ? array( 'edit' => $posted_id ) : array( 'add' => '1' );
-				} elseif ( '' !== $posted_id && is_array( $result ) && ! empty( $result['id'] ) ) {
-					$return_args = array( 'edit' => $result['id'] );
 				}
 				break;
 			case 'save_preset':
-				$result = APD_Presets::save( $this->unslash_array( isset( $_POST['apd_preset'] ) ? $_POST['apd_preset'] : array() ) );
+				$posted = $this->unslash_array( isset( $_POST['apd_preset'] ) ? $_POST['apd_preset'] : array() );
+				$result = APD_Presets::save( $posted );
 				$tab    = 'presets';
+				if ( is_wp_error( $result ) ) {
+					$posted_id   = isset( $posted['id'] ) ? sanitize_text_field( (string) $posted['id'] ) : '';
+					$return_args = '' !== $posted_id ? array( 'edit' => $posted_id ) : array( 'add' => '1' );
+				}
 				break;
 			case 'save_design':
-				$result = APD_Designs::save( $this->unslash_array( isset( $_POST['apd_design'] ) ? $_POST['apd_design'] : array() ) );
+				$posted = $this->unslash_array( isset( $_POST['apd_design'] ) ? $_POST['apd_design'] : array() );
+				$result = APD_Designs::save( $posted );
 				$tab    = 'designs';
 				if ( is_wp_error( $result ) ) {
-					$posted_id   = isset( $_POST['apd_design']['id'] ) ? sanitize_text_field( wp_unslash( $_POST['apd_design']['id'] ) ) : '';
+					$posted_id   = isset( $posted['id'] ) ? sanitize_text_field( (string) $posted['id'] ) : '';
 					$return_args = '' !== $posted_id ? array( 'edit' => $posted_id ) : array( 'add' => '1' );
-				} elseif ( is_array( $result ) && ! empty( $result['id'] ) ) {
-					$return_args = array( 'edit' => $result['id'] );
 				}
 				break;
 			case 'save_palette':
-				$result = APD_Color_Palettes::save( $this->unslash_array( isset( $_POST['apd_palette'] ) ? $_POST['apd_palette'] : array() ) );
+				$posted = $this->unslash_array( isset( $_POST['apd_palette'] ) ? $_POST['apd_palette'] : array() );
+				$result = APD_Color_Palettes::save( $posted );
 				$tab    = 'palette';
 				if ( is_wp_error( $result ) ) {
-					$posted_id   = isset( $_POST['apd_palette']['id'] ) ? sanitize_text_field( wp_unslash( $_POST['apd_palette']['id'] ) ) : '';
+					$posted_id   = isset( $posted['id'] ) ? sanitize_text_field( (string) $posted['id'] ) : '';
 					$return_args = '' !== $posted_id ? array( 'edit' => $posted_id ) : array( 'add' => '1' );
-				} elseif ( is_array( $result ) && ! empty( $result['id'] ) ) {
-					$return_args = array( 'edit' => $result['id'] );
 				}
 				break;
 			case 'save_swatch_display':
@@ -343,8 +344,7 @@ final class APD_Admin_Settings {
 					$posted_id   = isset( $posted['id'] ) ? sanitize_text_field( (string) $posted['id'] ) : '';
 					$return_args = '' !== $posted_id ? array( 'edit_color' => $posted_id ) : array( 'add_color' => '1' );
 				} else {
-					$result      = true;
-					$return_args = array( 'edit_color' => $color_id );
+					$result = true;
 
 					if ( empty( $posted['id'] ) && ! empty( $posted['palette_ids'] ) && is_array( $posted['palette_ids'] ) ) {
 						$attached = APD_Color_Palettes::attach_color_to_palettes( $color_id, $posted['palette_ids'] );
@@ -540,6 +540,7 @@ final class APD_Admin_Settings {
 			'text'       => __( 'Text color', 'auto-plate-designer' ),
 			'border'     => __( 'Border color', 'auto-plate-designer' ),
 			'background' => __( 'Plate color', 'auto-plate-designer' ),
+			'holder'     => __( 'Holder color', 'auto-plate-designer' ),
 		);
 
 		echo '<div data-apd-color-fields>';
@@ -655,7 +656,9 @@ final class APD_Admin_Settings {
 		}
 
 		$multiline   = is_array( $format_row ) && ! empty( $format_row['multiline'] );
-		$max_chars   = is_array( $format_row ) && isset( $format_row['max_chars'] ) ? (int) $format_row['max_chars'] : 12;
+		$max_chars   = 'holder' === $format_type
+			? APD_Formats::holder_text_limit()
+			: ( is_array( $format_row ) && isset( $format_row['max_chars'] ) ? (int) $format_row['max_chars'] : 12 );
 		$text_limit  = $max_chars > 0 ? $max_chars : 12;
 
 		if ( APD_Formats::is_suv_kind( $format_type ) ) {
@@ -788,6 +791,7 @@ final class APD_Admin_Settings {
 			'text'       => array(),
 			'border'     => array(),
 			'background' => array(),
+			'holder'     => array(),
 		);
 
 		foreach ( array_keys( $out ) as $purpose ) {
@@ -1129,6 +1133,10 @@ final class APD_Admin_Settings {
 
 		if ( ! $found ) {
 			$settings['fonts'][] = $font;
+			$settings['formats'] = APD_Formats::grant_font_to_following_formats(
+				isset( $settings['formats'] ) && is_array( $settings['formats'] ) ? $settings['formats'] : array(),
+				$id
+			);
 		}
 
 		APD_Plugin::save_settings( $settings );
@@ -1201,14 +1209,15 @@ final class APD_Admin_Settings {
 		$settings['limits']['min_font_size'] = $min_font;
 		$settings['limits']['max_lines']     = $max_lines;
 
-		$layout_keys = array( 'text_only', 'text_image_text', 'image_text', 'multiline_text' );
+		$layout_keys = array( 'text_only', 'text_image_text', 'image_text', 'multiline_text', 'holder' );
 
 		foreach ( $layout_keys as $layout ) {
 			$row = isset( $posted['layouts'][ $layout ] ) && is_array( $posted['layouts'][ $layout ] )
 				? $posted['layouts'][ $layout ]
 				: array();
 
-			$max_chars = isset( $row['max_chars'] ) ? absint( $row['max_chars'] ) : 12;
+			$fallback  = 'holder' === $layout ? APD_Formats::HOLDER_TEXT_MAX : 12;
+			$max_chars = isset( $row['max_chars'] ) ? absint( $row['max_chars'] ) : $fallback;
 
 			if ( $max_chars < 1 ) {
 				$max_chars = 1;

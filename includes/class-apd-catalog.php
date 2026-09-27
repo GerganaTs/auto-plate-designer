@@ -37,16 +37,17 @@ final class APD_Catalog {
 	 */
 	private function __construct() {
 		add_action( 'init', array( $this, 'seed_terms' ), 20 );
+		add_action( 'edited_product_cat', array( $this, 'remember_renamed_term' ) );
 		add_filter( 'get_terms_args', array( $this, 'exclude_unpublished' ), 10, 2 );
 	}
 
 	/**
-	 * Category definitions. Other plugins may add rows with the filter.
+	 * Built-in category names. A renamed WooCommerce category replaces these.
 	 *
 	 * @return array<string, array<string, string>>
 	 */
-	public static function definitions() {
-		$defs = array(
+	private static function default_definitions() {
+		return array(
 			'plates-eu'     => array(
 				'name' => __( 'Plates EU', 'auto-plate-designer' ),
 				'kind' => 'eu',
@@ -76,6 +77,22 @@ final class APD_Catalog {
 				'kind' => 'holder',
 			),
 		);
+	}
+
+	/**
+	 * Category definitions. Other plugins may add rows with the filter.
+	 *
+	 * @return array<string, array<string, string>>
+	 */
+	public static function definitions() {
+		$defs  = self::default_definitions();
+		$names = self::stored_names();
+
+		foreach ( $names as $slug => $name ) {
+			if ( isset( $defs[ $slug ] ) && '' !== $name ) {
+				$defs[ $slug ]['name'] = $name;
+			}
+		}
 
 		/**
 		 * Filter WooCommerce product categories created by Auto Plate Designer.
@@ -90,7 +107,33 @@ final class APD_Catalog {
 	}
 
 	/**
-	 * Create missing product_cat terms.
+	 * Names saved after a WooCommerce category was renamed.
+	 *
+	 * @return array<string, string>
+	 */
+	private static function stored_names() {
+		$settings = APD_Plugin::get_settings();
+		$names    = isset( $settings['catalog']['names'] ) && is_array( $settings['catalog']['names'] )
+			? $settings['catalog']['names']
+			: array();
+		$clean    = array();
+
+		foreach ( $names as $slug => $name ) {
+			$slug = sanitize_title( (string) $slug );
+			$name = sanitize_text_field( (string) $name );
+
+			if ( '' !== $slug && '' !== $name ) {
+				$clean[ $slug ] = $name;
+			}
+		}
+
+		return $clean;
+	}
+
+	/**
+	 * Create a catalog category only when that slug is missing.
+	 *
+	 * An existing category keeps the name set in WooCommerce.
 	 */
 	public function seed_terms() {
 		if ( ! taxonomy_exists( 'product_cat' ) ) {
@@ -102,22 +145,13 @@ final class APD_Catalog {
 				continue;
 			}
 
-			$name     = isset( $def['name'] ) ? sanitize_text_field( (string) $def['name'] ) : $slug;
 			$existing = get_term_by( 'slug', $slug, 'product_cat' );
 
 			if ( $existing instanceof WP_Term ) {
-				if ( $existing->name !== $name ) {
-					wp_update_term(
-						$existing->term_id,
-						'product_cat',
-						array(
-							'name' => $name,
-						)
-					);
-				}
-
 				continue;
 			}
+
+			$name = isset( $def['name'] ) ? sanitize_text_field( (string) $def['name'] ) : $slug;
 
 			wp_insert_term(
 				$name,
@@ -127,6 +161,44 @@ final class APD_Catalog {
 				)
 			);
 		}
+	}
+
+	/**
+	 * Keep the plugin label in step with a renamed WooCommerce category.
+	 *
+	 * @param int $term_id Product category ID.
+	 */
+	public function remember_renamed_term( $term_id ) {
+		$term = get_term( (int) $term_id, 'product_cat' );
+
+		if ( ! $term instanceof WP_Term || is_wp_error( $term ) ) {
+			return;
+		}
+
+		$slug = (string) $term->slug;
+
+		if ( ! isset( self::default_definitions()[ $slug ] ) ) {
+			return;
+		}
+
+		$name = sanitize_text_field( $term->name );
+
+		if ( '' === $name ) {
+			return;
+		}
+
+		$settings = APD_Plugin::get_settings();
+
+		if ( ! isset( $settings['catalog'] ) || ! is_array( $settings['catalog'] ) ) {
+			$settings['catalog'] = array();
+		}
+
+		if ( ! isset( $settings['catalog']['names'] ) || ! is_array( $settings['catalog']['names'] ) ) {
+			$settings['catalog']['names'] = array();
+		}
+
+		$settings['catalog']['names'][ $slug ] = $name;
+		APD_Plugin::save_settings( $settings );
 	}
 
 	/**

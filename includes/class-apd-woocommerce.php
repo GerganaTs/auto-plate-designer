@@ -1074,6 +1074,7 @@ final class APD_WooCommerce {
 				'borderColor'   => __( 'Border color', 'auto-plate-designer' ),
 				'plateColor'    => __( 'Plate color', 'auto-plate-designer' ),
 				'stripColor'    => __( 'White strip color', 'auto-plate-designer' ),
+				'holderColor'   => __( 'Holder color', 'auto-plate-designer' ),
 				'frameLabel'    => __( 'Add frame', 'auto-plate-designer' ),
 				'chars'         => __( '%1$s / %2$s characters', 'auto-plate-designer' ),
 				'invalid'       => __( 'Please enter valid plate text before adding to cart.', 'auto-plate-designer' ),
@@ -1222,6 +1223,7 @@ final class APD_WooCommerce {
 		$text_color    = $this->snapshot_palette_color( $product_id, 'apd_text_color', 'text', in_array( 'text', $color_fields, true ) );
 		$border_color  = $this->snapshot_palette_color( $product_id, 'apd_border_color', 'border', $frame_chosen && in_array( 'border', $color_fields, true ) );
 		$fill_color    = $this->snapshot_palette_color( $product_id, 'apd_background_color', 'background', in_array( 'background', $color_fields, true ) );
+		$holder_color  = $this->snapshot_palette_color( $product_id, 'apd_holder_color', 'holder', in_array( 'holder', $color_fields, true ) );
 
 		if ( $frame_chosen && '' === $border_color['hex'] && isset( $format['border_color'] ) ) {
 			$border_color['hex'] = (string) $format['border_color'];
@@ -1260,6 +1262,8 @@ final class APD_WooCommerce {
 			'border_color_label'     => $border_color['label'],
 			'background_color'       => $fill_color['hex'],
 			'background_color_label' => $fill_color['label'],
+			'holder_color'           => $holder_color['hex'],
+			'holder_color_label'     => $holder_color['label'],
 			'price_adjustment'       => (float) $format['price_adjustment'],
 			'offer_fingerprint'      => self::offer_fingerprint( $product_id ),
 		);
@@ -1364,6 +1368,16 @@ final class APD_WooCommerce {
 				'value' => self::format_color_display(
 					(string) $config['border_color'],
 					isset( $config['border_color_label'] ) ? (string) $config['border_color_label'] : ''
+				),
+			);
+		}
+
+		if ( self::config_includes_color( $config, 'holder' ) && ! empty( $config['holder_color'] ) ) {
+			$rows[] = array(
+				'key'   => __( 'Holder color', 'auto-plate-designer' ),
+				'value' => self::format_color_display(
+					(string) $config['holder_color'],
+					isset( $config['holder_color_label'] ) ? (string) $config['holder_color_label'] : ''
 				),
 			);
 		}

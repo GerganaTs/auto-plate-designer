@@ -341,10 +341,11 @@
 
 	function toggleSuvCharLimits(type) {
 		var suv = type === 'suv' || type === 'suv_eu';
+		var hideSingle = suv || type === 'holder' || !type;
 		document.querySelectorAll('[data-apd-max-single]').forEach(function (row) {
-			row.hidden = suv || !type;
+			row.hidden = hideSingle;
 			row.querySelectorAll('input').forEach(function (input) {
-				input.disabled = suv || !type;
+				input.disabled = hideSingle;
 			});
 		});
 		document.querySelectorAll('[data-apd-max-rows]').forEach(function (row) {
@@ -965,6 +966,26 @@
 		return clampBox(next);
 	}
 
+	function bindSelectAllFonts() {
+		var master = document.querySelector('[data-apd-fonts-all]');
+		if (!master) {
+			return;
+		}
+		var boxes = document.querySelectorAll('[name="apd_format[font_ids][]"]');
+		master.addEventListener('change', function () {
+			boxes.forEach(function (box) {
+				box.checked = master.checked;
+			});
+		});
+		boxes.forEach(function (box) {
+			box.addEventListener('change', function () {
+				if (!box.checked) {
+					master.checked = false;
+				}
+			});
+		});
+	}
+
 	function bindTextBoxEditor() {
 		var stage = document.querySelector('[data-apd-text-box-stage]');
 		var boxEl = document.querySelector('[data-apd-text-box]');
@@ -1367,6 +1388,7 @@
 		toggleDesignFormats();
 		toggleSwatchRadius();
 		bindTextBoxEditor();
+		bindSelectAllFonts();
 		bindBandBoxEditor();
 		bindFrameEditor();
 		syncFrameFields();

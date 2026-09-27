@@ -117,6 +117,33 @@ if ( ! $no_frame_found || $border_shown ) {
 
 echo 'NO_FRAME_DISPLAY_OK' . PHP_EOL;
 
+$holder_rows = APD_WooCommerce::config_display_rows(
+	array(
+		'format_name'            => 'Car holder',
+		'format_type'            => 'holder',
+		'text'                   => 'YOUR TEXT',
+		'color_fields'           => array( 'text', 'background', 'holder' ),
+		'text_color'             => '#000000',
+		'text_color_label'       => 'Black',
+		'holder_color'           => '#C41E3A',
+		'holder_color_label'     => 'Red',
+		'background_color'       => '#FDFA00',
+		'background_color_label' => 'Yellow',
+	)
+);
+$holder_keys = array();
+
+foreach ( $holder_rows as $row ) {
+	$holder_keys[] = (string) $row['key'];
+}
+
+if ( ! in_array( __( 'Holder color', 'auto-plate-designer' ), $holder_keys, true ) || ! in_array( __( 'White strip color', 'auto-plate-designer' ), $holder_keys, true ) || ! in_array( __( 'Text color', 'auto-plate-designer' ), $holder_keys, true ) || in_array( __( 'Plate color', 'auto-plate-designer' ), $holder_keys, true ) ) {
+	fwrite( STDERR, "HOLDER_COLOR_ROWS_FAIL\n" );
+	exit( 1 );
+}
+
+echo 'HOLDER_COLOR_ROWS_OK' . PHP_EOL;
+
 $format = APD_Formats::save(
 	array(
 		'name'             => 'APD fingerprint A',

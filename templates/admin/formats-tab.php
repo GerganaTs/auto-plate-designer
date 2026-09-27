@@ -50,6 +50,16 @@ if ( ! isset( $editing['font_ids'] ) || ! is_array( $editing['font_ids'] ) ) {
 	$editing['font_ids'] = array();
 }
 
+if ( $is_add && ! $is_edit ) {
+	$editing['font_ids'] = array();
+
+	foreach ( $fonts as $font ) {
+		if ( is_array( $font ) && isset( $font['id'] ) && '' !== (string) $font['id'] ) {
+			$editing['font_ids'][] = (string) $font['id'];
+		}
+	}
+}
+
 if ( 'holder' === $format_type ) {
 	$holder_size        = APD_Formats::default_size( 'holder' );
 	$editing['width']   = $holder_size['width'];
@@ -198,9 +208,10 @@ $details_hidden  = $has_type ? '' : ' hidden';
 					'max_chars_row_2' => isset( $editing['max_chars_row_2'] ) ? $editing['max_chars_row_2'] : 0,
 				)
 			);
-			$show_suv_rows = $has_type && APD_Formats::is_suv_kind( $format_type );
+			$show_suv_rows   = $has_type && APD_Formats::is_suv_kind( $format_type );
+			$show_single_max = $has_type && ! $show_suv_rows && 'holder' !== $format_type;
 			?>
-			<tr data-apd-format-details data-apd-max-single<?php echo ( $has_type && ! $show_suv_rows ) ? '' : ' hidden'; // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped ?>>
+			<tr data-apd-format-details data-apd-max-single<?php echo $show_single_max ? '' : ' hidden'; // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped ?>>
 				<th><label for="apd_format_max_chars"><?php esc_html_e( 'Maximum characters', 'auto-plate-designer' ); ?></label></th>
 				<td>
 					<input type="number" id="apd_format_max_chars" name="apd_format[max_chars]" min="1" max="<?php echo esc_attr( (string) APD_Security::ABSOLUTE_MAX_CHARS ); ?>" value="<?php echo esc_attr( (string) $editing['max_chars'] ); ?>"<?php echo $show_suv_rows ? ' disabled' : ''; ?>>
@@ -222,11 +233,15 @@ $details_hidden  = $has_type ? '' : ' hidden';
 			<tr data-apd-format-details<?php echo $details_hidden; // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped ?>>
 				<th><?php esc_html_e( 'Fonts', 'auto-plate-designer' ); ?></th>
 				<td>
+					<label class="apd-choice">
+						<input type="checkbox" name="apd_format[font_ids_all]" value="1" data-apd-fonts-all <?php checked( ! empty( $editing['font_ids_all'] ) ); ?>>
+						<?php esc_html_e( 'Select all fonts', 'auto-plate-designer' ); ?>
+					</label>
 					<?php if ( ! empty( $fonts ) ) : ?>
 						<div class="apd-choice-list">
 						<?php foreach ( $fonts as $font ) : ?>
 							<label class="apd-choice">
-								<input type="checkbox" name="apd_format[font_ids][]" value="<?php echo esc_attr( $font['id'] ); ?>" <?php checked( in_array( $font['id'], $editing['font_ids'], true ) ); ?>>
+								<input type="checkbox" name="apd_format[font_ids][]" value="<?php echo esc_attr( $font['id'] ); ?>" <?php checked( ! empty( $editing['font_ids_all'] ) || in_array( (string) $font['id'], $editing['font_ids'], true ) ); ?>>
 								<?php echo esc_html( $font['family'] . ' (' . $font['weight'] . ')' ); ?>
 							</label>
 						<?php endforeach; ?>

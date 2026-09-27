@@ -256,6 +256,10 @@ final class APD_Plugin {
 						'max_chars' => 40,
 						'max_lines' => 5,
 					),
+					'holder'           => array(
+						'max_chars' => APD_Formats::HOLDER_TEXT_MAX,
+						'max_lines' => 1,
+					),
 				),
 			),
 			'char_whitelist'   => APD_Security::DEFAULT_ADMIN_CHAR_CLASS,
@@ -322,7 +326,7 @@ final class APD_Plugin {
 	 * @return array<int, string>
 	 */
 	public static function palette_sets() {
-		return array( 'text', 'border', 'background' );
+		return APD_Color_Palettes::purposes();
 	}
 
 	/**

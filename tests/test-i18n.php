@@ -79,6 +79,8 @@ $required = array(
 	'Publish in the shop' => 'Публикувай в магазина',
 	'Format types in this category: %s' => 'Типове формати в тази категория: %s',
 	'Add frame'          => 'Добави рамка',
+	'Holder color'       => 'Цвят на стойката',
+	'Select all fonts'   => 'Избери всички шрифтове',
 );
 
 $missing = array();

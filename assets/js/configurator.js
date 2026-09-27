@@ -963,6 +963,30 @@
 		return cache[url];
 	}
 
+	function paintHolderBody(ctx, canvas, img, w, h, color) {
+		var off = document.createElement('canvas');
+		off.width = canvas.width;
+		off.height = canvas.height;
+		var octx = off.getContext('2d');
+		if (!octx || w < 1 || h < 1) {
+			drawImageContained(ctx, img, 0, 0, w, h);
+			return;
+		}
+		octx.setTransform(canvas.width / w, 0, 0, canvas.height / h, 0, 0);
+		drawImageContained(octx, img, 0, 0, w, h);
+		octx.setTransform(1, 0, 0, 1, 0, 0);
+		octx.globalCompositeOperation = 'source-in';
+		octx.fillStyle = color || '#000000';
+		octx.fillRect(0, 0, off.width, off.height);
+		octx.globalCompositeOperation = 'multiply';
+		octx.setTransform(canvas.width / w, 0, 0, canvas.height / h, 0, 0);
+		drawImageContained(octx, img, 0, 0, w, h);
+		ctx.save();
+		ctx.setTransform(1, 0, 0, 1, 0, 0);
+		ctx.drawImage(off, 0, 0);
+		ctx.restore();
+	}
+
 	function draw(root, cache) {
 		measurePreviewStage();
 		var canvas = getCanvas();
@@ -993,7 +1017,11 @@
 			}
 			var img = plateUrl ? cache.images[plateUrl] : null;
 			if (img && img.tagName === 'IMG') {
-				drawImageContained(ctx, img, 0, 0, w, h);
+				if (type === 'holder') {
+					paintHolderBody(ctx, canvas, img, w, h, colorValue('apd_holder_color'));
+				} else {
+					drawImageContained(ctx, img, 0, 0, w, h);
+				}
 			}
 
 			if (type === 'holder') {

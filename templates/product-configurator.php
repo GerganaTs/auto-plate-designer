@@ -50,6 +50,7 @@ if ( $show_frame && array_key_exists( 'no_frame', $restore ) ) {
 	$frame_on = empty( $restore['no_frame'] );
 }
 $text_hex       = ! empty( $restore['text_color'] ) ? (string) $restore['text_color'] : APD_Plugin::palette_preferred_hex( 'text', array( '#000000' ) );
+$holder_hex     = ! empty( $restore['holder_color'] ) ? (string) $restore['holder_color'] : APD_Plugin::palette_preferred_hex( 'holder', array( '#000000' ) );
 $plate_hex      = ! empty( $restore['background_color'] ) ? (string) $restore['background_color'] : APD_Plugin::palette_preferred_hex( 'background', array( '#FFFFFF' ) );
 $border_hex     = ! empty( $restore['border_color'] ) ? (string) $restore['border_color'] : APD_Plugin::palette_preferred_hex( 'border', array( '#000000', isset( $format['border_color'] ) ? (string) $format['border_color'] : '#000000' ) );
 $canvas_label   = $show_country && ! empty( $presets )
@@ -250,6 +251,12 @@ $apd_swatches = static function ( $label, $name, $colors, $current ) {
 		<?php endif; ?>
 
 		<?php
+		if ( in_array( 'holder', $color_fields, true ) ) {
+			$holder_colors = isset( $palettes['holder'] ) && is_array( $palettes['holder'] ) ? $palettes['holder'] : array();
+			$holder_label  = isset( $i18n['holderColor'] ) ? $i18n['holderColor'] : __( 'Holder color', 'auto-plate-designer' );
+			$apd_swatches( $holder_label, 'apd_holder_color', $holder_colors, $holder_hex );
+		}
+
 		if ( in_array( 'text', $color_fields, true ) ) {
 			$apd_swatches( $i18n['textColor'], 'apd_text_color', $palettes['text'], $text_hex );
 		}

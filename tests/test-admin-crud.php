@@ -132,6 +132,137 @@ if ( abs( (float) $holder['text_box']['y'] - 77.3 ) > 0.1 ) {
 
 echo 'HOLDER_OPTIONAL_IMAGE' . PHP_EOL;
 
+$open_fonts = APD_Formats::sanitize(
+	array(
+		'name'         => 'Open fonts',
+		'type'         => 'holder',
+		'font_ids_all' => '1',
+		'font_ids'     => array( 'missing-font' ),
+	)
+);
+$known_fonts = array();
+
+foreach ( APD_Plugin::get_settings()['fonts'] as $font ) {
+	if ( ! empty( $font['id'] ) ) {
+		$known_fonts[] = (string) $font['id'];
+	}
+}
+
+sort( $known_fonts );
+$saved_fonts = is_array( $open_fonts ) && isset( $open_fonts['font_ids'] ) ? $open_fonts['font_ids'] : array();
+sort( $saved_fonts );
+
+if ( is_wp_error( $open_fonts ) || empty( $open_fonts['font_ids_all'] ) || $known_fonts !== $saved_fonts ) {
+	fwrite( STDERR, "FONT_FOLLOW_SAVE_FAIL\n" );
+	exit( 1 );
+}
+
+$closed_fonts = APD_Formats::sanitize(
+	array(
+		'name'     => 'Closed fonts',
+		'type'     => 'holder',
+		'font_ids' => array(),
+	)
+);
+$granted = APD_Formats::grant_font_to_following_formats( array( $open_fonts, $closed_fonts ), 'font-new' );
+
+if (
+	is_wp_error( $closed_fonts )
+	|| ! empty( $closed_fonts['font_ids_all'] )
+	|| ! in_array( 'font-new', $granted[0]['font_ids'], true )
+	|| in_array( 'font-new', $granted[1]['font_ids'], true )
+) {
+	fwrite( STDERR, "FONT_FOLLOW_GRANT_FAIL\n" );
+	exit( 1 );
+}
+
+if ( ! empty( $known_fonts ) ) {
+	$only_id = $known_fonts[0];
+	$partial = APD_Formats::sanitize(
+		array(
+			'name'     => 'Partial fonts',
+			'type'     => 'holder',
+			'font_ids' => array( $only_id ),
+		)
+	);
+	$stale                 = $open_fonts;
+	$stale['font_ids']     = array( $only_id );
+	$stale['font_ids_all'] = true;
+	$open_shop             = APD_Formats::frontend_payload( $stale );
+	$partial_shop          = is_wp_error( $partial ) ? array() : APD_Formats::frontend_payload( $partial );
+	$open_shop_ids         = array();
+	$partial_shop_ids      = array();
+
+	foreach ( isset( $open_shop['fonts'] ) ? $open_shop['fonts'] : array() as $font ) {
+		$open_shop_ids[] = (string) $font['id'];
+	}
+
+	foreach ( isset( $partial_shop['fonts'] ) ? $partial_shop['fonts'] : array() as $font ) {
+		$partial_shop_ids[] = (string) $font['id'];
+	}
+
+	sort( $open_shop_ids );
+
+	if (
+		is_wp_error( $partial )
+		|| ! empty( $partial['font_ids_all'] )
+		|| array( $only_id ) !== $partial['font_ids']
+		|| array( $only_id ) !== $partial_shop_ids
+		|| $known_fonts !== $open_shop_ids
+	) {
+		fwrite( STDERR, "FONT_FOLLOW_SHOP_FAIL\n" );
+		exit( 1 );
+	}
+}
+
+$follow_saved = APD_Formats::save(
+	array(
+		'name'         => 'APD follow fonts',
+		'type'         => 'holder',
+		'font_ids_all' => '1',
+	)
+);
+$fixed_saved = APD_Formats::save(
+	array(
+		'name'     => 'APD fixed fonts',
+		'type'     => 'holder',
+		'font_ids' => array_slice( $known_fonts, 0, 1 ),
+	)
+);
+
+if ( is_wp_error( $follow_saved ) || is_wp_error( $fixed_saved ) ) {
+	if ( ! is_wp_error( $follow_saved ) ) {
+		APD_Formats::delete( $follow_saved['id'] );
+	}
+	if ( ! is_wp_error( $fixed_saved ) ) {
+		APD_Formats::delete( $fixed_saved['id'] );
+	}
+	fwrite( STDERR, "FONT_FOLLOW_STORE_SETUP_FAIL\n" );
+	exit( 1 );
+}
+
+$stored_settings             = APD_Plugin::get_settings();
+$stored_settings['formats']  = APD_Formats::grant_font_to_following_formats( $stored_settings['formats'], 'apd-test-font-new' );
+APD_Plugin::save_settings( $stored_settings );
+$follow_loaded = APD_Formats::get( $follow_saved['id'] );
+$fixed_loaded  = APD_Formats::get( $fixed_saved['id'] );
+APD_Formats::delete( $follow_saved['id'] );
+APD_Formats::delete( $fixed_saved['id'] );
+
+if (
+	! is_array( $follow_loaded )
+	|| empty( $follow_loaded['font_ids_all'] )
+	|| ! in_array( 'apd-test-font-new', $follow_loaded['font_ids'], true )
+	|| ! is_array( $fixed_loaded )
+	|| ! empty( $fixed_loaded['font_ids_all'] )
+	|| in_array( 'apd-test-font-new', $fixed_loaded['font_ids'], true )
+) {
+	fwrite( STDERR, "FONT_FOLLOW_STORE_FAIL\n" );
+	exit( 1 );
+}
+
+echo 'FONT_FOLLOW_OK' . PHP_EOL;
+
 if ( true !== APD_Security::validate_format_type( 'holder' ) ) {
 	fwrite( STDERR, "HOLDER_TYPE_REJECTED\n" );
 	exit( 1 );
@@ -448,6 +579,14 @@ if ( array( 'text', 'border', 'background' ) !== $eu_bg ) {
 	exit( 1 );
 }
 
+$holder_caps = APD_Formats::color_field_capabilities( 'holder' );
+$holder_def  = APD_Formats::default_color_fields( 'holder' );
+
+if ( array( 'text', 'background', 'holder' ) !== $holder_caps || $holder_caps !== $holder_def || in_array( 'holder', APD_Formats::color_field_capabilities( 'eu' ), true ) ) {
+	fwrite( STDERR, "HOLDER_COLOR_CAPS_FAIL\n" );
+	exit( 1 );
+}
+
 $us_bg = APD_Formats::sanitize_color_fields( array( 'text', 'border', 'background' ), 'us' );
 
 if ( array( 'text' ) !== $us_bg ) {
@@ -474,6 +613,19 @@ foreach ( $named as $palette ) {
 
 if ( ! in_array( APD_Color_Palettes::DEFAULT_PALETTE_IDS['text'], $named_ids, true ) ) {
 	fwrite( STDERR, "NAMED_PALETTE_FAIL\n" );
+	exit( 1 );
+}
+
+$holder_palette = false;
+
+foreach ( $named as $palette ) {
+	if ( isset( $palette['purpose'] ) && 'holder' === $palette['purpose'] && ! empty( $palette['color_ids'] ) ) {
+		$holder_palette = true;
+	}
+}
+
+if ( ! $holder_palette ) {
+	fwrite( STDERR, "HOLDER_PALETTE_FAIL\n" );
 	exit( 1 );
 }
 

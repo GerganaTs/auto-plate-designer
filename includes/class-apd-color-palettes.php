@@ -21,6 +21,7 @@ final class APD_Color_Palettes {
 		'text'       => 'apd-palette-text',
 		'border'     => 'apd-palette-border',
 		'background' => 'apd-palette-background',
+		'holder'     => 'apd-palette-holder',
 	);
 
 	/**
@@ -54,13 +55,13 @@ final class APD_Color_Palettes {
 	 * @return array<int, string>
 	 */
 	public static function purposes() {
-		return array( 'text', 'border', 'background' );
+		return array( 'text', 'border', 'background', 'holder' );
 	}
 
 	/**
 	 * Human-readable purpose label.
 	 *
-	 * @param string $purpose text|border|background.
+	 * @param string $purpose text|border|background|holder.
 	 * @return string
 	 */
 	public static function purpose_label( $purpose ) {
@@ -68,6 +69,7 @@ final class APD_Color_Palettes {
 			'text'       => __( 'Text', 'auto-plate-designer' ),
 			'border'     => __( 'Border', 'auto-plate-designer' ),
 			'background' => __( 'Plate fill', 'auto-plate-designer' ),
+			'holder'     => __( 'Holder color', 'auto-plate-designer' ),
 		);
 
 		return isset( $labels[ $purpose ] ) ? $labels[ $purpose ] : $purpose;
@@ -886,6 +888,13 @@ final class APD_Color_Palettes {
 				'color_ids' => $fill_ids,
 				'active'    => true,
 			),
+			array(
+				'id'        => self::DEFAULT_PALETTE_IDS['holder'],
+				'name'      => 'Holder colors',
+				'purpose'   => 'holder',
+				'color_ids' => array( 'apd-color-black', 'apd-color-white', 'apd-color-navy', 'apd-color-red' ),
+				'active'    => true,
+			),
 		);
 
 		return array(
@@ -911,7 +920,7 @@ final class APD_Color_Palettes {
 			$named   = isset( $stored['color_palettes'] ) && is_array( $stored['color_palettes'] )
 				? $stored['color_palettes']
 				: array();
-			$palettes = self::normalize_named_list( $named, $library );
+			$palettes = self::ensure_holder_palette( self::normalize_named_list( $named, $library ), $library );
 
 			return array(
 				'library'  => $library,
@@ -922,11 +931,12 @@ final class APD_Color_Palettes {
 
 		$legacy   = is_array( $legacy_lists ) ? $legacy_lists : array();
 		$migrated = self::migrate_purpose_lists( $legacy );
+		$palettes = self::ensure_holder_palette( $migrated['palettes'], $migrated['library'] );
 
 		return array(
 			'library'  => $migrated['library'],
-			'palettes' => $migrated['palettes'],
-			'lists'    => self::synthesize_purpose_lists( $migrated['library'], $migrated['palettes'] ),
+			'palettes' => $palettes,
+			'lists'    => self::synthesize_purpose_lists( $migrated['library'], $palettes ),
 		);
 	}
 
@@ -974,6 +984,7 @@ final class APD_Color_Palettes {
 			'text'       => 'Text colors',
 			'border'     => 'Border colors',
 			'background' => 'Plate / strip colors',
+			'holder'     => 'Holder colors',
 		);
 
 		foreach ( APD_Plugin::palette_sets() as $purpose ) {
@@ -1014,6 +1025,68 @@ final class APD_Color_Palettes {
 	}
 
 	/**
+	 * Add a holder-body palette when an older install has none.
+	 *
+	 * Black is listed first so a new holder product starts on the current black look.
+	 *
+	 * @param array<int, array<string, mixed>>  $palettes Named palettes.
+	 * @param array<int, array<string, string>> $library  Color library.
+	 * @return array<int, array<string, mixed>>
+	 */
+	private static function ensure_holder_palette( $palettes, $library ) {
+		foreach ( $palettes as $palette ) {
+			if ( isset( $palette['purpose'] ) && 'holder' === $palette['purpose'] && ! empty( $palette['color_ids'] ) ) {
+				return $palettes;
+			}
+		}
+
+		$ids      = array();
+		$black_id = '';
+
+		foreach ( $library as $color ) {
+			if ( empty( $color['id'] ) ) {
+				continue;
+			}
+
+			$id    = (string) $color['id'];
+			$ids[] = $id;
+
+			if ( '' === $black_id && isset( $color['hex'] ) && '#000000' === strtoupper( (string) $color['hex'] ) ) {
+				$black_id = $id;
+			}
+		}
+
+		if ( '' !== $black_id ) {
+			$ids = array_values( array_unique( array_merge( array( $black_id ), $ids ) ) );
+		}
+
+		if ( empty( $ids ) ) {
+			return $palettes;
+		}
+
+		$kept = array();
+
+		foreach ( $palettes as $palette ) {
+			if ( isset( $palette['purpose'] ) && 'holder' === $palette['purpose'] && empty( $palette['color_ids'] ) ) {
+				continue;
+			}
+
+			$kept[] = $palette;
+		}
+
+		$palettes   = $kept;
+		$palettes[] = array(
+			'id'        => self::DEFAULT_PALETTE_IDS['holder'],
+			'name'      => 'Holder colors',
+			'purpose'   => 'holder',
+			'color_ids' => $ids,
+			'active'    => true,
+		);
+
+		return $palettes;
+	}
+
+	/**
 	 * Purpose lists for leftover callers of palettes.text etc.
 	 *
 	 * @param array<int, array<string, string>> $library  Library.
@@ -1033,6 +1106,7 @@ final class APD_Color_Palettes {
 			'text'       => array(),
 			'border'     => array(),
 			'background' => array(),
+			'holder'     => array(),
 		);
 
 		foreach ( $palettes as $palette ) {
