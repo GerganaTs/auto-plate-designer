@@ -8,7 +8,7 @@ Every configurator preview uses the same width as a car plate: 500 CSS pixels (`
 
 The country-band button stays at most as tall as a car plate (about 106 pixels) so a tall plate does not stretch the country control.
 
-## Two-row plates
+##  Two-row plates
 
 Motorcycle plates (`moto`, `moto_plain`) still split one field: letters, grouped in pairs, on the top row and digits on the bottom row (`AA 0099 AA` is shown as `AA AA` over `0099`).
 
