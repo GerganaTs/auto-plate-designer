@@ -2,8 +2,8 @@
 /**
  * CRUD for US plate designs (state / graphic library).
  *
- * Designs are not formats. Several US formats (car, motorcycle, …) can share
- * the same library, or a design can be limited to specific US format IDs.
+ * Designs are not formats. A design can apply to every USA format or only some.
+ * Each shop product locks one design, so the catalog shows that graphic alone.
  *
  * @package Auto_Plate_Designer
  */
@@ -91,6 +91,29 @@ final class APD_Designs {
 			}
 
 			$out[] = $design;
+		}
+
+		return $out;
+	}
+
+	/**
+	 * USA formats this design may be sold on.
+	 *
+	 * An empty allowed list means every current USA format.
+	 *
+	 * @param array<string, mixed> $design Design row.
+	 * @return array<int, array<string, mixed>>
+	 */
+	public static function formats_for( $design ) {
+		$ids = isset( $design['allowed_format_ids'] ) && is_array( $design['allowed_format_ids'] )
+			? $design['allowed_format_ids']
+			: array();
+		$out = array();
+
+		foreach ( APD_Formats::of_type( 'us' ) as $format ) {
+			if ( empty( $ids ) || in_array( $format['id'], $ids, true ) ) {
+				$out[] = $format;
+			}
 		}
 
 		return $out;
@@ -327,6 +350,29 @@ final class APD_Designs {
 			}
 		}
 
+		$text_box   = self::sanitize_text_box( isset( $raw['text_box'] ) ? $raw['text_box'] : array() );
+		$split      = ! empty( $raw['split_text'] );
+		$text_right = array();
+		$side_left  = 0;
+		$side_right = 0;
+
+		if ( $split ) {
+			$right_raw = isset( $raw['text_box_right'] ) && is_array( $raw['text_box_right'] ) ? $raw['text_box_right'] : array();
+			$pair      = ( isset( $right_raw['x'] ) || isset( $right_raw['width'] ) )
+				? APD_Formats::link_side_boxes( $text_box, $right_raw )
+				: APD_Formats::seed_side_boxes( $text_box );
+			$text_box   = $pair[0];
+			$text_right = $pair[1];
+			$sides      = APD_Formats::us_side_limits(
+				array(
+					'max_chars_left'  => isset( $raw['max_chars_left'] ) ? $raw['max_chars_left'] : 0,
+					'max_chars_right' => isset( $raw['max_chars_right'] ) ? $raw['max_chars_right'] : 0,
+				)
+			);
+			$side_left  = $sides[0];
+			$side_right = $sides[1];
+		}
+
 		return array(
 			'id'                   => $id,
 			'name'                 => APD_Security::sanitize_admin_label( (string) $raw['name'] ),
@@ -334,7 +380,11 @@ final class APD_Designs {
 			'image_id'             => $image_id,
 			'allowed_format_types' => array( 'us' ),
 			'allowed_format_ids'   => $ids,
-			'text_box'             => self::sanitize_text_box( isset( $raw['text_box'] ) ? $raw['text_box'] : array() ),
+			'text_box'             => $text_box,
+			'split_text'           => $split,
+			'text_box_right'       => $text_right,
+			'max_chars_left'       => $side_left,
+			'max_chars_right'      => $side_right,
 			'active'               => ! empty( $raw['active'] ),
 		);
 	}

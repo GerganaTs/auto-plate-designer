@@ -33,6 +33,7 @@ $apd_text_box_help        = isset( $apd_text_box_help ) ? (string) $apd_text_box
 $apd_text_box_show_stage  = ! empty( $apd_text_box_show_stage );
 $apd_text_box_band        = ! empty( $apd_text_box_band );
 $apd_text_box_studio      = ! empty( $apd_text_box_studio );
+$apd_text_box_design      = ! empty( $apd_text_box_design );
 $apd_text_box_sample      = isset( $apd_text_box_sample ) && '' !== (string) $apd_text_box_sample ? (string) $apd_text_box_sample : __( 'TEXT', 'auto-plate-designer' );
 $apd_show_frame           = ! empty( $apd_show_frame );
 $apd_border_width         = isset( $apd_border_width ) ? (int) $apd_border_width : 8;
@@ -49,9 +50,38 @@ $apd_band_box             = APD_Formats::sanitize_band_box(
 $frame_inset_x            = round( ( $apd_border_width / $apd_plate_width ) * 100, 2 );
 $frame_inset_y            = round( ( $apd_border_width / $apd_plate_height ) * 100, 2 );
 $apd_band_fields_disabled = ! empty( $apd_band_fields_disabled );
-$canvas_max               = (int) APD_Formats::CANVAS_DISPLAY_MAX_PX;
+$canvas_max               = isset( $apd_canvas_max ) ? max( 80, (int) $apd_canvas_max ) : (int) APD_Formats::CANVAS_DISPLAY_MAX_PX;
 $apd_show_metric_labels   = ! empty( $apd_text_box_studio );
 $apd_two_rows             = ! empty( $apd_two_rows );
+$apd_split_ui             = ! empty( $apd_split_ui );
+$apd_split_on             = $apd_split_ui && ! empty( $apd_split_on );
+$apd_split_name           = isset( $apd_split_name ) ? (string) $apd_split_name : '';
+$apd_right_box_name       = isset( $apd_right_box_name ) ? (string) $apd_right_box_name : '';
+$apd_side_left_name       = isset( $apd_side_left_name ) ? (string) $apd_side_left_name : '';
+$apd_side_right_name      = isset( $apd_side_right_name ) ? (string) $apd_side_right_name : '';
+$apd_split_class          = isset( $apd_split_class ) ? (string) $apd_split_class : '';
+$apd_split_row_hidden     = ! empty( $apd_split_row_hidden );
+$apd_side_left_max        = isset( $apd_side_left_max ) ? (int) $apd_side_left_max : APD_Formats::US_SIDE_LEFT_MAX;
+$apd_side_right_max       = isset( $apd_side_right_max ) ? (int) $apd_side_right_max : APD_Formats::US_SIDE_RIGHT_MAX;
+if ( $apd_side_left_max < 1 ) {
+	$apd_side_left_max = APD_Formats::US_SIDE_LEFT_MAX;
+}
+if ( $apd_side_right_max < 1 ) {
+	$apd_side_right_max = APD_Formats::US_SIDE_RIGHT_MAX;
+}
+$apd_text_box_right = isset( $apd_text_box_right ) && is_array( $apd_text_box_right ) ? $apd_text_box_right : array();
+if ( $apd_split_ui ) {
+	if ( ! isset( $apd_text_box_right['x'] ) && ! isset( $apd_text_box_right['width'] ) ) {
+		$apd_seed           = APD_Formats::seed_side_boxes( $apd_text_box );
+		$apd_text_box_right = $apd_seed[1];
+	} else {
+		$apd_linked         = APD_Formats::link_side_boxes( $apd_text_box, $apd_text_box_right );
+		$apd_text_box_right = $apd_linked[1];
+		if ( $apd_split_on ) {
+			$apd_text_box = $apd_linked[0];
+		}
+	}
+}
 $apd_letter_align         = isset( $apd_text_box['letter_align'] ) ? (string) $apd_text_box['letter_align'] : 'justify';
 $apd_number_align         = isset( $apd_text_box['number_align'] ) ? (string) $apd_text_box['number_align'] : 'justify';
 $apd_align_choices        = array(
@@ -116,8 +146,17 @@ if ( $apd_text_box_studio ) {
 	<p class="description"><?php echo esc_html( $apd_text_box_help ); ?></p>
 <?php endif; ?>
 <div class="<?php echo $apd_text_box_studio ? 'apd-plate-studio' : ''; ?>" <?php echo $apd_studio_attrs; // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped ?> style="--apd-canvas-max: <?php echo esc_attr( (string) $canvas_max ); ?>px;">
+	<?php if ( $apd_split_ui ) : ?>
+		<p class="apd-split-toggle <?php echo esc_attr( $apd_split_class ); ?>"<?php echo $apd_split_row_hidden ? ' hidden' : ''; ?>>
+			<label class="apd-choice">
+				<input type="checkbox" name="<?php echo esc_attr( $apd_split_name ); ?>" value="1" data-apd-split-text <?php checked( $apd_split_on ); ?>>
+				<?php esc_html_e( 'Two text fields side by side', 'auto-plate-designer' ); ?>
+			</label>
+			<span class="description"><?php esc_html_e( 'The two boxes share a height and move together. Each width and the gap between them are set separately.', 'auto-plate-designer' ); ?></span>
+		</p>
+	<?php endif; ?>
 	<div class="apd-text-box-wrap<?php echo $apd_text_box_studio ? ' apd-text-box-wrap--studio' : ''; ?>" data-apd-text-box-wrap <?php echo $apd_text_box_show_stage ? '' : 'hidden'; ?>>
-		<div class="apd-text-box-stage" data-apd-text-box-stage style="aspect-ratio: <?php echo esc_attr( $apd_text_box_ratio ); ?>;">
+		<div class="apd-text-box-stage" data-apd-text-box-stage<?php echo $apd_text_box_design ? ' data-apd-design-stage' : ''; ?> style="aspect-ratio: <?php echo esc_attr( $apd_text_box_ratio ); ?>;">
 			<div class="apd-text-box-schematic" data-apd-text-box-schematic <?php echo $apd_text_box_image ? 'hidden' : ''; ?>>
 				<span class="apd-frame-fill" data-apd-frame-fill <?php echo $apd_show_frame ? '' : 'hidden'; ?>></span>
 			</div>
@@ -159,7 +198,7 @@ if ( $apd_text_box_studio ) {
 						<span class="apd-text-row" data-apd-text-row="letters" style="justify-content: <?php echo esc_attr( $apd_align_css( $apd_letter_align ) ); ?>;"><?php echo $apd_glyphs( $apd_sample_letters ); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped ?></span>
 						<span class="apd-text-row" data-apd-text-row="numbers" style="justify-content: <?php echo esc_attr( $apd_align_css( $apd_number_align ) ); ?>;"><?php echo $apd_glyphs( $apd_sample_numbers ); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped ?></span>
 					<?php else : ?>
-						<?php echo esc_html( $apd_text_box_sample ); ?>
+						<?php echo esc_html( $apd_split_on ? 'CA' : $apd_text_box_sample ); ?>
 					<?php endif; ?>
 				</span>
 				<span class="apd-text-box-handle" data-apd-handle="nw"></span>
@@ -167,6 +206,20 @@ if ( $apd_text_box_studio ) {
 				<span class="apd-text-box-handle" data-apd-handle="sw"></span>
 				<span class="apd-text-box-handle" data-apd-handle="se"></span>
 			</div>
+			<?php if ( $apd_split_ui ) : ?>
+			<div
+				class="apd-text-box"
+				data-apd-text-box-right
+				<?php echo $apd_split_on ? '' : 'hidden'; ?>
+				style="left: <?php echo esc_attr( (string) $apd_text_box_right['x'] ); ?>%; top: <?php echo esc_attr( (string) $apd_text_box_right['y'] ); ?>%; width: <?php echo esc_attr( (string) $apd_text_box_right['width'] ); ?>%; height: <?php echo esc_attr( (string) $apd_text_box_right['height'] ); ?>%;"
+			>
+				<span class="apd-text-box-sample" data-apd-text-box-sample-right>1234</span>
+				<span class="apd-text-box-handle" data-apd-handle="nw"></span>
+				<span class="apd-text-box-handle" data-apd-handle="ne"></span>
+				<span class="apd-text-box-handle" data-apd-handle="sw"></span>
+				<span class="apd-text-box-handle" data-apd-handle="se"></span>
+			</div>
+			<?php endif; ?>
 		</div>
 	</div>
 	<p class="apd-text-box-actions">
@@ -210,31 +263,31 @@ if ( $apd_text_box_studio ) {
 	<p class="apd-metric-heading"><?php esc_html_e( 'Text area', 'auto-plate-designer' ); ?></p>
 <?php endif; ?>
 <div class="apd-metric-grid apd-text-box-fields">
-	<label class="apd-metric"><?php echo esc_html__( 'X', 'auto-plate-designer' ); ?>
+	<label class="apd-metric"><span data-apd-split-off<?php echo $apd_split_on ? ' hidden' : ''; ?>><?php echo esc_html__( 'X', 'auto-plate-designer' ); ?></span><span data-apd-split-on<?php echo ( $apd_split_ui && $apd_split_on ) ? '' : ' hidden'; ?>><?php echo esc_html__( 'Left X', 'auto-plate-designer' ); ?></span>
 		<span class="apd-metric__control">
-			<input type="number" name="<?php echo esc_attr( $apd_text_box_name ); ?>[x]" value="<?php echo esc_attr( (string) $apd_text_box['x'] ); ?>" min="0" max="95" step="0.1" data-apd-text-box-input="x">
+			<input type="number" name="<?php echo esc_attr( $apd_text_box_name ); ?>[x]" value="<?php echo esc_attr( (string) $apd_text_box['x'] ); ?>" min="0" max="95" step="0.01" data-apd-text-box-input="x">
 			<span class="apd-metric__unit">%</span>
 		</span>
 	</label>
 	<label class="apd-metric"><?php echo esc_html__( 'Y', 'auto-plate-designer' ); ?>
 		<span class="apd-metric__control">
-			<input type="number" name="<?php echo esc_attr( $apd_text_box_name ); ?>[y]" value="<?php echo esc_attr( (string) $apd_text_box['y'] ); ?>" min="0" max="95" step="0.1" data-apd-text-box-input="y">
+			<input type="number" name="<?php echo esc_attr( $apd_text_box_name ); ?>[y]" value="<?php echo esc_attr( (string) $apd_text_box['y'] ); ?>" min="0" max="95" step="0.01" data-apd-text-box-input="y">
 			<span class="apd-metric__unit">%</span>
 		</span>
 	</label>
-	<label class="apd-metric"><?php echo esc_html__( 'Width', 'auto-plate-designer' ); ?>
+	<label class="apd-metric"><span data-apd-split-off<?php echo $apd_split_on ? ' hidden' : ''; ?>><?php echo esc_html__( 'Width', 'auto-plate-designer' ); ?></span><span data-apd-split-on<?php echo ( $apd_split_ui && $apd_split_on ) ? '' : ' hidden'; ?>><?php echo esc_html__( 'Left width', 'auto-plate-designer' ); ?></span>
 		<span class="apd-metric__control">
-			<input type="number" name="<?php echo esc_attr( $apd_text_box_name ); ?>[width]" value="<?php echo esc_attr( (string) $apd_text_box['width'] ); ?>" min="5" max="100" step="0.1" data-apd-text-box-input="width">
+			<input type="number" name="<?php echo esc_attr( $apd_text_box_name ); ?>[width]" value="<?php echo esc_attr( (string) $apd_text_box['width'] ); ?>" min="5" max="100" step="0.01" data-apd-text-box-input="width">
 			<span class="apd-metric__unit">%</span>
 		</span>
 	</label>
 	<label class="apd-metric"><?php echo esc_html__( 'Height', 'auto-plate-designer' ); ?>
 		<span class="apd-metric__control">
-			<input type="number" name="<?php echo esc_attr( $apd_text_box_name ); ?>[height]" value="<?php echo esc_attr( (string) $apd_text_box['height'] ); ?>" min="5" max="100" step="0.1" data-apd-text-box-input="height">
+			<input type="number" name="<?php echo esc_attr( $apd_text_box_name ); ?>[height]" value="<?php echo esc_attr( (string) $apd_text_box['height'] ); ?>" min="5" max="100" step="0.01" data-apd-text-box-input="height">
 			<span class="apd-metric__unit">%</span>
 		</span>
 	</label>
-	<label class="apd-metric" data-apd-single-align<?php echo $apd_two_rows ? ' hidden' : ''; ?>><?php echo esc_html__( 'Align', 'auto-plate-designer' ); ?>
+	<label class="apd-metric" data-apd-single-align<?php echo $apd_two_rows ? ' hidden' : ''; ?>><span data-apd-split-off<?php echo $apd_split_on ? ' hidden' : ''; ?>><?php echo esc_html__( 'Align', 'auto-plate-designer' ); ?></span><span data-apd-split-on<?php echo ( $apd_split_ui && $apd_split_on ) ? '' : ' hidden'; ?>><?php echo esc_html__( 'Left align', 'auto-plate-designer' ); ?></span>
 		<span class="apd-metric__control">
 			<select name="<?php echo esc_attr( $apd_text_box_name ); ?>[align]" data-apd-text-box-input="align">
 				<option value="left" <?php selected( $apd_text_box['align'], 'left' ); ?>><?php esc_html_e( 'Left', 'auto-plate-designer' ); ?></option>
@@ -253,6 +306,40 @@ if ( $apd_text_box_studio ) {
 		</span>
 	</label>
 </div>
+<?php if ( $apd_split_ui ) : ?>
+<div class="apd-metric-grid apd-text-box-fields" data-apd-split-panel<?php echo $apd_split_on ? '' : ' hidden'; ?>>
+	<label class="apd-metric"><?php echo esc_html__( 'Right X', 'auto-plate-designer' ); ?>
+		<span class="apd-metric__control">
+			<input type="number" name="<?php echo esc_attr( $apd_right_box_name ); ?>[x]" value="<?php echo esc_attr( (string) $apd_text_box_right['x'] ); ?>" min="0" max="95" step="0.01" data-apd-text-box-right-input="x">
+			<span class="apd-metric__unit">%</span>
+		</span>
+	</label>
+	<label class="apd-metric"><?php echo esc_html__( 'Right width', 'auto-plate-designer' ); ?>
+		<span class="apd-metric__control">
+			<input type="number" name="<?php echo esc_attr( $apd_right_box_name ); ?>[width]" value="<?php echo esc_attr( (string) $apd_text_box_right['width'] ); ?>" min="5" max="100" step="0.01" data-apd-text-box-right-input="width">
+			<span class="apd-metric__unit">%</span>
+		</span>
+	</label>
+	<label class="apd-metric"><?php echo esc_html__( 'Right align', 'auto-plate-designer' ); ?>
+		<span class="apd-metric__control">
+			<select name="<?php echo esc_attr( $apd_right_box_name ); ?>[align]" data-apd-text-box-right-input="align">
+				<option value="left" <?php selected( $apd_text_box_right['align'], 'left' ); ?>><?php esc_html_e( 'Left', 'auto-plate-designer' ); ?></option>
+				<option value="center" <?php selected( $apd_text_box_right['align'], 'center' ); ?>><?php esc_html_e( 'Center', 'auto-plate-designer' ); ?></option>
+				<option value="right" <?php selected( $apd_text_box_right['align'], 'right' ); ?>><?php esc_html_e( 'Right', 'auto-plate-designer' ); ?></option>
+			</select>
+		</span>
+	</label>
+	<label class="apd-metric"><?php echo esc_html__( 'Left maximum', 'auto-plate-designer' ); ?>
+		<input type="number" name="<?php echo esc_attr( $apd_side_left_name ); ?>" min="1" max="<?php echo esc_attr( (string) APD_Security::ABSOLUTE_MAX_CHARS ); ?>" value="<?php echo esc_attr( (string) $apd_side_left_max ); ?>">
+	</label>
+	<label class="apd-metric"><?php echo esc_html__( 'Right maximum', 'auto-plate-designer' ); ?>
+		<input type="number" name="<?php echo esc_attr( $apd_side_right_name ); ?>" min="1" max="<?php echo esc_attr( (string) APD_Security::ABSOLUTE_MAX_CHARS ); ?>" value="<?php echo esc_attr( (string) $apd_side_right_max ); ?>">
+	</label>
+	<input type="hidden" name="<?php echo esc_attr( $apd_right_box_name ); ?>[y]" value="<?php echo esc_attr( (string) $apd_text_box_right['y'] ); ?>" data-apd-text-box-right-input="y">
+	<input type="hidden" name="<?php echo esc_attr( $apd_right_box_name ); ?>[height]" value="<?php echo esc_attr( (string) $apd_text_box_right['height'] ); ?>" data-apd-text-box-right-input="height">
+	<input type="hidden" name="<?php echo esc_attr( $apd_right_box_name ); ?>[valign]" value="<?php echo esc_attr( (string) $apd_text_box_right['valign'] ); ?>" data-apd-text-box-right-input="valign">
+</div>
+<?php endif; ?>
 <div class="apd-row-styles" data-apd-row-styles<?php echo $apd_two_rows ? '' : ' hidden'; ?>>
 	<div class="apd-row-styles__group">
 		<p class="apd-row-styles__label"><?php esc_html_e( 'Letters', 'auto-plate-designer' ); ?></p>

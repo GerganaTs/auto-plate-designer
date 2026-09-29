@@ -118,6 +118,9 @@
 		var two = usesTwoRows(type);
 		sample.classList.toggle('apd-text-box-sample--rows', two);
 		if (!two) {
+			if (splitActive()) {
+				text = 'CA';
+			}
 			sample.textContent = text;
 			sample.style.alignItems = '';
 			sample.style.justifyContent = '';
@@ -232,19 +235,21 @@
 		if (!pair || !widthInput || !heightInput) {
 			return;
 		}
-		var idInput = document.querySelector('[name="apd_format[id]"]');
 		var currentW = parseInt(widthInput.value, 10);
 		var currentH = parseInt(heightInput.value, 10);
-		var matchesKnown = false;
-		Object.keys(sizes).forEach(function (key) {
-			if (sizes[key][0] === currentW && sizes[key][1] === currentH) {
-				matchesKnown = true;
+		if (type === 'custom') {
+			widthInput.readOnly = false;
+			heightInput.readOnly = false;
+			if (isNaN(currentW) || isNaN(currentH) || currentW < 1 || currentH < 1) {
+				widthInput.value = String(pair[0]);
+				heightInput.value = String(pair[1]);
 			}
-		});
-		if ((idInput && !idInput.value) || matchesKnown || isNaN(currentW) || isNaN(currentH)) {
-			widthInput.value = String(pair[0]);
-			heightInput.value = String(pair[1]);
+			return;
 		}
+		widthInput.readOnly = true;
+		heightInput.readOnly = true;
+		widthInput.value = String(pair[0]);
+		heightInput.value = String(pair[1]);
 	}
 
 	function resetLayoutForNewFormat(type) {
@@ -272,12 +277,188 @@
 		}
 	}
 
+	function usesPaletteSlots(type) {
+		var types = adminCfg().paletteSlotTypes || [];
+		return types.indexOf(type) !== -1;
+	}
+
+	function isHolderType(type) {
+		return type === 'holder' || type === 'holder_moto' || type === 'holder_d';
+	}
+
+	function isPhotoHolder(type) {
+		return type === 'holder_moto' || type === 'holder_d';
+	}
+
+	function bundledHolderUrl(type) {
+		var cfg = adminCfg();
+		if (type === 'holder') {
+			return cfg.holderImageUrl || '';
+		}
+		var photos = cfg.photoHolderImages || {};
+		return photos[type] || '';
+	}
+
+	function closePaletteMenus(except) {
+		document.querySelectorAll('[data-apd-palette-menu]').forEach(function (menu) {
+			if (menu === except) {
+				return;
+			}
+			var list = menu.querySelector('.apd-palette-menu__list');
+			var button = menu.querySelector('.apd-palette-menu__button');
+			if (list) {
+				list.hidden = true;
+			}
+			if (button) {
+				button.setAttribute('aria-expanded', 'false');
+			}
+		});
+	}
+
+	function bindPaletteMenus() {
+		var root = document.querySelector('[data-apd-palette-slots]');
+		if (!root || root.getAttribute('data-apd-menus-bound')) {
+			return;
+		}
+		root.setAttribute('data-apd-menus-bound', '1');
+		root.addEventListener('click', function (event) {
+			var option = closest(event.target, '[data-apd-palette-option]');
+			var toggle = closest(event.target, '.apd-palette-menu__button');
+			var menu = closest(event.target, '[data-apd-palette-menu]');
+			if (option && menu) {
+				var input = menu.querySelector('[data-apd-palette-slot-input]');
+				var current = menu.querySelector('.apd-palette-menu__current');
+				var label = option.querySelector('.apd-palette-menu__label');
+				if (input) {
+					input.value = option.getAttribute('value') || '';
+				}
+				if (current && label) {
+					current.textContent = '';
+					current.appendChild(label.cloneNode(true));
+				}
+				menu.querySelectorAll('[data-apd-palette-option]').forEach(function (item) {
+					item.setAttribute('aria-selected', item === option ? 'true' : 'false');
+				});
+				closePaletteMenus(null);
+				var note = document.querySelector('[data-apd-palette-slot-error]');
+				if (note) {
+					note.hidden = true;
+				}
+				return;
+			}
+			if (toggle && menu) {
+				var list = menu.querySelector('.apd-palette-menu__list');
+				var open = list && list.hidden;
+				closePaletteMenus(null);
+				if (list && open) {
+					list.hidden = false;
+					toggle.setAttribute('aria-expanded', 'true');
+				}
+			}
+		});
+		document.addEventListener('click', function (event) {
+			if (!closest(event.target, '[data-apd-palette-menu]')) {
+				closePaletteMenus(null);
+			}
+		});
+		var form = document.querySelector('[data-apd-format-form]');
+		if (form) {
+			form.addEventListener('submit', function (event) {
+				var select = document.querySelector('[data-apd-format-type]');
+				var type = select ? select.value : '';
+				if (!usesPaletteSlots(type)) {
+					return;
+				}
+				var missing = false;
+				root.querySelectorAll('[data-apd-palette-slot-input]').forEach(function (input) {
+					if (!input.disabled && '' === input.value) {
+						missing = true;
+					}
+				});
+				var note = document.querySelector('[data-apd-palette-slot-error]');
+				if (!missing) {
+					if (note) {
+						note.hidden = true;
+					}
+					return;
+				}
+				event.preventDefault();
+				if (note) {
+					note.hidden = false;
+				}
+			});
+		}
+	}
+
+	function toggleFormatPalettes(type) {
+		var root = document.querySelector('[data-apd-format-palettes]');
+		if (!root) {
+			return;
+		}
+		var slots = usesPaletteSlots(type);
+		var photo = isPhotoHolder(type);
+		var slotRoot = root.querySelector('[data-apd-palette-slots]');
+		var checkRoot = root.querySelector('[data-apd-palette-checks]');
+		var photoRoot = root.querySelector('[data-apd-photo-palettes]');
+		var slotHelp = root.querySelector('[data-apd-palette-slot-help]');
+		var checkHelp = root.querySelector('[data-apd-palette-check-help]');
+		var photoHelp = root.querySelector('[data-apd-palette-photo-help]');
+		var caps = (adminCfg().colorCaps && adminCfg().colorCaps[type]) || [];
+		root.hidden = !type;
+		if (slotRoot) {
+			slotRoot.hidden = !slots;
+			var slotKeys = type === 'us' ? ['text'] : ['text', 'background', 'border'];
+			slotRoot.querySelectorAll('[data-apd-palette-menu]').forEach(function (menu) {
+				var slot = menu.getAttribute('data-apd-palette-slot') || '';
+				var on = slots && slotKeys.indexOf(slot) !== -1;
+				menu.hidden = !on;
+				menu.querySelectorAll('[data-apd-palette-slot-input]').forEach(function (input) {
+					input.disabled = !on;
+				});
+			});
+		}
+		if (slotHelp) {
+			slotHelp.hidden = !slots || type === 'us';
+		}
+		var usPaletteHelp = root.querySelector('[data-apd-palette-us-help]');
+		if (usPaletteHelp) {
+			usPaletteHelp.hidden = !(slots && type === 'us');
+		}
+		if (checkHelp) {
+			checkHelp.hidden = slots || photo || !type;
+		}
+		if (photoHelp) {
+			photoHelp.hidden = !photo;
+		}
+		if (checkRoot) {
+			checkRoot.hidden = slots || !type;
+		}
+		if (photoRoot) {
+			photoRoot.hidden = !photo;
+			photoRoot.querySelectorAll('input[type="checkbox"]').forEach(function (input) {
+				input.disabled = !photo;
+			});
+		}
+		root.querySelectorAll('[data-apd-color-cap]').forEach(function (row) {
+			var field = row.getAttribute('data-apd-color-cap');
+			var allowed = !slots && !photo && caps.indexOf(field) !== -1;
+			row.hidden = !allowed;
+			row.querySelectorAll('input[type="checkbox"]').forEach(function (input) {
+				input.disabled = !allowed;
+				if (!allowed) {
+					input.checked = false;
+				}
+			});
+		});
+	}
+
 	function toggleFormatFields(options) {
 		var select = document.querySelector('[data-apd-format-type]');
 		if (!select) {
 			return;
 		}
 		var type = select.value;
+		toggleFormatPalettes(type);
 		var hasType = type !== '';
 		document.querySelectorAll('[data-apd-format-details]').forEach(function (el) {
 			el.hidden = !hasType;
@@ -306,42 +487,64 @@
 		}
 		setGroupEnabled('.apd-image-fields', usesBaseImage(type));
 		setGroupEnabled('.apd-eu-fields', paintedPlate(type));
-		setGroupEnabled('.apd-border-fields', type !== 'holder');
+		setGroupEnabled('.apd-border-fields', !isHolderType(type));
 		setGroupEnabled('.apd-band-fields, .apd-band-box-fields', usesCountryBand(type));
 		toggleRowStyles(type);
 		document.querySelectorAll('.apd-us-only').forEach(function (el) {
 			el.hidden = type !== 'us';
 		});
 		document.querySelectorAll('.apd-holder-only').forEach(function (el) {
-			el.hidden = type !== 'holder';
+			el.hidden = !isHolderType(type);
 		});
 		document.querySelectorAll('.apd-canvas-fields').forEach(function (el) {
-			el.hidden = type === 'holder';
+			el.hidden = isHolderType(type);
 		});
 		document.querySelectorAll('.apd-text-help-default').forEach(function (el) {
-			el.hidden = type === 'holder';
+			el.hidden = isHolderType(type);
 		});
 		var heading = document.querySelector('[data-apd-image-heading]');
 		var help = document.querySelector('[data-apd-image-help]');
 		var cfg = adminCfg();
 		if (heading) {
-			heading.textContent = type === 'suv'
-				? (cfg.suvImageLabel || 'Plate graphic')
-				: (cfg.holderImageLabel || 'Holder photo');
+			if (type === 'us') {
+				heading.textContent = cfg.usImageLabel || 'Plate graphic';
+			} else if (type === 'suv') {
+				heading.textContent = cfg.suvImageLabel || 'Plate graphic';
+			} else {
+				heading.textContent = cfg.holderImageLabel || 'Holder photo';
+			}
 		}
 		if (help) {
-			help.textContent = type === 'suv'
-				? (cfg.suvImageHelp || '')
-				: (cfg.holderImageHelp || '');
+			if (type === 'us') {
+				help.hidden = false;
+				help.textContent = cfg.usImageHelp || '';
+			} else if (type === 'suv') {
+				help.hidden = false;
+				help.textContent = cfg.suvImageHelp || '';
+			} else {
+				help.hidden = true;
+				help.textContent = cfg.holderImageHelp || '';
+			}
 		}
 		toggleSuvCharLimits(type);
+		document.querySelectorAll('[data-apd-wrap]').forEach(function (row) {
+			var on = type === 'custom';
+			row.hidden = !on;
+			row.querySelectorAll('input').forEach(function (input) {
+				input.disabled = !on;
+			});
+		});
+		document.querySelectorAll('[data-apd-custom-size]').forEach(function (note) {
+			note.hidden = type !== 'custom';
+		});
 		syncFrameFields();
 		updateFormatStage();
+		syncSplitPanels();
 	}
 
 	function toggleSuvCharLimits(type) {
-		var suv = type === 'suv' || type === 'suv_eu';
-		var hideSingle = suv || type === 'holder' || !type;
+		var suv = usesTwoRows(type);
+		var hideSingle = suv || isHolderType(type) || !type || (type === 'us' && splitActive());
 		document.querySelectorAll('[data-apd-max-single]').forEach(function (row) {
 			row.hidden = hideSingle;
 			row.querySelectorAll('input').forEach(function (input) {
@@ -403,7 +606,7 @@
 		if (isNaN(bw) || bw < 0) {
 			bw = 0;
 		}
-		var hide = '' === type || type === 'holder' || wantsNoFrame() || bw <= 0;
+		var hide = '' === type || isHolderType(type) || wantsNoFrame() || bw <= 0;
 		if (box) {
 			box.hidden = hide;
 		}
@@ -428,9 +631,211 @@
 		}
 	}
 
+	function isDesignEditor() {
+		return !!document.querySelector('[name="apd_design[image_id]"]');
+	}
+
+	function artworkSourceBox(img) {
+		var full = {
+			x: 0,
+			y: 0,
+			w: img.naturalWidth || img.width,
+			h: img.naturalHeight || img.height
+		};
+		if (img._apdArt) {
+			return img._apdArt;
+		}
+		img._apdArt = full;
+		if (full.w < 2 || full.h < 2) {
+			return full;
+		}
+		try {
+			var maxSide = 480;
+			var scale = Math.min(1, maxSide / Math.max(full.w, full.h));
+			var sw = Math.max(1, Math.round(full.w * scale));
+			var sh = Math.max(1, Math.round(full.h * scale));
+			var sample = document.createElement('canvas');
+			sample.width = sw;
+			sample.height = sh;
+			var sctx = sample.getContext('2d', { willReadFrequently: true });
+			if (!sctx) {
+				return full;
+			}
+			sctx.drawImage(img, 0, 0, sw, sh);
+			var data = sctx.getImageData(0, 0, sw, sh).data;
+			var seen = new Uint8Array(sw * sh);
+			var queue = [];
+			function isMargin(offset) {
+				if (data[offset + 3] < 20) {
+					return true;
+				}
+				return data[offset] >= 242 && data[offset + 1] >= 242 && data[offset + 2] >= 242;
+			}
+			function push(x, y) {
+				if (x < 0 || y < 0 || x >= sw || y >= sh) {
+					return;
+				}
+				var pixel = y * sw + x;
+				if (seen[pixel] || !isMargin(pixel * 4)) {
+					return;
+				}
+				seen[pixel] = 1;
+				queue.push(pixel);
+			}
+			var edge;
+			for (edge = 0; edge < sw; edge++) {
+				push(edge, 0);
+				push(edge, sh - 1);
+			}
+			for (edge = 0; edge < sh; edge++) {
+				push(0, edge);
+				push(sw - 1, edge);
+			}
+			var head = 0;
+			while (head < queue.length) {
+				var pixel = queue[head++];
+				var cx = pixel % sw;
+				var cy = (pixel / sw) | 0;
+				push(cx - 1, cy);
+				push(cx + 1, cy);
+				push(cx, cy - 1);
+				push(cx, cy + 1);
+			}
+			var minX = sw;
+			var minY = sh;
+			var maxX = -1;
+			var maxY = -1;
+			var index;
+			for (index = 0; index < seen.length; index++) {
+				if (seen[index]) {
+					continue;
+				}
+				var px = index % sw;
+				var py = (index / sw) | 0;
+				if (px < minX) {
+					minX = px;
+				}
+				if (py < minY) {
+					minY = py;
+				}
+				if (px > maxX) {
+					maxX = px;
+				}
+				if (py > maxY) {
+					maxY = py;
+				}
+			}
+			if (maxX < 0) {
+				return full;
+			}
+			var bw = maxX - minX + 1;
+			var bh = maxY - minY + 1;
+			if (bw * bh < sw * sh * 0.12) {
+				return full;
+			}
+			var x = Math.max(0, Math.floor(minX / scale) - 1);
+			var y = Math.max(0, Math.floor(minY / scale) - 1);
+			var right = Math.min(full.w, Math.ceil((maxX + 1) / scale) + 1);
+			var bottom = Math.min(full.h, Math.ceil((maxY + 1) / scale) + 1);
+			var box = { x: x, y: y, w: right - x, h: bottom - y };
+			if (box.w < 2 || box.h < 2 || (x <= 2 && y <= 2 && box.w >= full.w - 4 && box.h >= full.h - 4)) {
+				return full;
+			}
+			img._apdArt = box;
+			return box;
+		} catch (err) {
+			return full;
+		}
+	}
+
+	function resetDesignImage(img) {
+		img._apdArt = null;
+		img._apdArtSrc = '';
+		img.style.left = '';
+		img.style.top = '';
+		img.style.width = '';
+		img.style.height = '';
+	}
+
+	function fitDesignArtwork(img) {
+		var stage = img.closest('[data-apd-design-stage]');
+		if (!stage) {
+			return;
+		}
+		function place() {
+			if (img._apdArtSrc !== img.src) {
+				img._apdArt = null;
+				img._apdArtSrc = img.src;
+			}
+			var box = artworkSourceBox(img);
+			var sw = stage.clientWidth;
+			var sh = stage.clientHeight;
+			if (!img.naturalWidth || !img.naturalHeight || !box.w || !box.h) {
+				return;
+			}
+			if (!sw || !sh) {
+				if (!img._apdFitWait) {
+					img._apdFitWait = true;
+					window.requestAnimationFrame(function () {
+						img._apdFitWait = false;
+						place();
+					});
+				}
+				return;
+			}
+			var scale = Math.min(sw / box.w, sh / box.h);
+			img.style.width = (img.naturalWidth * scale) + 'px';
+			img.style.height = (img.naturalHeight * scale) + 'px';
+			img.style.left = (((sw - box.w * scale) / 2) - (box.x * scale)) + 'px';
+			img.style.top = (((sh - box.h * scale) / 2) - (box.y * scale)) + 'px';
+		}
+		if (img.complete && img.naturalWidth) {
+			place();
+			return;
+		}
+		img.addEventListener('load', place, { once: true });
+	}
+
+	function updateDesignStage(stage) {
+		var schematic = stage.querySelector('[data-apd-text-box-schematic]');
+		var img = stage.querySelector('[data-apd-text-box-image]');
+		var band = stage.querySelector('[data-apd-band-box]');
+		var wrap = stage.closest('[data-apd-text-box-wrap]');
+		var hasImage = !!(img && img.getAttribute('src'));
+		if (band) {
+			band.hidden = true;
+		}
+		if (!hasImage) {
+			if (schematic) {
+				schematic.hidden = false;
+			}
+			if (img) {
+				img.hidden = true;
+				resetDesignImage(img);
+			}
+			if (wrap) {
+				wrap.hidden = true;
+			}
+			return;
+		}
+		if (wrap) {
+			wrap.hidden = false;
+		}
+		if (schematic) {
+			schematic.hidden = true;
+		}
+		img.hidden = false;
+		fitDesignArtwork(img);
+		syncSampleSize();
+	}
+
 	function updateFormatStage() {
 		var stage = document.querySelector('[data-apd-text-box-stage]');
 		if (!stage) {
+			return;
+		}
+		if (isDesignEditor()) {
+			updateDesignStage(stage);
 			return;
 		}
 		var type = currentFormatType();
@@ -438,18 +843,34 @@
 		if (mm.width > 0 && mm.height > 0) {
 			stage.style.aspectRatio = String(mm.width) + ' / ' + String(mm.height);
 		}
+		var studio = stage.closest('[data-apd-plate-studio]');
+		if (studio) {
+			var previewMax = 500;
+			if (isPhotoHolder(type) && mm.width > 0) {
+				previewMax = Math.max(80, Math.round(500 * (mm.width / 520)));
+			}
+			studio.style.setProperty('--apd-canvas-max', previewMax + 'px');
+		}
 		var schematic = stage.querySelector('[data-apd-text-box-schematic]');
 		var img = stage.querySelector('[data-apd-text-box-image]');
 		var band = stage.querySelector('[data-apd-band-box]');
 		var textBox = stage.querySelector('[data-apd-text-box]');
 		var cfg = adminCfg();
-		if (type === 'holder' && img && !img.getAttribute('src') && cfg.holderImageUrl) {
-			img.src = cfg.holderImageUrl;
+		var holderPhoto = bundledHolderUrl(type);
+		var uploaded = document.querySelector('[name="apd_format[base_image_id]"]');
+		var hasUpload = !!(uploaded && uploaded.value && uploaded.value !== '0');
+		if (isHolderType(type) && img && holderPhoto && !hasUpload) {
+			var currentSrc = img.getAttribute('src') || '';
+			if (!currentSrc || currentSrc.indexOf('gray-plate-holder-hole.png') !== -1 || currentSrc.indexOf('holder-moto.jpg') !== -1 || currentSrc.indexOf('holder-moto.png') !== -1 || currentSrc.indexOf('holder-type-d.png') !== -1) {
+				img.src = holderPhoto;
+			}
 		}
 		if (textBox) {
-			textBox.classList.toggle('apd-text-box--strip', type === 'holder');
-			textBox.style.borderRadius = (type === 'holder' && textBox.clientHeight > 0)
-				? (textBox.clientHeight * 0.25) + 'px'
+			var radii = cfg.holderStripRadii || {};
+			var radiusFactor = radii[type] ? Number(radii[type]) : 0.25;
+			textBox.classList.toggle('apd-text-box--strip', isHolderType(type));
+			textBox.style.borderRadius = (isHolderType(type) && textBox.clientHeight > 0)
+				? (textBox.clientHeight * radiusFactor) + 'px'
 				: '';
 		}
 		var hasImage = !!(img && img.getAttribute('src'));
@@ -522,6 +943,28 @@
 			px = Math.max(10, Math.floor(px * (width / textWidth) * 0.96));
 			sample.style.fontSize = String(px) + 'px';
 		}
+		var rightEl = document.querySelector('[data-apd-text-box-right]');
+		var rightSample = document.querySelector('[data-apd-text-box-sample-right]');
+		if (!splitActive() || !rightEl || !rightSample || rightEl.hidden) {
+			return;
+		}
+		var rightWidth = rightEl.clientWidth;
+		var rightPx = px;
+		if (rightWidth > 0) {
+			var rightProbe = document.createElement('span');
+			rightProbe.textContent = rightSample.textContent || '1234';
+			rightProbe.style.cssText = probe.style.cssText;
+			rightProbe.style.fontSize = String(px) + 'px';
+			document.body.appendChild(rightProbe);
+			var rightTextWidth = rightProbe.getBoundingClientRect().width;
+			document.body.removeChild(rightProbe);
+			if (rightTextWidth > rightWidth) {
+				rightPx = Math.max(10, Math.floor(px * (rightWidth / rightTextWidth) * 0.96));
+			}
+		}
+		var shared = Math.min(px, rightPx);
+		sample.style.fontSize = String(shared) + 'px';
+		rightSample.style.fontSize = String(shared) + 'px';
 	}
 
 	function openMedia(button) {
@@ -716,7 +1159,7 @@
 			if (field.querySelector('[name="apd_design[image_id]"]') || field.querySelector('[name="apd_format[base_image_id]"]')) {
 				var wrap = document.querySelector('[data-apd-text-box-wrap]');
 				var overlayImg = document.querySelector('[data-apd-text-box-image]');
-				var holderFallback = currentFormatType() === 'holder' ? (adminCfg().holderImageUrl || '') : '';
+				var holderFallback = bundledHolderUrl(currentFormatType());
 				if (overlayImg && holderFallback) {
 					overlayImg.src = holderFallback;
 					overlayImg.hidden = false;
@@ -852,8 +1295,14 @@
 		el.style.height = String(box.height) + '%';
 		var stage = el.parentElement;
 		var stageH = stage ? stage.clientHeight : 0;
+		var stripFactor = 0.25;
+		var stripRadii = adminCfg().holderStripRadii || {};
+		var stripType = currentFormatType();
+		if (stripRadii[stripType]) {
+			stripFactor = Number(stripRadii[stripType]);
+		}
 		el.style.borderRadius = (el.classList.contains('apd-text-box--strip') && stageH > 0)
-			? (stageH * (box.height / 100) * 0.25) + 'px'
+			? (stageH * (box.height / 100) * stripFactor) + 'px'
 			: '';
 		if (sample) {
 			if (sample.classList.contains('apd-text-box-sample--rows')) {
@@ -892,8 +1341,9 @@
 		var type = currentFormatType();
 		var mm = formatMm();
 		var region = { x: 0, y: 0, width: 100, height: 100 };
-		if (type === 'holder') {
-			var strip = adminCfg().holderStrip;
+		if (isHolderType(type)) {
+			var strips = adminCfg().holderStrips || {};
+			var strip = strips[type] || (type === 'holder' ? adminCfg().holderStrip : null);
 			if (strip && strip.width) {
 				return {
 					x: Number(strip.x),
@@ -902,7 +1352,9 @@
 					height: Number(strip.height)
 				};
 			}
-			return { x: 2.73, y: 77.3, width: 94.34, height: 6.26 };
+			if (type === 'holder') {
+				return { x: 2.73, y: 77.3, width: 94.34, height: 6.26 };
+			}
 		}
 		if (paintedPlate(type) && !wantsNoFrame()) {
 			var bwInput = document.querySelector('[name="apd_format[border_width]"]');
@@ -986,6 +1438,180 @@
 		});
 	}
 
+	function splitActive() {
+		var cb = document.querySelector('[data-apd-split-text]');
+		if (!cb || !cb.checked) {
+			return false;
+		}
+		if (document.querySelector('[data-apd-design-stage]')) {
+			return true;
+		}
+		return currentFormatType() === 'us';
+	}
+
+	function round1(value) {
+		return Math.round(value * 10) / 10;
+	}
+
+	function readRightBox() {
+		function num(name, fallback) {
+			var el = document.querySelector('[data-apd-text-box-right-input="' + name + '"]');
+			var value = el ? parseFloat(el.value) : fallback;
+			return isNaN(value) ? fallback : value;
+		}
+		var alignEl = document.querySelector('[data-apd-text-box-right-input="align"]');
+		var left = readTextBox();
+		return clampBox({
+			x: num('x', left.x + left.width + 8),
+			y: left.y,
+			width: num('width', 30),
+			height: left.height,
+			align: alignEl ? alignEl.value : 'center',
+			valign: left.valign
+		});
+	}
+
+	function applyRightOverlay(box) {
+		var el = document.querySelector('[data-apd-text-box-right]');
+		var sample = document.querySelector('[data-apd-text-box-sample-right]');
+		if (!el || !box) {
+			return;
+		}
+		el.style.left = String(box.x) + '%';
+		el.style.top = String(box.y) + '%';
+		el.style.width = String(box.width) + '%';
+		el.style.height = String(box.height) + '%';
+		if (sample) {
+			sample.style.justifyContent = alignToFlex(box.align);
+			sample.style.alignItems = box.valign === 'top' ? 'flex-start' : (box.valign === 'bottom' ? 'flex-end' : 'center');
+		}
+	}
+
+	function writeRightBox(box) {
+		['x', 'y', 'width', 'height', 'align', 'valign'].forEach(function (name) {
+			var el = document.querySelector('[data-apd-text-box-right-input="' + name + '"]');
+			if (el && box[name] !== undefined && box[name] !== null) {
+				el.value = String(box[name]);
+			}
+		});
+		applyRightOverlay(box);
+	}
+
+	function separateSides(left, right) {
+		left = clampBox(left);
+		right = clampBox({
+			x: right.x,
+			y: left.y,
+			width: right.width,
+			height: left.height,
+			align: right.align || 'center',
+			valign: left.valign
+		});
+		var leftEnd = round1(left.x + left.width);
+		if (right.x < leftEnd) {
+			var fit = round1(right.x - left.x);
+			if (fit >= 5) {
+				left.width = fit;
+			} else {
+				right.x = round1(left.x + left.width);
+			}
+		}
+		if (right.x + right.width > 100) {
+			right.width = round1(100 - right.x);
+		}
+		if (right.width < 5) {
+			right.width = 5;
+			if (right.x > 95) {
+				right.x = 95;
+			}
+		}
+		right.y = left.y;
+		right.height = left.height;
+		right.valign = left.valign;
+		return { left: clampBox(left), right: right };
+	}
+
+	function seedPair(left) {
+		var gap = 8;
+		var usable = Math.max(10, left.width - gap);
+		var leftW = round1(Math.max(5, usable * 0.45));
+		var rightW = round1(Math.max(5, usable - leftW));
+		var rightX = round1(left.x + leftW + gap);
+		return separateSides(
+			Object.assign({}, left, { width: leftW }),
+			Object.assign({}, left, { x: rightX, width: rightW, align: 'center' })
+		);
+	}
+
+	function movePair(left, right) {
+		var minX = Math.min(left.x, right.x);
+		var maxR = Math.max(left.x + left.width, right.x + right.width);
+		if (minX < 0) {
+			left.x -= minX;
+			right.x -= minX;
+		}
+		maxR = Math.max(left.x + left.width, right.x + right.width);
+		if (maxR > 100) {
+			var over = maxR - 100;
+			left.x -= over;
+			right.x -= over;
+		}
+		if (left.y < 0) {
+			left.y = 0;
+		}
+		if (left.y + left.height > 100) {
+			left.y = round1(100 - left.height);
+		}
+		left.x = round1(left.x);
+		left.y = round1(left.y);
+		right.x = round1(right.x);
+		right.y = left.y;
+		right.height = left.height;
+		right.valign = left.valign;
+		return { left: left, right: right };
+	}
+
+	function writePair(left, right) {
+		writeTextBox(left);
+		writeRightBox(right);
+		syncSampleSize();
+	}
+
+	function syncSplitPanels() {
+		var design = !!document.querySelector('[data-apd-design-stage]');
+		var allowed = design || currentFormatType() === 'us';
+		var toggle = document.querySelector('.apd-split-toggle');
+		if (toggle && !design) {
+			toggle.hidden = currentFormatType() !== 'us';
+		}
+		var on = allowed && splitActive();
+		document.querySelectorAll('[data-apd-split-panel]').forEach(function (el) {
+			el.hidden = !on;
+		});
+		document.querySelectorAll('[data-apd-split-on]').forEach(function (el) {
+			el.hidden = !on;
+		});
+		document.querySelectorAll('[data-apd-split-off]').forEach(function (el) {
+			el.hidden = on;
+		});
+		var right = document.querySelector('[data-apd-text-box-right]');
+		if (right) {
+			right.hidden = !on;
+		}
+		if (document.querySelector('[data-apd-format-type]')) {
+			renderPlateSample();
+		} else {
+			var sample = document.querySelector('[data-apd-text-box-sample]');
+			if (sample && !sample.classList.contains('apd-text-box-sample--rows')) {
+				sample.textContent = on ? 'CA' : (sample.getAttribute('data-fallback') || 'TEXT');
+			}
+		}
+		var rightSample = document.querySelector('[data-apd-text-box-sample-right]');
+		if (rightSample) {
+			rightSample.textContent = '1234';
+		}
+	}
+
 	function bindTextBoxEditor() {
 		var stage = document.querySelector('[data-apd-text-box-stage]');
 		var boxEl = document.querySelector('[data-apd-text-box]');
@@ -994,6 +1620,29 @@
 		}
 
 		applyTextBoxOverlay(readTextBox());
+		syncSplitPanels();
+		if (splitActive()) {
+			writePair(readTextBox(), readRightBox());
+		}
+
+		var splitToggle = document.querySelector('[data-apd-split-text]');
+		if (splitToggle) {
+			splitToggle.addEventListener('change', function () {
+				if (splitToggle.checked) {
+					var leftNow = readTextBox();
+					var rightNow = readRightBox();
+					if (rightNow.x < leftNow.x + leftNow.width - 0.05) {
+						var seeded = seedPair(leftNow);
+						writePair(seeded.left, seeded.right);
+					} else {
+						writePair(leftNow, Object.assign({}, rightNow, { y: leftNow.y, height: leftNow.height, valign: leftNow.valign }));
+					}
+				}
+				syncSplitPanels();
+				toggleSuvCharLimits(currentFormatType());
+				syncSampleSize();
+			});
+		}
 
 		document.addEventListener('click', function (event) {
 			var alignBtn = event.target && event.target.closest('[data-apd-row-align]');
@@ -1019,32 +1668,67 @@
 				return;
 			}
 			event.preventDefault();
-			writeTextBox(centerBoxInRegion(readTextBox(), computeTextAreaRegion()));
+			if (!splitActive()) {
+				writeTextBox(centerBoxInRegion(readTextBox(), computeTextAreaRegion()));
+				return;
+			}
+			var region = computeTextAreaRegion();
+			var leftBox = readTextBox();
+			var rightBox = readRightBox();
+			var unionLeft = Math.min(leftBox.x, rightBox.x);
+			var unionRight = Math.max(leftBox.x + leftBox.width, rightBox.x + rightBox.width);
+			var unionW = unionRight - unionLeft;
+			var shiftX = (region.x + (region.width - unionW) / 2) - unionLeft;
+			var shiftY = (region.y + (region.height - leftBox.height) / 2) - leftBox.y;
+			leftBox.x += shiftX;
+			leftBox.y += shiftY;
+			rightBox.x += shiftX;
+			rightBox.y = leftBox.y;
+			rightBox.height = leftBox.height;
+			var moved = movePair(leftBox, rightBox);
+			writePair(moved.left, moved.right);
 		});
 
 		document.addEventListener('input', function (event) {
-			if (event.target && event.target.hasAttribute('data-apd-text-box-input')) {
-				writeTextBox(readTextBox());
+			if (!event.target) {
+				return;
+			}
+			if (event.target.hasAttribute('data-apd-text-box-input') || event.target.hasAttribute('data-apd-text-box-right-input')) {
+				if (splitActive()) {
+					var linked = separateSides(readTextBox(), readRightBox());
+					writePair(linked.left, linked.right);
+				} else {
+					writeTextBox(readTextBox());
+				}
 			}
 		});
 		document.addEventListener('change', function (event) {
-			if (event.target && event.target.hasAttribute('data-apd-text-box-input')) {
-				writeTextBox(readTextBox());
+			if (!event.target) {
+				return;
+			}
+			if (event.target.hasAttribute('data-apd-text-box-input') || event.target.hasAttribute('data-apd-text-box-right-input')) {
+				if (splitActive()) {
+					var linkedChange = separateSides(readTextBox(), readRightBox());
+					writePair(linkedChange.left, linkedChange.right);
+				} else {
+					writeTextBox(readTextBox());
+				}
 			}
 		});
 
 		var drag = null;
 
-		function startDrag(event, handle) {
+		function startDrag(event, handle, which) {
 			event.preventDefault();
 			var rect = stage.getBoundingClientRect();
-			var box = readTextBox();
 			drag = {
 				handle: handle,
+				which: which || 'left',
 				startX: event.clientX,
 				startY: event.clientY,
 				rect: rect,
-				box: box
+				left: readTextBox(),
+				right: readRightBox()
 			};
 			document.addEventListener('pointermove', onMove);
 			document.addEventListener('pointerup', onUp);
@@ -1056,34 +1740,69 @@
 			}
 			var dx = ((event.clientX - drag.startX) / drag.rect.width) * 100;
 			var dy = ((event.clientY - drag.startY) / drag.rect.height) * 100;
-			var next = {
-				x: drag.box.x,
-				y: drag.box.y,
-				width: drag.box.width,
-				height: drag.box.height,
-				align: drag.box.align,
-				valign: drag.box.valign
-			};
-			if (!drag.handle) {
-				next.x = drag.box.x + dx;
-				next.y = drag.box.y + dy;
-			} else {
-				if (drag.handle.indexOf('w') !== -1) {
-					next.x = drag.box.x + dx;
-					next.width = drag.box.width - dx;
+			if (!splitActive()) {
+				var next = {
+					x: drag.left.x,
+					y: drag.left.y,
+					width: drag.left.width,
+					height: drag.left.height,
+					align: drag.left.align,
+					valign: drag.left.valign
+				};
+				if (!drag.handle) {
+					next.x = drag.left.x + dx;
+					next.y = drag.left.y + dy;
+				} else {
+					if (drag.handle.indexOf('w') !== -1) {
+						next.x = drag.left.x + dx;
+						next.width = drag.left.width - dx;
+					}
+					if (drag.handle.indexOf('e') !== -1) {
+						next.width = drag.left.width + dx;
+					}
+					if (drag.handle.indexOf('n') !== -1) {
+						next.y = drag.left.y + dy;
+						next.height = drag.left.height - dy;
+					}
+					if (drag.handle.indexOf('s') !== -1) {
+						next.height = drag.left.height + dy;
+					}
 				}
-				if (drag.handle.indexOf('e') !== -1) {
-					next.width = drag.box.width + dx;
-				}
-				if (drag.handle.indexOf('n') !== -1) {
-					next.y = drag.box.y + dy;
-					next.height = drag.box.height - dy;
-				}
-				if (drag.handle.indexOf('s') !== -1) {
-					next.height = drag.box.height + dy;
-				}
+				writeTextBox(clampBox(next));
+				return;
 			}
-			writeTextBox(clampBox(next));
+			var left = Object.assign({}, drag.left);
+			var right = Object.assign({}, drag.right);
+			var source = drag.which === 'right' ? drag.right : drag.left;
+			var target = drag.which === 'right' ? right : left;
+			if (!drag.handle) {
+				left.x = drag.left.x + dx;
+				left.y = drag.left.y + dy;
+				right.x = drag.right.x + dx;
+				right.y = left.y;
+				right.height = left.height;
+				writePair(movePair(left, right).left, movePair(left, right).right);
+				return;
+			}
+			if (drag.handle.indexOf('w') !== -1) {
+				target.x = source.x + dx;
+				target.width = source.width - dx;
+			}
+			if (drag.handle.indexOf('e') !== -1) {
+				target.width = source.width + dx;
+			}
+			if (drag.handle.indexOf('n') !== -1) {
+				left.y = drag.left.y + dy;
+				left.height = drag.left.height - dy;
+			}
+			if (drag.handle.indexOf('s') !== -1) {
+				left.height = drag.left.height + dy;
+			}
+			right.y = left.y;
+			right.height = left.height;
+			right.valign = left.valign;
+			var separated = separateSides(left, right);
+			writePair(separated.left, separated.right);
 		}
 
 		function onUp() {
@@ -1094,11 +1813,26 @@
 
 		boxEl.addEventListener('pointerdown', function (event) {
 			if (event.target && event.target.getAttribute('data-apd-handle')) {
-				startDrag(event, event.target.getAttribute('data-apd-handle'));
+				startDrag(event, event.target.getAttribute('data-apd-handle'), 'left');
 				return;
 			}
-			startDrag(event, '');
+			startDrag(event, '', 'left');
 		});
+
+		var rightEl = document.querySelector('[data-apd-text-box-right]');
+		if (rightEl) {
+			rightEl.addEventListener('pointerdown', function (event) {
+				if (!splitActive()) {
+					return;
+				}
+				event.stopPropagation();
+				if (event.target && event.target.getAttribute('data-apd-handle')) {
+					startDrag(event, event.target.getAttribute('data-apd-handle'), 'right');
+					return;
+				}
+				startDrag(event, '', 'right');
+			});
+		}
 	}
 
 	function clampBandBox(box) {
@@ -1381,9 +2115,11 @@
 	}
 
 	function onReady() {
+		bindPaletteMenus();
 		toggleFormatFields();
 		toggleProductColorFields();
 		toggleProductTextRows();
+		toggleProductDesign();
 		toggleProductOptions();
 		toggleDesignFormats();
 		toggleSwatchRadius();
@@ -1401,6 +2137,12 @@
 		window.addEventListener('resize', function () {
 			applyFrameOverlay();
 			syncSampleSize();
+			if (isDesignEditor()) {
+				var designImg = document.querySelector('[data-apd-design-stage] [data-apd-text-box-image]');
+				if (designImg && designImg.getAttribute('src')) {
+					fitDesignArtwork(designImg);
+				}
+			}
 		});
 	}
 
@@ -1417,6 +2159,44 @@
 		extras.hidden = !enabled.checked;
 	}
 
+	function toggleProductDesign() {
+		var select = document.getElementById('apd_format_id');
+		var row = document.querySelector('[data-apd-product-design]');
+		var designSelect = document.getElementById('apd_design_id');
+		if (!select || !row || !designSelect) {
+			return;
+		}
+		var option = select.options[select.selectedIndex];
+		var type = option ? option.getAttribute('data-apd-type') || '' : '';
+		var formatId = select.value;
+		var us = type === 'us';
+		row.hidden = !us;
+		designSelect.disabled = !us;
+		if (!us) {
+			return;
+		}
+		var current = designSelect.value;
+		var still = false;
+		Array.prototype.forEach.call(designSelect.options, function (opt) {
+			if (!opt.value) {
+				opt.hidden = false;
+				opt.disabled = false;
+				return;
+			}
+			var raw = opt.getAttribute('data-apd-formats') || '';
+			var ids = raw ? raw.split(',') : [];
+			var ok = !ids.length || ids.indexOf(formatId) !== -1;
+			opt.hidden = !ok;
+			opt.disabled = !ok;
+			if (ok && opt.value === current) {
+				still = true;
+			}
+		});
+		if (!still) {
+			designSelect.value = '';
+		}
+	}
+
 	function toggleProductTextRows() {
 		var select = document.getElementById('apd_format_id');
 		var single = document.querySelector('[data-apd-default-single]');
@@ -1426,7 +2206,7 @@
 		}
 		var option = select.options[select.selectedIndex];
 		var type = option ? option.getAttribute('data-apd-type') || '' : '';
-		var suv = type === 'suv' || type === 'suv_eu';
+		var suv = type === 'moto' || type === 'moto_plain' || type === 'suv' || type === 'suv_eu';
 		var singleInput = single.querySelector('input');
 		var rowInputs = rows.querySelectorAll('input');
 		if (suv && singleInput && rowInputs.length === 2 && !rowInputs[0].value && !rowInputs[1].value && singleInput.value) {
@@ -1466,12 +2246,6 @@
 				}
 			});
 		});
-		var bgLabel = box.querySelector('[data-apd-background-label]');
-		if (bgLabel) {
-			bgLabel.textContent = type === 'holder'
-				? (admin.stripColorLabel || 'White strip color')
-				: (admin.plateColorLabel || 'Plate color');
-		}
 	}
 
 	function previewBaseFile(input) {
@@ -1513,6 +2287,7 @@
 		if (event.target.id === 'apd_format_id') {
 			toggleProductColorFields();
 			toggleProductTextRows();
+			toggleProductDesign();
 		}
 		if (event.target.name === 'apd_enabled') {
 			toggleProductOptions();

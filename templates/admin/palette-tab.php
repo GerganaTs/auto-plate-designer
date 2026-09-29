@@ -41,17 +41,16 @@ if ( ! is_array( $editing_color ) ) {
 $editing_colors = isset( $editing['color_ids'] ) && is_array( $editing['color_ids'] ) ? $editing['color_ids'] : array();
 $swatch         = APD_Color_Palettes::swatch_display();
 $swatch_radius  = APD_Color_Palettes::swatch_radius_css( $swatch );
-$purposes       = array(
-	'text'       => __( 'Text', 'auto-plate-designer' ),
-	'border'     => __( 'Border', 'auto-plate-designer' ),
-	'background' => __( 'Plate fill', 'auto-plate-designer' ),
-	'holder'     => __( 'Holder color', 'auto-plate-designer' ),
-);
+$purposes = array();
+
+foreach ( APD_Color_Palettes::purposes() as $apd_purpose ) {
+	$purposes[ $apd_purpose ] = APD_Color_Palettes::purpose_label( $apd_purpose );
+}
 $palette_url    = $apd_admin->tab_url( 'palette' );
 ?>
 <div class="apd-tab apd-tab--palette">
 	<h2><?php esc_html_e( 'Color palette', 'auto-plate-designer' ); ?></h2>
-	<p class="apd-lede"><?php esc_html_e( 'This tab has three jobs: how color buttons look in the shop, the master list of colors, and the named palettes products can offer (letters, frame, plate fill, or holder plastic). Work top to bottom. New products start with no palette selected.', 'auto-plate-designer' ); ?></p>
+	<p class="apd-lede"><?php esc_html_e( 'This tab has three jobs: how color buttons look in the shop, the master list of colors, and the named palettes. Standard plates use letters, frame, and plate fill. Holders have their own plastic, strip, and inscription palettes. Color plates can use extra palettes besides the standard ones. Choose which palettes a shopper sees on the format.', 'auto-plate-designer' ); ?></p>
 
 	<section class="apd-card" aria-labelledby="apd-swatch-heading">
 		<h3 id="apd-swatch-heading" class="apd-card__title"><?php esc_html_e( '1. Shop buttons', 'auto-plate-designer' ); ?></h3>
@@ -191,7 +190,7 @@ $palette_url    = $apd_admin->tab_url( 'palette' );
 
 	<section class="apd-card" aria-labelledby="apd-palettes-heading">
 		<h3 id="apd-palettes-heading" class="apd-card__title"><?php esc_html_e( '3. Named palettes', 'auto-plate-designer' ); ?></h3>
-		<p class="apd-card__lede"><?php esc_html_e( 'A palette is a named set of colors for one part of the plate — letters, frame, or fill. Attach palettes on the WooCommerce product, not on a country preset. Example: a Romanian fill palette with only white and yellow.', 'auto-plate-designer' ); ?></p>
+		<p class="apd-card__lede"><?php esc_html_e( 'A palette is a named set of colors for one part of the plate — letters, frame, or fill. Choose palettes on the format. The product only picks that format. Example: a Romanian fill palette with only white and yellow.', 'auto-plate-designer' ); ?></p>
 
 		<div class="apd-palette-groups">
 			<?php foreach ( $purposes as $purpose => $purpose_label ) : ?>
@@ -289,7 +288,7 @@ $palette_url    = $apd_admin->tab_url( 'palette' );
 						<label class="apd-choice">
 							<input type="hidden" name="apd_palette[active]" value="0">
 							<input type="checkbox" name="apd_palette[active]" value="1" <?php checked( ! empty( $editing['active'] ) ); ?>>
-							<?php esc_html_e( 'Active — uncheck to hide this palette from products without deleting it.', 'auto-plate-designer' ); ?>
+							<?php esc_html_e( 'Active — uncheck to hide this palette from formats without deleting it.', 'auto-plate-designer' ); ?>
 						</label>
 					</div>
 					<div class="apd-field apd-field--span">

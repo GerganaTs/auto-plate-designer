@@ -14,9 +14,11 @@
  * - suv_eu      two-line / SUV plate with euroband (280×200, BDS 15980)
  * - suv         two-line / SUV plate without preset (painted, 280×200, BDS 15980)
  * - us          state graphics
- * - custom      street / painted, no band
+ * - custom      street / painted, no band, size is typed in millimetres
  * - color       painted, no band
- * - holder      product photo
+ * - holder      car holder mask (body recolor, strip, inscription)
+ * - holder_moto motorcycle holder photo (strip and letters share palettes)
+ * - holder_d    type D holder photo (strip and letters share palettes)
  *
  * `type_capabilities()` is the PHP map. Admin JS reads the same map from
  * `apdAdmin.typeCapabilities`. The shop payload copies it onto `format.capabilities`.
@@ -66,13 +68,33 @@ final class APD_Formats {
 	}
 
 	/**
+	 * Shop and admin preview width in CSS pixels.
+	 *
+	 * Plates stay at the shared car-plate width. Motorcycle and type D holders
+	 * scale with their millimetres, so a 199 mm holder is not drawn 520 mm wide.
+	 *
+	 * @param string $type  Format type.
+	 * @param int    $width Format width in millimetres.
+	 * @return int
+	 */
+	public static function preview_frame_width( $type, $width ) {
+		$width = max( 1, (int) $width );
+
+		if ( ! self::is_photo_holder( $type ) ) {
+			return self::canvas_display_width( $width, 0 );
+		}
+
+		return max( 80, (int) round( self::CANVAS_DISPLAY_MAX_PX * ( $width / 520 ) ) );
+	}
+
+	/**
 	 * Shoppers can add or hide the admin frame. USA plates and holders cannot.
 	 *
 	 * @param string $type Format type.
 	 * @return bool
 	 */
 	public static function offers_frame_choice( $type ) {
-		return ! in_array( (string) $type, array( 'holder', 'us' ), true );
+		return ! in_array( (string) $type, array( 'holder', 'holder_moto', 'holder_d', 'us' ), true );
 	}
 
 	/**
@@ -94,6 +116,13 @@ final class APD_Formats {
 	public const SUV_ROW_1_MAX = 5;
 
 	public const SUV_ROW_2_MAX = 4;
+
+	/**
+	 * Default character caps for a USA plate split around a center graphic.
+	 */
+	public const US_SIDE_LEFT_MAX = 3;
+
+	public const US_SIDE_RIGHT_MAX = 4;
 
 	/**
 	 * Sample letters as a fraction of the dashed text-box height.
@@ -266,11 +295,12 @@ final class APD_Formats {
 
 		$type = (string) $raw['type'];
 
-		$size   = self::default_size( $type );
-		$width  = self::int_in_range( isset( $raw['width'] ) ? $raw['width'] : $size['width'], 100, 2000, $size['width'] );
-		$height = self::int_in_range( isset( $raw['height'] ) ? $raw['height'] : $size['height'], 40, 1200, $size['height'] );
+		$size = self::default_size( $type );
 
-		if ( 'holder' === $type ) {
+		if ( 'custom' === $type ) {
+			$width  = self::int_in_range( isset( $raw['width'] ) ? $raw['width'] : $size['width'], 100, 2000, $size['width'] );
+			$height = self::int_in_range( isset( $raw['height'] ) ? $raw['height'] : $size['height'], 40, 1200, $size['height'] );
+		} else {
 			$width  = $size['width'];
 			$height = $size['height'];
 		}
@@ -325,7 +355,7 @@ final class APD_Formats {
 		$base_image_id = isset( $raw['base_image_id'] ) ? absint( $raw['base_image_id'] ) : 0;
 
 		if ( self::uses_base_image( $type ) ) {
-			$image_optional = 'holder' === $type && '' !== self::bundled_holder_image_url();
+			$image_optional = ( self::is_holder( $type ) && '' !== self::bundled_holder_image_url( $type ) ) || 'us' === $type;
 			$image_check    = APD_Security::validate_attachment(
 				$base_image_id,
 				array(
@@ -336,12 +366,15 @@ final class APD_Formats {
 			);
 
 			if ( is_wp_error( $image_check ) ) {
-				return new WP_Error(
-					'apd_format_base_image',
-					'suv' === $type
-						? __( 'SUV formats require a photo of the full plate.', 'auto-plate-designer' )
-						: __( 'Holder formats require a photo of the plate holder.', 'auto-plate-designer' )
-				);
+				if ( 'us' === $type ) {
+					$image_message = __( 'USA formats require a photo of the plate.', 'auto-plate-designer' );
+				} elseif ( 'suv' === $type ) {
+					$image_message = __( 'SUV formats require a photo of the full plate.', 'auto-plate-designer' );
+				} else {
+					$image_message = __( 'Holder formats require a photo of the plate holder.', 'auto-plate-designer' );
+				}
+
+				return new WP_Error( 'apd_format_base_image', $image_message );
 			}
 		} else {
 			$base_image_id = 0;
@@ -352,11 +385,11 @@ final class APD_Formats {
 		$row_1_max   = 0;
 		$row_2_max   = 0;
 
-		if ( self::is_suv_kind( $type ) ) {
+		if ( self::uses_two_rows( $type ) ) {
 			$row_1_max = self::int_in_range( isset( $raw['max_chars_row_1'] ) ? $raw['max_chars_row_1'] : self::SUV_ROW_1_MAX, 1, APD_Security::ABSOLUTE_MAX_CHARS, self::SUV_ROW_1_MAX );
 			$row_2_max = self::int_in_range( isset( $raw['max_chars_row_2'] ) ? $raw['max_chars_row_2'] : self::SUV_ROW_2_MAX, 1, APD_Security::ABSOLUTE_MAX_CHARS, self::SUV_ROW_2_MAX );
 			$max_chars = min( APD_Security::ABSOLUTE_MAX_CHARS, $row_1_max + $row_2_max );
-		} elseif ( 'holder' === $type ) {
+		} elseif ( self::is_holder( $type ) ) {
 			$max_chars = self::holder_text_limit();
 		}
 		$font_ids_all = ! empty( $raw['font_ids_all'] );
@@ -369,7 +402,7 @@ final class APD_Formats {
 			'band_side'  => $band_side,
 		);
 
-		return array(
+		$row = array(
 			'id'               => $id,
 			'name'             => APD_Security::sanitize_admin_label( (string) $raw['name'] ),
 			'type'             => $type,
@@ -389,8 +422,179 @@ final class APD_Formats {
 			'max_chars_row_2'  => $row_2_max,
 			'font_ids'         => $font_ids,
 			'font_ids_all'     => $font_ids_all,
+			'wrap_text'        => self::is_street_plate( $type ) && ! empty( $raw['wrap_text'] ),
 			'price_adjustment' => round( $price, 2 ),
 		);
+
+		if ( 'us' === $type && ! empty( $raw['split_text'] ) ) {
+			$right_raw = isset( $raw['text_box_right'] ) && is_array( $raw['text_box_right'] ) ? $raw['text_box_right'] : array();
+			$pair      = ( isset( $right_raw['x'] ) || isset( $right_raw['width'] ) )
+				? self::link_side_boxes( $row['text_box'], $right_raw )
+				: self::seed_side_boxes( $row['text_box'] );
+			$side_left  = self::int_in_range( isset( $raw['max_chars_left'] ) ? $raw['max_chars_left'] : self::US_SIDE_LEFT_MAX, 1, APD_Security::ABSOLUTE_MAX_CHARS, self::US_SIDE_LEFT_MAX );
+			$side_right = self::int_in_range( isset( $raw['max_chars_right'] ) ? $raw['max_chars_right'] : self::US_SIDE_RIGHT_MAX, 1, APD_Security::ABSOLUTE_MAX_CHARS, self::US_SIDE_RIGHT_MAX );
+			$row['split_text']      = true;
+			$row['text_box']        = $pair[0];
+			$row['text_box_right']  = $pair[1];
+			$row['max_chars_left']  = $side_left;
+			$row['max_chars_right'] = $side_right;
+			$row['max_chars']       = min( APD_Security::ABSOLUTE_MAX_CHARS, $side_left + $side_right );
+		}
+
+		$palette_ids = APD_Color_Palettes::sanitize_product_ids( isset( $raw['palette_ids'] ) ? $raw['palette_ids'] : array(), $type );
+
+		if ( self::uses_palette_slots( $type ) && isset( $raw['palette_slots'] ) ) {
+			$palette_slots = self::sanitize_palette_slots( $raw['palette_slots'], $type );
+
+			if ( is_wp_error( $palette_slots ) ) {
+				return $palette_slots;
+			}
+
+			$row['palette_slots'] = $palette_slots;
+			$palette_ids          = array_values( $palette_slots );
+		}
+
+		$row['palette_ids'] = $palette_ids;
+
+		return $row;
+	}
+
+	/**
+	 * Format types that pick one palette for text, plate fill, and frame.
+	 *
+	 * @param string $type Format type.
+	 * @return bool
+	 */
+	public static function uses_palette_slots( $type ) {
+		return in_array( (string) $type, array( 'color', 'custom', 'eu_plain', 'moto_plain', 'suv', 'us' ), true );
+	}
+
+	/**
+	 * Palette menus shown for a format type.
+	 *
+	 * USA plates are a graphic, so only the text color is chosen.
+	 *
+	 * @param string $type Format type.
+	 * @return array<int, string>
+	 */
+	public static function palette_slot_keys_for( $type ) {
+		if ( 'us' === (string) $type ) {
+			return array( 'text' );
+		}
+
+		return self::palette_slot_keys();
+	}
+
+	/**
+	 * Shop rows that use a palette menu.
+	 *
+	 * @return array<int, string>
+	 */
+	public static function palette_slot_keys() {
+		return array( 'text', 'background', 'border' );
+	}
+
+	/**
+	 * Older checkbox purposes that belong on one shop row.
+	 *
+	 * @param string $slot text|background|border.
+	 * @return array<int, string>
+	 */
+	public static function palette_slot_purposes( $slot ) {
+		$map = array(
+			'text'       => array( 'text', 'color_text' ),
+			'background' => array( 'background', 'color_background' ),
+			'border'     => array( 'border', 'color_border' ),
+		);
+
+		return isset( $map[ $slot ] ) ? $map[ $slot ] : array();
+	}
+
+	/**
+	 * One active palette for each shop row.
+	 *
+	 * @param mixed $raw Posted slot map.
+	 * @return array<string, string>|WP_Error
+	 */
+	public static function sanitize_palette_slots( $raw, $type = '' ) {
+		$clean = array();
+
+		foreach ( self::palette_slot_keys_for( $type ) as $slot ) {
+			$clean[ $slot ] = '';
+		}
+
+		if ( ! is_array( $raw ) ) {
+			$raw = array();
+		}
+
+		foreach ( array_keys( $clean ) as $slot ) {
+			$id      = isset( $raw[ $slot ] ) ? sanitize_text_field( (string) $raw[ $slot ] ) : '';
+			$palette = '' !== $id ? APD_Color_Palettes::get( $id ) : null;
+			$colors  = is_array( $palette ) && isset( $palette['color_ids'] ) && is_array( $palette['color_ids'] ) ? $palette['color_ids'] : array();
+
+			if ( ! is_array( $palette ) || empty( $palette['active'] ) || empty( $colors ) ) {
+				$message = 'us' === (string) $type
+					? __( 'Choose a palette for the text.', 'auto-plate-designer' )
+					: __( 'Choose a palette for the text, the plate, and the frame.', 'auto-plate-designer' );
+
+				return new WP_Error( 'apd_format_palette_slot', $message );
+			}
+
+			$clean[ $slot ] = $id;
+		}
+
+		return $clean;
+	}
+
+	/**
+	 * Menu values for the format editor.
+	 *
+	 * A saved slot map is kept. An older checkbox list selects a row only when exactly one palette matches that row.
+	 *
+	 * @param array<string, mixed> $format     Format row.
+	 * @param array<int, string>   $legacy_ids Palette IDs from the format or its products.
+	 * @return array<string, string>
+	 */
+	public static function palette_slots_for_editor( $format, $legacy_ids ) {
+		$slots = array(
+			'text'       => '',
+			'background' => '',
+			'border'     => '',
+		);
+
+		if ( is_array( $format ) && isset( $format['palette_slots'] ) && is_array( $format['palette_slots'] ) ) {
+			foreach ( array_keys( $slots ) as $slot ) {
+				$slots[ $slot ] = isset( $format['palette_slots'][ $slot ] ) ? sanitize_text_field( (string) $format['palette_slots'][ $slot ] ) : '';
+			}
+
+			return $slots;
+		}
+
+		if ( ! is_array( $legacy_ids ) ) {
+			$legacy_ids = array();
+		}
+
+		foreach ( array_keys( $slots ) as $slot ) {
+			$matches = array();
+
+			foreach ( $legacy_ids as $id ) {
+				$id      = sanitize_text_field( (string) $id );
+				$palette = '' !== $id ? APD_Color_Palettes::get( $id ) : null;
+				$purpose = is_array( $palette ) && isset( $palette['purpose'] ) ? (string) $palette['purpose'] : '';
+
+				if ( is_array( $palette ) && ! empty( $palette['active'] ) && in_array( $purpose, self::palette_slot_purposes( $slot ), true ) ) {
+					$matches[] = $id;
+				}
+			}
+
+			$matches = array_values( array_unique( $matches ) );
+
+			if ( 1 === count( $matches ) ) {
+				$slots[ $slot ] = $matches[0];
+			}
+		}
+
+		return $slots;
 	}
 
 	/**
@@ -458,6 +662,8 @@ final class APD_Formats {
 			case 'us':
 				return 8;
 			case 'holder':
+			case 'holder_moto':
+			case 'holder_d':
 				return self::HOLDER_TEXT_MAX;
 			case 'custom':
 				return 40;
@@ -497,6 +703,8 @@ final class APD_Formats {
 				);
 				break;
 			case 'holder':
+			case 'holder_moto':
+			case 'holder_d':
 				$caps = array(
 					'painted'       => false,
 					'country_band'  => false,
@@ -508,7 +716,7 @@ final class APD_Formats {
 				$caps = array(
 					'painted'       => false,
 					'country_band'  => false,
-					'base_image'    => false,
+					'base_image'    => true,
 					'plate_designs' => true,
 				);
 				break;
@@ -559,9 +767,42 @@ final class APD_Formats {
 				return 'eu';
 			case 'suv_eu':
 				return 'suv';
+			case 'holder_moto':
+			case 'holder_d':
+				return 'holder';
 			default:
 				return (string) $type;
 		}
+	}
+
+	/**
+	 * Car, motorcycle, and type D holders share the strip, the character limit, and the Holders category.
+	 *
+	 * @param string $type Format type.
+	 * @return bool
+	 */
+	public static function is_holder( $type ) {
+		return in_array( (string) $type, array( 'holder', 'holder_moto', 'holder_d' ), true );
+	}
+
+	/**
+	 * Photo holders keep the plastic from the picture. Only the strip and the letters are painted.
+	 *
+	 * @param string $type Format type.
+	 * @return bool
+	 */
+	public static function is_photo_holder( $type ) {
+		return in_array( (string) $type, array( 'holder_moto', 'holder_d' ), true );
+	}
+
+	/**
+	 * Street plate: painted, no country band, size typed in millimetres.
+	 *
+	 * @param string $type Format type.
+	 * @return bool
+	 */
+	public static function is_street_plate( $type ) {
+		return 'custom' === (string) $type;
 	}
 
 	/**
@@ -575,7 +816,7 @@ final class APD_Formats {
 	}
 
 	/**
-	 * Character caps for the two SUV rows.
+	 * Character caps for the two rows on motorcycle and SUV plates.
 	 *
 	 * Formats saved before these fields existed use 5 on the first row and 4 on the second.
 	 *
@@ -583,7 +824,7 @@ final class APD_Formats {
 	 * @return array{0: int, 1: int}
 	 */
 	public static function suv_row_limits( $format ) {
-		if ( ! is_array( $format ) || ! self::is_suv_kind( isset( $format['type'] ) ? (string) $format['type'] : '' ) ) {
+		if ( ! is_array( $format ) || ! self::uses_two_rows( isset( $format['type'] ) ? (string) $format['type'] : '' ) ) {
 			return array( 0, 0 );
 		}
 
@@ -601,6 +842,91 @@ final class APD_Formats {
 		$ceiling = APD_Security::ABSOLUTE_MAX_CHARS;
 
 		return array( min( $ceiling, $row1 ), min( $ceiling, $row2 ) );
+	}
+
+	/**
+	 * Character caps for the left and right fields of a split USA plate.
+	 *
+	 * @param array<string, mixed> $row Format or design row.
+	 * @return array{0: int, 1: int}
+	 */
+	public static function us_side_limits( $row ) {
+		$row   = is_array( $row ) ? $row : array();
+		$left  = isset( $row['max_chars_left'] ) ? (int) $row['max_chars_left'] : 0;
+		$right = isset( $row['max_chars_right'] ) ? (int) $row['max_chars_right'] : 0;
+
+		if ( $left < 1 ) {
+			$left = self::US_SIDE_LEFT_MAX;
+		}
+
+		if ( $right < 1 ) {
+			$right = self::US_SIDE_RIGHT_MAX;
+		}
+
+		$ceiling = APD_Security::ABSOLUTE_MAX_CHARS;
+
+		return array( min( $ceiling, $left ), min( $ceiling, $right ) );
+	}
+
+	/**
+	 * Side limits for the graphic the shopper is actually typing on.
+	 *
+	 * A format photo wins over a design. Otherwise the locked design is used.
+	 *
+	 * @param array<string, mixed> $payload   Frontend format payload.
+	 * @param string               $design_id Design id, or empty for the first design.
+	 * @return array{0: int, 1: int}|null
+	 */
+	public static function active_us_side_limits( $payload, $design_id = '' ) {
+		if ( ! is_array( $payload ) || 'us' !== ( isset( $payload['type'] ) ? (string) $payload['type'] : '' ) ) {
+			return null;
+		}
+
+		if ( ! empty( $payload['base_image_url'] ) ) {
+			if ( empty( $payload['split_text'] ) ) {
+				return null;
+			}
+
+			$limits = isset( $payload['side_max_chars'] ) && is_array( $payload['side_max_chars'] ) ? $payload['side_max_chars'] : array();
+
+			return self::us_side_limits(
+				array(
+					'max_chars_left'  => isset( $limits[0] ) ? $limits[0] : 0,
+					'max_chars_right' => isset( $limits[1] ) ? $limits[1] : 0,
+				)
+			);
+		}
+
+		$designs = isset( $payload['designs'] ) && is_array( $payload['designs'] ) ? $payload['designs'] : array();
+		$chosen  = null;
+
+		foreach ( $designs as $design ) {
+			if ( ! is_array( $design ) ) {
+				continue;
+			}
+
+			if ( '' !== (string) $design_id && isset( $design['id'] ) && (string) $design['id'] === (string) $design_id ) {
+				$chosen = $design;
+				break;
+			}
+		}
+
+		if ( null === $chosen && ! empty( $designs ) && is_array( $designs[0] ) ) {
+			$chosen = $designs[0];
+		}
+
+		if ( ! is_array( $chosen ) || empty( $chosen['split_text'] ) ) {
+			return null;
+		}
+
+		$limits = isset( $chosen['side_max_chars'] ) && is_array( $chosen['side_max_chars'] ) ? $chosen['side_max_chars'] : array();
+
+		return self::us_side_limits(
+			array(
+				'max_chars_left'  => isset( $limits[0] ) ? $limits[0] : 0,
+				'max_chars_right' => isset( $limits[1] ) ? $limits[1] : 0,
+			)
+		);
 	}
 
 	/**
@@ -627,20 +953,49 @@ final class APD_Formats {
 	}
 
 	/**
+	 * How many lines a wrapped street plate may use.
+	 *
+	 * @return int
+	 */
+	public static function wrap_line_limit() {
+		$settings = APD_Plugin::get_settings();
+		$row      = isset( $settings['limits']['layouts']['multiline_text'] ) && is_array( $settings['limits']['layouts']['multiline_text'] )
+			? $settings['limits']['layouts']['multiline_text']
+			: array();
+		$lines    = isset( $row['max_lines'] ) ? (int) $row['max_lines'] : 5;
+
+		if ( $lines < 1 ) {
+			$lines = 1;
+		}
+
+		if ( $lines > 20 ) {
+			$lines = 20;
+		}
+
+		return $lines;
+	}
+
+	/**
 	 * Characters column for the formats list.
 	 *
 	 * @param array<string, mixed> $format Format row.
 	 * @return string
 	 */
 	public static function max_chars_label( $format ) {
-		if ( 'holder' === ( isset( $format['type'] ) ? (string) $format['type'] : '' ) ) {
+		if ( self::is_holder( isset( $format['type'] ) ? (string) $format['type'] : '' ) ) {
 			return (string) self::holder_text_limit();
 		}
 
-		if ( self::is_suv_kind( isset( $format['type'] ) ? (string) $format['type'] : '' ) ) {
+		if ( self::uses_two_rows( isset( $format['type'] ) ? (string) $format['type'] : '' ) ) {
 			$limits = self::suv_row_limits( $format );
 
 			return $limits[0] . ' / ' . $limits[1];
+		}
+
+		if ( 'us' === ( isset( $format['type'] ) ? (string) $format['type'] : '' ) && ! empty( $format['split_text'] ) ) {
+			$sides = self::us_side_limits( $format );
+
+			return $sides[0] . ' + ' . $sides[1];
 		}
 
 		$chars = isset( $format['max_chars'] ) ? (int) $format['max_chars'] : self::default_max_chars( isset( $format['type'] ) ? (string) $format['type'] : '' );
@@ -810,7 +1165,9 @@ final class APD_Formats {
 			'suv'        => __( 'SUV plate without preset', 'auto-plate-designer' ),
 			'custom'     => __( 'Street plate', 'auto-plate-designer' ),
 			'color'      => __( 'Color plate', 'auto-plate-designer' ),
-			'holder'     => __( 'Car plate holders', 'auto-plate-designer' ),
+			'holder'      => __( 'Car plate holders', 'auto-plate-designer' ),
+			'holder_moto' => __( 'Motorcycle plate holder', 'auto-plate-designer' ),
+			'holder_d'    => __( 'Type D plate holder', 'auto-plate-designer' ),
 		);
 
 		return isset( $labels[ $type ] ) ? $labels[ $type ] : strtoupper( $type );
@@ -861,11 +1218,15 @@ final class APD_Formats {
 			return "CA AA\n4935";
 		}
 
+		if ( self::uses_two_rows( $type ) ) {
+			return "CA\n1234";
+		}
+
 		if ( self::uses_painted_plate( $type ) ) {
 			return 'CA 0909 BX';
 		}
 
-		return 'holder' === $type ? '' : 'TEXT';
+		return self::is_holder( $type ) ? '' : 'TEXT';
 	}
 
 	/**
@@ -903,6 +1264,9 @@ final class APD_Formats {
 	 *
 	 * Bulgarian plates follow BDS 15980: car 520×110, motorcycle 199×154,
 	 * two-line 280×200. USA plates stay 12×6 in (305×152).
+	 * The car holder stays 520×260. The motorcycle holder is square and uses
+	 * the motorcycle plate width (199×199). Type D uses the two-line width;
+	 * 159 mm is that width at the product photo's proportion (1400×795).
 	 *
 	 * @param string $type Format type.
 	 * @return array{width: int, height: int}
@@ -930,6 +1294,16 @@ final class APD_Formats {
 				return array(
 					'width'  => 520,
 					'height' => 260,
+				);
+			case 'holder_moto':
+				return array(
+					'width'  => 199,
+					'height' => 199,
+				);
+			case 'holder_d':
+				return array(
+					'width'  => 280,
+					'height' => 159,
 				);
 			default:
 				return array(
@@ -1100,8 +1474,8 @@ final class APD_Formats {
 		$width  = isset( $format['width'] ) ? max( 1, (int) $format['width'] ) : 520;
 		$height = isset( $format['height'] ) ? max( 1, (int) $format['height'] ) : 110;
 
-		if ( 'holder' === $type ) {
-			return self::holder_strip_box();
+		if ( self::is_holder( $type ) ) {
+			return self::holder_strip_box( $type );
 		}
 
 		$region = array(
@@ -1249,7 +1623,7 @@ final class APD_Formats {
 	/**
 	 * Color parts this format type can actually paint.
 	 *
-	 * Policy (which of these the shopper may change) lives on the product.
+	 * Which of these the shopper may change is the palettes saved on the format.
 	 *
 	 * @param string $type Format type.
 	 * @return array<int, string>
@@ -1259,7 +1633,12 @@ final class APD_Formats {
 			case 'us':
 				return array( 'text' );
 			case 'holder':
-				return array( 'text', 'background', 'holder' );
+				return array( 'holder', 'holder_text', 'holder_strip' );
+			case 'holder_moto':
+			case 'holder_d':
+				return array( 'holder_text', 'holder_strip' );
+			case 'color':
+				return array( 'text', 'border', 'background', 'color_text', 'color_border', 'color_background' );
 			case 'eu':
 			case 'moto':
 			case 'moto_plain':
@@ -1267,11 +1646,92 @@ final class APD_Formats {
 			case 'suv':
 			case 'suv_eu':
 			case 'custom':
-			case 'color':
 				return array( 'text', 'border', 'background' );
 			default:
 				return array();
 		}
+	}
+
+	/**
+	 * Colors shown for one shop control.
+	 *
+	 * A holder reads only its body, inscription, and strip palettes. Color plates merge an extra palette into the standard row.
+	 *
+	 * @param string                                           $type         Format type.
+	 * @param string                                           $slot         text|border|background|holder.
+	 * @param array<int, string>                               $color_fields Enabled purpose slugs.
+	 * @param array<string, array<int, array<string, mixed>>>  $palettes     Colors by purpose.
+	 * @return array<int, array<string, mixed>>
+	 */
+	public static function shop_swatch_colors( $type, $slot, $color_fields, $palettes ) {
+		$keys  = array( $slot );
+		$merge = false;
+
+		if ( self::is_photo_holder( $type ) && in_array( $slot, array( 'text', 'background' ), true ) ) {
+			$keys  = array( 'holder_strip', 'holder_text' );
+			$merge = true;
+		} elseif ( 'holder' === $type && 'text' === $slot ) {
+			$keys = array( 'holder_text' );
+		} elseif ( 'holder' === $type && 'background' === $slot ) {
+			$keys = array( 'holder_strip' );
+		} elseif ( 'color' === $type ) {
+			$extra = array(
+				'text'       => 'color_text',
+				'border'     => 'color_border',
+				'background' => 'color_background',
+			);
+
+			if ( isset( $extra[ $slot ] ) ) {
+				$keys  = array( $slot, $extra[ $slot ] );
+				$merge = true;
+			}
+		}
+
+		if ( ! is_array( $color_fields ) ) {
+			$color_fields = array();
+		}
+
+		if ( ! is_array( $palettes ) ) {
+			$palettes = array();
+		}
+
+		$colors = array();
+		$seen   = array();
+		$dedupe = self::is_photo_holder( $type );
+
+		foreach ( $keys as $key ) {
+			if ( ! in_array( $key, $color_fields, true ) ) {
+				continue;
+			}
+
+			$rows = isset( $palettes[ $key ] ) && is_array( $palettes[ $key ] ) ? $palettes[ $key ] : array();
+
+			if ( empty( $rows ) ) {
+				continue;
+			}
+
+			if ( ! $merge ) {
+				return $rows;
+			}
+
+			foreach ( $rows as $row ) {
+				if ( $dedupe ) {
+					$hex = isset( $row['hex'] ) ? strtoupper( (string) $row['hex'] ) : '';
+
+					if ( '' !== $hex && isset( $seen[ $hex ] ) ) {
+						continue;
+					}
+
+					if ( '' !== $hex ) {
+						$seen[ $hex ] = true;
+					}
+				}
+
+				$colors[] = $row;
+			}
+		}
+
+		return $colors;
 	}
 
 	/**
@@ -1291,7 +1751,10 @@ final class APD_Formats {
 			case 'us':
 				return array( 'text' );
 			case 'holder':
-				return array( 'text', 'background', 'holder' );
+				return array( 'holder', 'holder_text', 'holder_strip' );
+			case 'holder_moto':
+			case 'holder_d':
+				return array( 'holder_text', 'holder_strip' );
 			case 'eu':
 			case 'moto':
 			case 'moto_plain':
@@ -1474,7 +1937,9 @@ final class APD_Formats {
 					'valign' => 'middle',
 				);
 			case 'holder':
-				$strip = self::holder_strip_box();
+			case 'holder_moto':
+			case 'holder_d':
+				$strip = self::holder_strip_box( $type );
 
 				return array(
 					'x'      => $strip['x'],
@@ -1622,19 +2087,108 @@ final class APD_Formats {
 			$box['number_align'] = $number;
 		}
 
-		if ( 'holder' === $type ) {
-			$box = self::clamp_box_to_region( $box, self::holder_strip_box() );
+		if ( self::is_holder( $type ) ) {
+			$box = self::clamp_box_to_region( $box, self::holder_strip_box( $type ) );
 		}
 
 		return $box;
 	}
 
 	/**
-	 * White slogan strip on the bundled car holder, as percents of the photo.
+	 * Split one USA text box into a left and right box with a gap between them.
 	 *
+	 * Both boxes keep the original Y, height, and vertical alignment.
+	 *
+	 * @param mixed $left_raw Left box or a single box to divide.
+	 * @return array{0: array<string, mixed>, 1: array<string, mixed>}
+	 */
+	public static function seed_side_boxes( $left_raw ) {
+		$left    = self::sanitize_text_box( $left_raw, 'us' );
+		$gap     = 8.0;
+		$usable  = (float) $left['width'] - $gap;
+		$left_w  = round( max( 5, $usable * 0.45 ), 1 );
+		$right_w = round( max( 5, $usable - $left_w ), 1 );
+		$right_x = round( (float) $left['x'] + $left_w + $gap, 1 );
+		$left['width'] = $left_w;
+		$right         = $left;
+		$right['x']    = $right_x;
+		$right['width'] = $right_w;
+		$right['align'] = 'center';
+
+		return self::link_side_boxes( $left, $right );
+	}
+
+	/**
+	 * Keep two USA boxes on one line without letting them overlap.
+	 *
+	 * The right box copies Y, height, and vertical alignment from the left.
+	 * A wider left box stops at the right box. The gap is whatever space remains.
+	 *
+	 * @param mixed $left_raw  Left box.
+	 * @param mixed $right_raw Right box.
+	 * @return array{0: array<string, mixed>, 1: array<string, mixed>}
+	 */
+	public static function link_side_boxes( $left_raw, $right_raw ) {
+		$left  = self::sanitize_text_box( $left_raw, 'us' );
+		$right = self::sanitize_text_box( $right_raw, 'us' );
+		$right['y']      = $left['y'];
+		$right['height'] = $left['height'];
+		$right['valign'] = $left['valign'];
+		$left_end        = round( (float) $left['x'] + (float) $left['width'], 1 );
+
+		if ( (float) $right['x'] < $left_end ) {
+			$fit = round( (float) $right['x'] - (float) $left['x'], 1 );
+
+			if ( $fit >= 5 ) {
+				$left['width'] = $fit;
+			} else {
+				$right['x'] = round( (float) $left['x'] + (float) $left['width'], 1 );
+			}
+		}
+
+		if ( (float) $right['x'] > 95 ) {
+			$right['x'] = 95.0;
+		}
+
+		if ( (float) $right['x'] + (float) $right['width'] > 100 ) {
+			$right['width'] = round( 100 - (float) $right['x'], 1 );
+		}
+
+		if ( (float) $right['width'] < 5 ) {
+			$right['width'] = 5.0;
+			$right['x']     = min( 95.0, (float) $right['x'] );
+		}
+
+		return array( $left, $right );
+	}
+
+	/**
+	 * Slogan strip as percents of the holder photo.
+	 *
+	 * The car holder keeps the gray-mask slot. Motorcycle and type D use the white bar measured on their photos.
+	 *
+	 * @param string $type Format type.
 	 * @return array{x: float, y: float, width: float, height: float}
 	 */
-	public static function holder_strip_box() {
+	public static function holder_strip_box( $type = 'holder' ) {
+		if ( 'holder_moto' === $type ) {
+			return array(
+				'x'      => 10.16,
+				'y'      => 84.18,
+				'width'  => 79.3,
+				'height' => 12.11,
+			);
+		}
+
+		if ( 'holder_d' === $type ) {
+			return array(
+				'x'      => 2.0,
+				'y'      => 85.28,
+				'width'  => 96.0,
+				'height' => 11.32,
+			);
+		}
+
 		return array(
 			'x'      => 2.73,
 			'y'      => 77.3,
@@ -1644,16 +2198,38 @@ final class APD_Formats {
 	}
 
 	/**
-	 * URL of the gray holder mask used for body recoloring.
+	 * Corner radius of the painted strip, as a fraction of the strip height.
 	 *
-	 * Opaque pixels are the plastic. The plate windows and the strip slot stay transparent.
+	 * @param string $type Format type.
+	 * @return float
+	 */
+	public static function holder_strip_radius( $type = 'holder' ) {
+		if ( 'holder_d' === $type ) {
+			return 0.12;
+		}
+
+		if ( 'holder_moto' === $type ) {
+			return 0.08;
+		}
+
+		return 0.25;
+	}
+
+	/**
+	 * Bundled holder picture. The car type is the gray mask; the other two are product photos.
 	 *
+	 * @param string $type Format type.
 	 * @return string
 	 */
-	public static function bundled_holder_image_url() {
-		$relative = 'assets/images/gray-plate-holder-hole.png';
+	public static function bundled_holder_image_url( $type = 'holder' ) {
+		$files = array(
+			'holder'      => 'assets/images/gray-plate-holder-hole.png',
+			'holder_moto' => 'assets/images/holder-moto.png',
+			'holder_d'    => 'assets/images/holder-type-d.png',
+		);
+		$relative = isset( $files[ $type ] ) ? $files[ $type ] : '';
 
-		if ( ! is_readable( APD_PLUGIN_DIR . $relative ) ) {
+		if ( '' === $relative || ! is_readable( APD_PLUGIN_DIR . $relative ) ) {
 			return '';
 		}
 
@@ -1746,16 +2322,16 @@ final class APD_Formats {
 		$max_chars = isset( $format['max_chars'] ) ? (int) $format['max_chars'] : self::default_max_chars( $type );
 		$row_limits = self::suv_row_limits( $format );
 
-		if ( self::is_suv_kind( $type ) ) {
+		if ( self::uses_two_rows( $type ) ) {
 			$max_chars = $row_limits[0] + $row_limits[1];
-		} elseif ( 'holder' === $type ) {
+		} elseif ( self::is_holder( $type ) ) {
 			$max_chars = self::holder_text_limit();
 		}
 		$image_id  = ( self::uses_base_image( $type ) && isset( $format['base_image_id'] ) ) ? absint( $format['base_image_id'] ) : 0;
 		$image_url = $image_id ? wp_get_attachment_image_url( $image_id, 'full' ) : '';
 
-		if ( 'holder' === $type && ! $image_url ) {
-			$image_url = self::bundled_holder_image_url();
+		if ( self::is_holder( $type ) && ! $image_url ) {
+			$image_url = self::bundled_holder_image_url( $type );
 		}
 
 		$presets = array();
@@ -1779,14 +2355,47 @@ final class APD_Formats {
 		if ( self::uses_plate_designs( $type ) && class_exists( 'APD_Designs' ) ) {
 			foreach ( APD_Designs::active_for_format( $format ) as $design ) {
 				$design_image = isset( $design['image_id'] ) ? wp_get_attachment_image_url( absint( $design['image_id'] ), 'full' ) : '';
-				$designs[]    = array(
-					'id'        => $design['id'],
-					'name'      => $design['name'],
-					'code'      => isset( $design['code'] ) ? (string) $design['code'] : '',
-					'image_url' => $design_image ? $design_image : '',
-					'text_box'  => APD_Designs::sanitize_text_box( isset( $design['text_box'] ) ? $design['text_box'] : array() ),
+				$design_split = ! empty( $design['split_text'] );
+				$design_box   = APD_Designs::sanitize_text_box( isset( $design['text_box'] ) ? $design['text_box'] : array() );
+				$design_right = array();
+				$design_sides = array( 0, 0 );
+
+				if ( $design_split ) {
+					$right_raw = isset( $design['text_box_right'] ) && is_array( $design['text_box_right'] ) ? $design['text_box_right'] : array();
+					$pair      = ( isset( $right_raw['x'] ) || isset( $right_raw['width'] ) )
+						? self::link_side_boxes( $design_box, $right_raw )
+						: self::seed_side_boxes( $design_box );
+					$design_box   = $pair[0];
+					$design_right = $pair[1];
+					$design_sides = self::us_side_limits( $design );
+				}
+
+				$designs[] = array(
+					'id'              => $design['id'],
+					'name'            => $design['name'],
+					'code'            => isset( $design['code'] ) ? (string) $design['code'] : '',
+					'image_url'       => $design_image ? $design_image : '',
+					'text_box'        => $design_box,
+					'split_text'      => $design_split,
+					'text_box_right'  => $design_right,
+					'side_max_chars'  => $design_sides,
 				);
 			}
+		}
+
+		$split_text = 'us' === $type && ! empty( $format['split_text'] );
+		$text_left  = self::sanitize_text_box( isset( $format['text_box'] ) ? $format['text_box'] : array(), $type, $format );
+		$text_right = array();
+		$side_max   = array( 0, 0 );
+
+		if ( $split_text ) {
+			$right_raw = isset( $format['text_box_right'] ) && is_array( $format['text_box_right'] ) ? $format['text_box_right'] : array();
+			$pair      = ( isset( $right_raw['x'] ) || isset( $right_raw['width'] ) )
+				? self::link_side_boxes( $text_left, $right_raw )
+				: self::seed_side_boxes( $text_left );
+			$text_left  = $pair[0];
+			$text_right = $pair[1];
+			$side_max   = self::us_side_limits( $format );
 		}
 
 		$no_frame = self::uses_painted_plate( $type ) && ! empty( $format['no_frame'] );
@@ -1819,17 +2428,23 @@ final class APD_Formats {
 			'band_side'        => $format['band_side'],
 			'band_box'         => $band_box,
 			'base_image_url'   => $image_url ? $image_url : '',
-			'strip_box'        => 'holder' === $type ? self::holder_strip_box() : array(),
+			'strip_box'        => self::is_holder( $type ) ? self::holder_strip_box( $type ) : array(),
+			'strip_radius'     => self::is_holder( $type ) ? self::holder_strip_radius( $type ) : 0,
 			'max_chars'        => $max_chars,
 			'row_max_chars'    => $row_limits,
+			'split_text'       => $split_text,
+			'text_box_right'   => $text_right,
+			'side_max_chars'   => $side_max,
 			'price_adjustment' => (float) $format['price_adjustment'],
-			'text_box'         => self::sanitize_text_box( isset( $format['text_box'] ) ? $format['text_box'] : array(), $type, $format ),
+			'text_box'         => $text_left,
 			'fonts'            => $fonts,
 			'presets'          => $presets,
 			'designs'          => $designs,
 			'capabilities'     => self::type_capabilities( $type ),
-			'allow_empty'      => 'holder' === $type,
-			'multiline'        => 'custom' === $type,
+			'allow_empty'      => self::is_holder( $type ),
+			'multiline'        => self::is_street_plate( $type ),
+			'wrap_text'        => self::is_street_plate( $type ) && ! empty( $format['wrap_text'] ),
+			'max_lines'        => self::wrap_line_limit(),
 		);
 	}
 }

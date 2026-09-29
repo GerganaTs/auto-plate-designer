@@ -273,10 +273,15 @@ if ( ! APD_Formats::uses_country_band( 'moto' ) || ! APD_Formats::uses_painted_p
 	exit( 1 );
 }
 
+if ( 5 !== (int) $moto['max_chars_row_1'] || 4 !== (int) $moto['max_chars_row_2'] || 9 !== (int) $moto['max_chars'] || '5 / 4' !== APD_Formats::max_chars_label( $moto ) || "CA\n1234" !== APD_Formats::sample_plate_text( 'moto' ) ) {
+	fwrite( STDERR, 'MOTO_ROW_LIMITS_FAIL ' . wp_json_encode( $moto ) . PHP_EOL );
+	exit( 1 );
+}
+
 echo 'MOTO_TYPE_OK' . PHP_EOL;
 
 $two_row_types = array( 'moto', 'moto_plain', 'suv', 'suv_eu' );
-$single_types  = array( 'eu', 'eu_plain', 'us', 'color', 'custom', 'holder' );
+$single_types  = array( 'eu', 'eu_plain', 'us', 'color', 'custom', 'holder', 'holder_moto', 'holder_d' );
 
 foreach ( $two_row_types as $two_type ) {
 	if ( ! APD_Formats::uses_two_rows( $two_type ) ) {
@@ -326,6 +331,33 @@ if ( is_wp_error( $moto_plain ) || 199 !== (int) $moto_plain['width'] || 154 !==
 
 if ( APD_Formats::uses_country_band( 'moto_plain' ) || ! APD_Formats::uses_painted_plate( 'moto_plain' ) || APD_Formats::uses_base_image( 'moto_plain' ) ) {
 	fwrite( STDERR, "MOTO_PLAIN_FLAGS_FAIL\n" );
+	exit( 1 );
+}
+
+$moto_centered = APD_Formats::sanitize(
+	array(
+		'name'            => 'Moto centered',
+		'type'            => 'moto_plain',
+		'max_chars_row_1' => 3,
+		'max_chars_row_2' => 6,
+		'text_box'        => array(
+			'letter_align' => 'center',
+			'number_align' => 'center',
+		),
+	)
+);
+
+if (
+	is_wp_error( $moto_centered )
+	|| 3 !== (int) $moto_centered['max_chars_row_1']
+	|| 6 !== (int) $moto_centered['max_chars_row_2']
+	|| 9 !== (int) $moto_centered['max_chars']
+	|| 'center' !== $moto_centered['text_box']['letter_align']
+	|| 'center' !== $moto_centered['text_box']['number_align']
+	|| array( 3, 6 ) !== APD_Formats::suv_row_limits( $moto_centered )
+	|| "CA\n1234" !== APD_Formats::sample_plate_text( 'moto_plain' )
+) {
+	fwrite( STDERR, 'MOTO_PLAIN_ROWS_FAIL ' . wp_json_encode( $moto_centered ) . PHP_EOL );
 	exit( 1 );
 }
 
@@ -519,6 +551,46 @@ if ( 520 !== (int) $holder_size['width'] || 260 !== (int) $holder_size['height']
 	exit( 1 );
 }
 
+$photo_holder_expect = array(
+	'holder_moto' => array( 199, 199, 84.18, 'holder-moto.png' ),
+	'holder_d'    => array( 280, 159, 85.28, 'holder-type-d.png' ),
+);
+
+foreach ( $photo_holder_expect as $photo_type => $photo_expect ) {
+	$photo_row = APD_Formats::sanitize(
+		array(
+			'name' => 'Photo ' . str_replace( '_', ' ', $photo_type ),
+			'type' => $photo_type,
+		)
+	);
+	$photo_payload = is_wp_error( $photo_row ) ? array() : APD_Formats::frontend_payload( $photo_row );
+	$photo_caps    = APD_Formats::color_field_capabilities( $photo_type );
+	$photo_box     = APD_Formats::holder_strip_box( $photo_type );
+
+	if (
+		is_wp_error( $photo_row )
+		|| $photo_expect[0] !== (int) $photo_row['width']
+		|| $photo_expect[1] !== (int) $photo_row['height']
+		|| 0 !== (int) $photo_row['base_image_id']
+		|| abs( (float) $photo_row['text_box']['y'] - $photo_expect[2] ) > 0.05
+		|| abs( (float) $photo_box['y'] - $photo_expect[2] ) > 0.05
+		|| 'holder' !== APD_Formats::catalog_kind( $photo_type )
+		|| APD_Formats::offers_frame_choice( $photo_type )
+		|| '' !== APD_Formats::sample_plate_text( $photo_type )
+		|| array( 'holder_text', 'holder_strip' ) !== $photo_caps
+		|| empty( $photo_payload['allow_empty'] )
+		|| APD_Formats::HOLDER_TEXT_MAX !== (int) $photo_payload['max_chars']
+		|| false === strpos( (string) $photo_payload['base_image_url'], $photo_expect[3] )
+		|| abs( (float) $photo_payload['strip_box']['y'] - $photo_expect[2] ) > 0.05
+		|| abs( (float) $holder_strip['y'] - 77.3 ) > 0.05
+	) {
+		fwrite( STDERR, "PHOTO_HOLDER_FAIL {$photo_type}\n" );
+		exit( 1 );
+	}
+}
+
+echo "PHOTO_HOLDER_OK\n";
+
 echo 'CENTER_TEXT_BOX_OK' . PHP_EOL;
 
 if ( 500 !== APD_Formats::CANVAS_DISPLAY_MAX_PX || 106 !== APD_Formats::CANVAS_DISPLAY_MAX_H_PX ) {
@@ -531,6 +603,13 @@ $moto_display  = APD_Formats::canvas_display_width( 199, 154 );
 $us_display    = APD_Formats::canvas_display_width( 305, 152 );
 $suv_display   = APD_Formats::canvas_display_width( 280, 200 );
 $holder_display = APD_Formats::canvas_display_width( 520, 260 );
+$photo_holder_px = APD_Formats::preview_frame_width( 'holder_moto', 199 );
+$type_d_px       = APD_Formats::preview_frame_width( 'holder_d', 280 );
+if ( 191 !== $photo_holder_px || 269 !== $type_d_px || 500 !== APD_Formats::preview_frame_width( 'holder', 520 ) ) {
+	fwrite( STDERR, "HOLDER_PREVIEW_WIDTH_FAIL moto={$photo_holder_px} d={$type_d_px}\n" );
+	exit( 1 );
+}
+
 if ( 500 !== $eu_display || $eu_display !== $moto_display || $eu_display !== $us_display || $eu_display !== $suv_display || $eu_display !== $holder_display ) {
 	fwrite( STDERR, "CANVAS_DISPLAY_FAIL eu={$eu_display} moto={$moto_display} us={$us_display}\n" );
 	exit( 1 );
@@ -558,6 +637,119 @@ if ( false === strpos( $admin_js, 'input.disabled = !enabled' ) || false === str
 $formats_tab = file_get_contents( APD_PLUGIN_DIR . 'templates/admin/formats-tab.php' );
 if ( preg_match( '/name="apd_format\[band_ratio\]"[^>]*type="number"/', $formats_tab ) || preg_match( '/type="number"[^>]*name="apd_format\[band_ratio\]"/', $formats_tab ) ) {
 	fwrite( STDERR, "BAND_RATIO_STILL_NUMBER_INPUT\n" );
+	exit( 1 );
+}
+
+$wrapped = APD_Formats::sanitize(
+	array(
+		'name'      => 'Street wrap',
+		'type'      => 'custom',
+		'width'     => 340,
+		'height'    => 200,
+		'wrap_text' => '1',
+	)
+);
+$plain = APD_Formats::sanitize(
+	array(
+		'name'      => 'EU no wrap',
+		'type'      => 'eu',
+		'wrap_text' => '1',
+	)
+);
+
+if ( is_wp_error( $wrapped ) || empty( $wrapped['wrap_text'] ) || 340 !== (int) $wrapped['width'] || 200 !== (int) $wrapped['height'] ) {
+	fwrite( STDERR, "WRAP_SANITIZE_FAIL\n" );
+	exit( 1 );
+}
+
+$wrap_payload = APD_Formats::frontend_payload( $wrapped );
+
+if ( empty( $wrap_payload['wrap_text'] ) || empty( $wrap_payload['multiline'] ) || (int) $wrap_payload['max_lines'] < 1 ) {
+	fwrite( STDERR, "WRAP_PAYLOAD_FAIL\n" );
+	exit( 1 );
+}
+
+if ( is_wp_error( $plain ) || ! empty( $plain['wrap_text'] ) || ! empty( APD_Formats::frontend_payload( $plain )['wrap_text'] ) || 520 !== (int) $plain['width'] || 110 !== (int) $plain['height'] ) {
+	fwrite( STDERR, "WRAP_EU_FAIL\n" );
+	exit( 1 );
+}
+
+$locked_sizes = array(
+	'eu'         => array( 520, 110 ),
+	'eu_plain'   => array( 520, 110 ),
+	'color'      => array( 520, 110 ),
+	'us'         => array( 305, 152 ),
+	'moto'       => array( 199, 154 ),
+	'moto_plain' => array( 199, 154 ),
+	'suv'        => array( 280, 200 ),
+	'suv_eu'     => array( 280, 200 ),
+	'holder'      => array( 520, 260 ),
+	'holder_moto' => array( 199, 199 ),
+	'holder_d'    => array( 280, 159 ),
+);
+
+foreach ( $locked_sizes as $locked_type => $locked_pair ) {
+	$locked = APD_Formats::sanitize(
+		array(
+			'name'   => 'Locked ' . str_replace( '_', ' ', $locked_type ),
+			'type'   => $locked_type,
+			'width'  => 340,
+			'height' => 200,
+		)
+	);
+
+	if ( is_wp_error( $locked ) || $locked_pair[0] !== (int) $locked['width'] || $locked_pair[1] !== (int) $locked['height'] ) {
+		fwrite( STDERR, "SIZE_LOCK_FAIL {$locked_type}\n" );
+		exit( 1 );
+	}
+}
+
+$admin_js   = file_get_contents( APD_PLUGIN_DIR . 'assets/js/admin-settings.js' );
+$size_start = is_string( $admin_js ) ? strpos( $admin_js, 'function applyDefaultSize' ) : false;
+$size_end   = is_string( $admin_js ) ? strpos( $admin_js, 'function resetLayoutForNewFormat' ) : false;
+$size_body  = ( false !== $size_start && false !== $size_end && $size_end > $size_start ) ? substr( $admin_js, $size_start, $size_end - $size_start ) : '';
+
+$custom_return = strpos( $size_body, 'return;' );
+$preset_lock   = strpos( $size_body, 'readOnly = true' );
+
+if ( false === strpos( $size_body, "type === 'custom'" ) || false === strpos( $size_body, 'readOnly = false' ) || false === $custom_return || false === $preset_lock || $custom_return > $preset_lock ) {
+	fwrite( STDERR, "STREET_SIZE_JS_FAIL\n" );
+	exit( 1 );
+}
+
+$street_sizes = array(
+	array( 340, 200 ),
+	array( 240, 130 ),
+	array( 300, 150 ),
+);
+
+foreach ( $street_sizes as $street_pair ) {
+	$street = APD_Formats::sanitize(
+		array(
+			'name'   => 'Street ' . $street_pair[0] . 'x' . $street_pair[1],
+			'type'   => 'custom',
+			'width'  => $street_pair[0],
+			'height' => $street_pair[1],
+		)
+	);
+
+	if ( is_wp_error( $street ) || $street_pair[0] !== (int) $street['width'] || $street_pair[1] !== (int) $street['height'] || ! empty( $street['wrap_text'] ) ) {
+		fwrite( STDERR, "STREET_SIZE_FAIL {$street_pair[0]}\n" );
+		exit( 1 );
+	}
+}
+
+$clamped = APD_Formats::sanitize(
+	array(
+		'name'   => 'Street too small',
+		'type'   => 'custom',
+		'width'  => 34,
+		'height' => 20,
+	)
+);
+
+if ( is_wp_error( $clamped ) || 100 !== (int) $clamped['width'] || 40 !== (int) $clamped['height'] || 520 === (int) $clamped['width'] ) {
+	fwrite( STDERR, "STREET_CLAMP_FAIL\n" );
 	exit( 1 );
 }
 

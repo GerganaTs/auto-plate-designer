@@ -201,9 +201,14 @@ table.wc-block-cart-items .wc-block-cart-items__row .wc-block-cart-item__image i
 	gap: 1rem;
 }
 
-.apd-row-fields {
+.apd-row-fields,
+.apd-side-fields {
 	display: grid;
 	gap: 0.75rem;
+}
+
+.apd-side-fields {
+	grid-template-columns: 1fr 1fr;
 }
 
 .apd-configurator:not(:has(.apd-preview)) .apd-fields {
@@ -521,16 +526,6 @@ body.apd-configurator-product form.cart input.qty {
 
 body.apd-dialog-open {
 	overflow: hidden;
-}
-
-.apd-design {
-	min-width: 5.5rem;
-}
-
-.apd-design img {
-	width: 5rem;
-	height: 2.5rem;
-	object-fit: cover;
 }
 
 body.apd-hide-product-image .wp-block-woocommerce-product-image-gallery,

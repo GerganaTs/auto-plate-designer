@@ -93,6 +93,12 @@
 	pointer-events: none;
 }
 
+.apd-text-box-stage[data-apd-design-stage] img[data-apd-text-box-image] {
+	position: absolute;
+	max-width: none;
+	object-fit: fill;
+}
+
 .apd-text-box-schematic {
 	position: absolute;
 	inset: 0;
@@ -252,7 +258,9 @@
 }
 
 .apd-row-styles[hidden],
-label.apd-metric[hidden] {
+label.apd-metric[hidden],
+.apd-metric-grid[hidden],
+.apd-text-box-fields[hidden] {
 	display: none !important;
 }
 
@@ -273,6 +281,15 @@ label.apd-metric[hidden] {
 	background: #2271b1;
 	border-color: #2271b1;
 	color: #fff;
+}
+
+.apd-split-toggle {
+	margin: 0 0 12px;
+}
+
+.apd-split-toggle .description {
+	display: block;
+	margin-top: 4px;
 }
 
 .apd-text-box {
@@ -570,6 +587,22 @@ label.apd-choice input[type="radio"],
 	display: none !important;
 }
 
+.apd-create-design-product {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 6px;
+	align-items: center;
+	margin-top: 6px;
+}
+
+.apd-create-design-product select {
+	max-width: 12rem;
+}
+
+[data-apd-product-design][hidden] {
+	display: none !important;
+}
+
 .apd-palette-color-picks label {
 	align-items: center;
 	margin: 0;
@@ -793,4 +826,89 @@ fieldset.apd-choice-list {
 	.apd-choice {
 		white-space: normal;
 	}
+}
+
+.apd-format-palettes {
+	margin: 0 0 1.5rem;
+}
+
+.apd-palette-choice {
+	display: flex;
+	align-items: center;
+	gap: 0.5rem;
+	margin: 0 0 0.35rem;
+}
+
+.apd-palette-choice__colors {
+	display: inline-flex;
+	gap: 0.25rem;
+}
+
+.apd-palette-chip {
+	width: 0.9rem;
+	height: 0.9rem;
+	border-radius: 50%;
+	border: 1px solid #1d2327;
+	box-sizing: border-box;
+}
+
+.apd-palette-menu {
+	position: relative;
+	max-width: 28rem;
+	margin: 0 0 1rem;
+}
+
+.apd-palette-menu__heading {
+	display: block;
+	font-weight: 600;
+	margin: 0 0 0.35rem;
+}
+
+.apd-palette-menu__button {
+	display: flex;
+	align-items: center;
+	width: 100%;
+	min-height: 2.2rem;
+	padding: 0.35rem 0.6rem;
+	background: #fff;
+	border: 1px solid #8c8f94;
+	border-radius: 4px;
+	cursor: pointer;
+	text-align: left;
+}
+
+.apd-palette-menu__list {
+	position: absolute;
+	z-index: 20;
+	left: 0;
+	right: 0;
+	max-height: 16rem;
+	overflow: auto;
+	margin: 0;
+	padding: 0.25rem 0;
+	background: #fff;
+	border: 1px solid #8c8f94;
+	box-shadow: 0 2px 8px rgba(0, 0, 0, 0.12);
+}
+
+.apd-palette-menu__option {
+	display: flex;
+	align-items: center;
+	width: 100%;
+	padding: 0.35rem 0.6rem;
+	border: 0;
+	background: transparent;
+	cursor: pointer;
+	text-align: left;
+}
+
+.apd-palette-menu__option:hover,
+.apd-palette-menu__option[aria-selected="true"] {
+	background: #f0f0f1;
+}
+
+.apd-palette-menu__label {
+	display: inline-flex;
+	align-items: center;
+	gap: 0.5rem;
 }

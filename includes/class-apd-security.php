@@ -509,7 +509,7 @@ final class APD_Security {
 	 * @return array<int, string>
 	 */
 	public static function allowed_format_types() {
-		$known = array( 'eu', 'eu_plain', 'us', 'moto', 'moto_plain', 'suv_eu', 'suv', 'custom', 'color', 'holder' );
+		$known = array( 'eu', 'eu_plain', 'us', 'moto', 'moto_plain', 'suv_eu', 'suv', 'custom', 'color', 'holder', 'holder_moto', 'holder_d' );
 
 		/**
 		 * Filter the format types offered in admin and accepted on save.

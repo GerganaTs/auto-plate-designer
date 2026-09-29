@@ -842,7 +842,7 @@ final class APD_WooCommerce {
 			);
 		}
 
-		$payload = APD_Formats::frontend_payload( $format );
+		$payload = APD_Admin_Settings::locked_design_payload( $product_id, APD_Formats::frontend_payload( $format ) );
 		$layouts = get_post_meta( $product_id, APD_Admin_Settings::META_LAYOUTS, true );
 
 		if ( ! is_array( $layouts ) || empty( $layouts ) ) {
@@ -880,12 +880,20 @@ final class APD_WooCommerce {
 
 		if ( isset( $payload['designs'] ) && is_array( $payload['designs'] ) ) {
 			foreach ( $payload['designs'] as $design ) {
-				$designs[] = array(
+				$design_row = array(
 					'id'       => isset( $design['id'] ) ? (string) $design['id'] : '',
 					'name'     => isset( $design['name'] ) ? (string) $design['name'] : '',
 					'code'     => isset( $design['code'] ) ? (string) $design['code'] : '',
 					'text_box' => APD_Designs::sanitize_text_box( isset( $design['text_box'] ) ? $design['text_box'] : array() ),
 				);
+
+				if ( ! empty( $design['split_text'] ) ) {
+					$design_row['split_text']     = true;
+					$design_row['text_box_right'] = isset( $design['text_box_right'] ) && is_array( $design['text_box_right'] ) ? $design['text_box_right'] : array();
+					$design_row['side_max_chars'] = isset( $design['side_max_chars'] ) && is_array( $design['side_max_chars'] ) ? $design['side_max_chars'] : array();
+				}
+
+				$designs[] = $design_row;
 			}
 		}
 
@@ -908,7 +916,7 @@ final class APD_WooCommerce {
 			}
 		}
 
-		return array(
+		$fingerprint = array(
 			'enabled'          => true,
 			'format_id'        => isset( $format['id'] ) ? (string) $format['id'] : '',
 			'format_name'      => isset( $format['name'] ) ? (string) $format['name'] : '',
@@ -942,6 +950,15 @@ final class APD_WooCommerce {
 			'palettes'         => $palettes,
 			'rules'            => APD_Security::frontend_text_rules(),
 		);
+
+		if ( ! empty( $payload['split_text'] ) ) {
+			$fingerprint['split_text']     = true;
+			$fingerprint['text_box_right'] = isset( $payload['text_box_right'] ) && is_array( $payload['text_box_right'] ) ? $payload['text_box_right'] : array();
+			$fingerprint['side_max_chars'] = isset( $payload['side_max_chars'] ) && is_array( $payload['side_max_chars'] ) ? $payload['side_max_chars'] : array();
+			$fingerprint['text_box']       = isset( $payload['text_box'] ) && is_array( $payload['text_box'] ) ? $payload['text_box'] : $fingerprint['text_box'];
+		}
+
+		return $fingerprint;
 	}
 
 	/**
@@ -1053,7 +1070,7 @@ final class APD_WooCommerce {
 		$min    = isset( $limits['limits']['min_font_size'] ) ? (int) $limits['limits']['min_font_size'] : 12;
 
 		return array(
-			'format'       => APD_Formats::frontend_payload( $format ),
+			'format'       => APD_Admin_Settings::locked_design_payload( $product_id, APD_Formats::frontend_payload( $format ) ),
 			'layouts'      => $layouts,
 			'color_fields' => APD_Admin_Settings::product_color_fields( $product_id ),
 			'palettes'     => APD_Admin_Settings::product_offered_colors( $product_id ),
@@ -1069,7 +1086,6 @@ final class APD_WooCommerce {
 				'chooseCountry' => __( 'Choose country', 'auto-plate-designer' ),
 				'closeDialog'   => __( 'Close', 'auto-plate-designer' ),
 				'bandHint'      => __( 'Click the country band to change country', 'auto-plate-designer' ),
-				'designLabel'   => __( 'Plate design', 'auto-plate-designer' ),
 				'textColor'     => __( 'Text color', 'auto-plate-designer' ),
 				'borderColor'   => __( 'Border color', 'auto-plate-designer' ),
 				'plateColor'    => __( 'Plate color', 'auto-plate-designer' ),
@@ -1103,7 +1119,7 @@ final class APD_WooCommerce {
 			return new WP_Error( 'apd_format_missing', __( 'This product has no plate format.', 'auto-plate-designer' ) );
 		}
 
-		$payload     = APD_Formats::frontend_payload( $format );
+		$payload     = APD_Admin_Settings::locked_design_payload( $product_id, APD_Formats::frontend_payload( $format ) );
 		$max_chars   = (int) $payload['max_chars'];
 		$allow_empty = ! empty( $payload['allow_empty'] );
 		$multiline   = ! empty( $payload['multiline'] );
@@ -1111,7 +1127,7 @@ final class APD_WooCommerce {
 		$text        = isset( $_POST['apd_text'] ) ? (string) wp_unslash( $_POST['apd_text'] ) : ''; // phpcs:ignore WordPress.Security.ValidatedSanitizedInput.InputNotSanitized
 		$length_limit = $max_chars;
 
-		if ( APD_Formats::is_suv_kind( $format_type ) && ( isset( $_POST['apd_text_row_1'] ) || isset( $_POST['apd_text_row_2'] ) ) ) {
+		if ( APD_Formats::uses_two_rows( $format_type ) && ( isset( $_POST['apd_text_row_1'] ) || isset( $_POST['apd_text_row_2'] ) ) ) {
 			$row_limits = APD_Formats::suv_row_limits( $format );
 			$row1       = isset( $_POST['apd_text_row_1'] ) ? (string) wp_unslash( $_POST['apd_text_row_1'] ) : ''; // phpcs:ignore WordPress.Security.ValidatedSanitizedInput.InputNotSanitized
 			$row2       = isset( $_POST['apd_text_row_2'] ) ? (string) wp_unslash( $_POST['apd_text_row_2'] ) : ''; // phpcs:ignore WordPress.Security.ValidatedSanitizedInput.InputNotSanitized
@@ -1137,6 +1153,37 @@ final class APD_WooCommerce {
 			$text         = APD_Formats::join_suv_rows( $row1_clean, $row2_clean );
 			$multiline    = true;
 			$length_limit = $row_limits[0] + $row_limits[1] + ( false !== strpos( $text, "\n" ) ? 1 : 0 );
+		}
+
+		$posted_design = isset( $_POST['apd_design_id'] ) ? sanitize_text_field( wp_unslash( $_POST['apd_design_id'] ) ) : '';
+		$side_limits   = APD_Formats::active_us_side_limits( $payload, $posted_design );
+
+		if ( is_array( $side_limits ) && ( isset( $_POST['apd_text_left'] ) || isset( $_POST['apd_text_right'] ) ) ) {
+			$side_left  = isset( $_POST['apd_text_left'] ) ? (string) wp_unslash( $_POST['apd_text_left'] ) : ''; // phpcs:ignore WordPress.Security.ValidatedSanitizedInput.InputNotSanitized
+			$side_right = isset( $_POST['apd_text_right'] ) ? (string) wp_unslash( $_POST['apd_text_right'] ) : ''; // phpcs:ignore WordPress.Security.ValidatedSanitizedInput.InputNotSanitized
+			$left_clean  = APD_Security::sanitize_plate_text( $side_left, false );
+			$right_clean = APD_Security::sanitize_plate_text( $side_right, false );
+			$side_length = static function ( $value ) {
+				return function_exists( 'mb_strlen' ) ? mb_strlen( $value, 'UTF-8' ) : strlen( $value );
+			};
+
+			foreach ( array( array( $left_clean, $side_limits[0] ), array( $right_clean, $side_limits[1] ) ) as $side_check ) {
+				if ( $side_length( $side_check[0] ) > $side_check[1] ) {
+					return APD_Security::validate_plate_text(
+						$side_check[0],
+						array(
+							'max_length'  => $side_check[1],
+							'multiline'   => false,
+							'allow_empty' => true,
+						)
+					);
+				}
+			}
+
+			$text         = APD_Formats::join_suv_rows( $left_clean, $right_clean );
+			$multiline    = true;
+			$length_limit = $side_limits[0] + $side_limits[1] + ( false !== strpos( $text, "\n" ) ? 1 : 0 );
+			$max_chars    = $side_limits[0] + $side_limits[1];
 		}
 
 		$text_check = APD_Security::validate_plate_text(
@@ -1214,16 +1261,20 @@ final class APD_WooCommerce {
 				$design_label = $designs[0]['name'];
 				$design_code  = isset( $designs[0]['code'] ) ? (string) $designs[0]['code'] : '';
 				$design_box   = APD_Designs::sanitize_text_box( isset( $designs[0]['text_box'] ) ? $designs[0]['text_box'] : array() );
+			} elseif ( '' === $design_label ) {
+				$design_id   = '';
+				$design_code = '';
 			}
 		}
 
 		$color_fields  = APD_Admin_Settings::product_color_fields( $product_id );
 		$frame_chosen  = APD_Formats::offers_frame_choice( $type ) && isset( $_POST['apd_frame'] ) && '1' === sanitize_text_field( wp_unslash( $_POST['apd_frame'] ) );
 		$admin_border  = isset( $format['border_width'] ) ? (int) $format['border_width'] : 0;
-		$text_color    = $this->snapshot_palette_color( $product_id, 'apd_text_color', 'text', in_array( 'text', $color_fields, true ) );
-		$border_color  = $this->snapshot_palette_color( $product_id, 'apd_border_color', 'border', $frame_chosen && in_array( 'border', $color_fields, true ) );
-		$fill_color    = $this->snapshot_palette_color( $product_id, 'apd_background_color', 'background', in_array( 'background', $color_fields, true ) );
-		$holder_color  = $this->snapshot_palette_color( $product_id, 'apd_holder_color', 'holder', in_array( 'holder', $color_fields, true ) );
+		$offered       = APD_Admin_Settings::product_offered_colors( $product_id );
+		$text_color    = $this->snapshot_palette_color( 'apd_text_color', APD_Formats::shop_swatch_colors( $type, 'text', $color_fields, $offered ) );
+		$border_color  = $this->snapshot_palette_color( 'apd_border_color', $frame_chosen ? APD_Formats::shop_swatch_colors( $type, 'border', $color_fields, $offered ) : array() );
+		$fill_color    = $this->snapshot_palette_color( 'apd_background_color', APD_Formats::shop_swatch_colors( $type, 'background', $color_fields, $offered ) );
+		$holder_color  = $this->snapshot_palette_color( 'apd_holder_color', APD_Formats::shop_swatch_colors( $type, 'holder', $color_fields, $offered ) );
 
 		if ( $frame_chosen && '' === $border_color['hex'] && isset( $format['border_color'] ) ) {
 			$border_color['hex'] = (string) $format['border_color'];
@@ -1345,7 +1396,7 @@ final class APD_WooCommerce {
 			);
 		}
 
-		if ( self::config_includes_color( $config, 'text' ) && ! empty( $config['text_color'] ) ) {
+		if ( ( self::config_includes_color( $config, 'text' ) || self::config_includes_color( $config, 'holder_text' ) || self::config_includes_color( $config, 'color_text' ) ) && ! empty( $config['text_color'] ) ) {
 			$rows[] = array(
 				'key'   => __( 'Text color', 'auto-plate-designer' ),
 				'value' => self::format_color_display(
@@ -1362,7 +1413,7 @@ final class APD_WooCommerce {
 			);
 		}
 
-		if ( self::config_includes_color( $config, 'border' ) && empty( $config['no_frame'] ) && ! empty( $config['border_color'] ) ) {
+		if ( ( self::config_includes_color( $config, 'border' ) || self::config_includes_color( $config, 'color_border' ) ) && empty( $config['no_frame'] ) && ! empty( $config['border_color'] ) ) {
 			$rows[] = array(
 				'key'   => __( 'Border color', 'auto-plate-designer' ),
 				'value' => self::format_color_display(
@@ -1382,8 +1433,8 @@ final class APD_WooCommerce {
 			);
 		}
 
-		if ( self::config_includes_color( $config, 'background' ) && ! empty( $config['background_color'] ) ) {
-			$fill_key = 'holder' === $type
+		if ( ( self::config_includes_color( $config, 'background' ) || self::config_includes_color( $config, 'holder_strip' ) || self::config_includes_color( $config, 'color_background' ) ) && ! empty( $config['background_color'] ) ) {
+			$fill_key = APD_Formats::is_holder( $type )
 				? __( 'White strip color', 'auto-plate-designer' )
 				: __( 'Plate color', 'auto-plate-designer' );
 
@@ -1423,51 +1474,22 @@ final class APD_WooCommerce {
 	 * @param bool   $enabled    Whether the field was offered.
 	 * @return array{hex: string, label: string}
 	 */
-	private function snapshot_palette_color( $product_id, $field, $set, $enabled ) {
-		if ( ! $enabled ) {
+	private function snapshot_palette_color( $field, $colors ) {
+		$colors = is_array( $colors ) ? $colors : array();
+
+		if ( empty( $colors ) ) {
 			return array(
 				'hex'   => '',
 				'label' => '',
 			);
 		}
 
-		$hex = $this->posted_palette_color( $product_id, $field, $set, true );
+		$hex = $this->posted_palette_color_from_list( $field, $colors );
 
 		return array(
 			'hex'   => $hex,
-			'label' => $this->palette_label_for_hex( $product_id, $set, $hex ),
+			'label' => $this->label_for_color_list( $colors, $hex ),
 		);
-	}
-
-	/**
-	 * Palette label for a stored hex, captured at add-to-cart time.
-	 *
-	 * @param int    $product_id Product ID.
-	 * @param string $set        Palette set.
-	 * @param string $hex        Hex color.
-	 * @return string
-	 */
-	private function palette_label_for_hex( $product_id, $set, $hex ) {
-		foreach ( $this->offered_colors( $product_id, $set ) as $color ) {
-			if ( 0 === strcasecmp( $color['hex'], $hex ) ) {
-				return $color['label'];
-			}
-		}
-
-		return $hex;
-	}
-
-	/**
-	 * Colors this product offers for one purpose.
-	 *
-	 * @param int    $product_id Product ID.
-	 * @param string $set        text|border|background.
-	 * @return array<int, array<string, string>>
-	 */
-	private function offered_colors( $product_id, $set ) {
-		$offered = APD_Admin_Settings::product_offered_colors( $product_id );
-
-		return isset( $offered[ $set ] ) && is_array( $offered[ $set ] ) ? $offered[ $set ] : array();
 	}
 
 	/**
@@ -1494,16 +1516,10 @@ final class APD_WooCommerce {
 	 * @param bool   $enabled    Whether the shopper may choose this field.
 	 * @return string
 	 */
-	private function posted_palette_color( $product_id, $field, $set, $enabled = true ) {
-		$colors  = $this->offered_colors( $product_id, $set );
-		$prefer  = 'background' === $set ? array( '#FFFFFF' ) : array( '#000000' );
+	private function posted_palette_color_from_list( $field, $colors ) {
+		$prefer  = 'apd_background_color' === $field ? array( '#FFFFFF' ) : array( '#000000' );
 		$default = APD_Color_Palettes::preferred_hex( $colors, $prefer );
-
-		if ( ! $enabled ) {
-			return $default;
-		}
-
-		$raw = isset( $_POST[ $field ] ) ? sanitize_text_field( wp_unslash( $_POST[ $field ] ) ) : '';
+		$raw     = isset( $_POST[ $field ] ) ? sanitize_text_field( wp_unslash( $_POST[ $field ] ) ) : '';
 
 		if ( is_wp_error( APD_Security::validate_hex_color( $raw ) ) ) {
 			return $default;
@@ -1512,11 +1528,28 @@ final class APD_WooCommerce {
 		$hex = APD_Security::sanitize_hex_color( $raw );
 
 		foreach ( $colors as $color ) {
-			if ( 0 === strcasecmp( $color['hex'], $hex ) ) {
+			if ( isset( $color['hex'] ) && 0 === strcasecmp( (string) $color['hex'], $hex ) ) {
 				return $hex;
 			}
 		}
 
 		return $default;
+	}
+
+	/**
+	 * Palette label from the colors offered for this control.
+	 *
+	 * @param array<int, array<string, string>> $colors Color rows.
+	 * @param string                             $hex    Hex color.
+	 * @return string
+	 */
+	private function label_for_color_list( $colors, $hex ) {
+		foreach ( $colors as $color ) {
+			if ( isset( $color['hex'] ) && 0 === strcasecmp( (string) $color['hex'], $hex ) ) {
+				return isset( $color['label'] ) ? (string) $color['label'] : $hex;
+			}
+		}
+
+		return $hex;
 	}
 }

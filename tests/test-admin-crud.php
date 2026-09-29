@@ -103,12 +103,119 @@ $us = APD_Formats::sanitize(
 	)
 );
 
-if ( is_wp_error( $us ) || 0 !== (int) $us['base_image_id'] ) {
+if ( is_wp_error( $us ) || 0 !== (int) $us['base_image_id'] || ! APD_Formats::uses_base_image( 'us' ) || array( 'text' ) !== APD_Formats::palette_slot_keys_for( 'us' ) ) {
 	fwrite( STDERR, "US_OPTIONAL_IMAGE_FAIL\n" );
 	exit( 1 );
 }
 
+$us_palette = APD_Formats::sanitize(
+	array(
+		'name'          => 'US with text palette',
+		'type'          => 'us',
+		'palette_slots' => array(
+			'text' => APD_Color_Palettes::DEFAULT_PALETTE_IDS['text'],
+		),
+	)
+);
+
+if ( is_wp_error( $us_palette ) || APD_Color_Palettes::DEFAULT_PALETTE_IDS['text'] !== $us_palette['palette_slots']['text'] || isset( $us_palette['palette_slots']['background'] ) ) {
+	fwrite( STDERR, "US_TEXT_PALETTE_FAIL\n" );
+	exit( 1 );
+}
+
 echo 'US_OPTIONAL_IMAGE_OK' . PHP_EOL;
+
+$us_split = APD_Formats::sanitize(
+	array(
+		'name'             => 'US split plate',
+		'type'             => 'us',
+		'split_text'       => '1',
+		'max_chars_left'   => 3,
+		'max_chars_right'  => 4,
+		'text_box'         => array(
+			'x'      => 8,
+			'y'      => 40,
+			'width'  => 36,
+			'height' => 30,
+			'align'  => 'center',
+			'valign' => 'middle',
+		),
+		'text_box_right'   => array(
+			'x'      => 52,
+			'y'      => 10,
+			'width'  => 34,
+			'height' => 12,
+			'align'  => 'center',
+			'valign' => 'top',
+		),
+	)
+);
+
+$us_split_payload = is_wp_error( $us_split ) ? array() : APD_Formats::frontend_payload( $us_split );
+
+if (
+	is_wp_error( $us_split )
+	|| empty( $us_split['split_text'] )
+	|| 40.0 !== (float) $us_split['text_box_right']['y']
+	|| 30.0 !== (float) $us_split['text_box_right']['height']
+	|| (float) $us_split['text_box_right']['x'] < (float) $us_split['text_box']['x'] + (float) $us_split['text_box']['width']
+	|| 7 !== (int) $us_split['max_chars']
+	|| '3 + 4' !== APD_Formats::max_chars_label( $us_split )
+	|| empty( $us_split_payload['split_text'] )
+	|| array( 3, 4 ) !== $us_split_payload['side_max_chars']
+	|| array( 3, 4 ) !== APD_Formats::active_us_side_limits(
+		array(
+			'type'            => 'us',
+			'base_image_url'  => 'http://example.com/plate.png',
+			'split_text'      => true,
+			'side_max_chars'  => array( 3, 4 ),
+		)
+	)
+	|| null !== APD_Formats::active_us_side_limits(
+		array(
+			'type'           => 'us',
+			'base_image_url' => '',
+			'split_text'     => true,
+			'side_max_chars' => array( 3, 4 ),
+			'designs'        => array(
+				array(
+					'id'         => 'az',
+					'split_text' => false,
+				),
+			),
+		)
+	)
+	|| array( 2, 5 ) !== APD_Formats::active_us_side_limits(
+		array(
+			'type'           => 'us',
+			'base_image_url' => '',
+			'designs'        => array(
+				array(
+					'id'             => 'ny',
+					'split_text'     => true,
+					'side_max_chars' => array( 2, 5 ),
+				),
+			),
+		)
+	)
+) {
+	fwrite( STDERR, 'US_SPLIT_FAIL ' . ( is_wp_error( $us_split ) ? $us_split->get_error_message() : wp_json_encode( $us_split ) ) . PHP_EOL );
+	exit( 1 );
+}
+
+$us_single = APD_Formats::sanitize(
+	array(
+		'name' => 'US single plate',
+		'type' => 'us',
+	)
+);
+
+if ( is_wp_error( $us_single ) || ! empty( $us_single['split_text'] ) || null !== APD_Formats::active_us_side_limits( APD_Formats::frontend_payload( $us_single ) ) ) {
+	fwrite( STDERR, "US_SINGLE_SPLIT_FAIL\n" );
+	exit( 1 );
+}
+
+echo 'US_SPLIT_OK' . PHP_EOL;
 
 $holder = APD_Formats::sanitize(
 	array(
@@ -472,6 +579,60 @@ if ( ! empty( $eu_ids ) ) {
 
 echo 'DESIGN_SCOPE_OK' . PHP_EOL;
 
+$format_scope = APD_Designs::formats_for( array( 'allowed_format_ids' => array() ) );
+$missing_scope = APD_Designs::formats_for( array( 'allowed_format_ids' => array( 'missing-format' ) ) );
+
+if ( count( $format_scope ) !== count( APD_Formats::of_type( 'us' ) ) || ! empty( $missing_scope ) ) {
+	fwrite( STDERR, "DESIGN_FORMATS_FOR_FAIL\n" );
+	exit( 1 );
+}
+
+$open_designs = array(
+	'type'    => 'us',
+	'designs' => array(
+		array(
+			'id'   => 'd-all',
+			'name' => 'Arizona',
+		),
+		array(
+			'id'       => 'd-one',
+			'name'     => 'California',
+			'text_box' => array(
+				'x' => 12,
+			),
+		),
+	),
+);
+$cleared_designs = APD_Admin_Settings::locked_design_payload( 0, $open_designs );
+$eu_designs      = APD_Admin_Settings::locked_design_payload(
+	0,
+	array(
+		'type'    => 'eu',
+		'designs' => array(
+			array(
+				'id' => 'keep-me',
+			),
+		),
+	)
+);
+$lock_post = wp_insert_post(
+	array(
+		'post_type'   => 'product',
+		'post_status' => 'draft',
+		'post_title'  => 'APD design lock test',
+	)
+);
+update_post_meta( $lock_post, APD_Admin_Settings::META_DESIGN, 'd-one' );
+$locked_designs = APD_Admin_Settings::locked_design_payload( $lock_post, $open_designs );
+wp_delete_post( $lock_post, true );
+
+if ( ! empty( $cleared_designs['designs'] ) || 1 !== count( $eu_designs['designs'] ) || 1 !== count( $locked_designs['designs'] ) || 'd-one' !== $locked_designs['designs'][0]['id'] || 12 !== $locked_designs['designs'][0]['text_box']['x'] ) {
+	fwrite( STDERR, "DESIGN_LOCK_FAIL\n" );
+	exit( 1 );
+}
+
+echo 'DESIGN_LOCK_OK' . PHP_EOL;
+
 $defs = APD_Catalog::definitions();
 
 if ( empty( $defs['holders']['kind'] ) || 'holder' !== $defs['holders']['kind'] ) {
@@ -530,7 +691,7 @@ if ( APD_Formats::uses_country_band( 'color' ) || ! APD_Formats::uses_painted_pl
 $color_caps = APD_Formats::color_field_capabilities( 'color' );
 $color_def  = APD_Formats::default_color_fields( 'color' );
 
-if ( array( 'text', 'border', 'background' ) !== $color_caps || array( 'text', 'border', 'background' ) !== $color_def ) {
+if ( array( 'text', 'border', 'background', 'color_text', 'color_border', 'color_background' ) !== $color_caps || array( 'text', 'border', 'background' ) !== $color_def ) {
 	fwrite( STDERR, "COLOR_FIELDS_FAIL\n" );
 	exit( 1 );
 }
@@ -579,11 +740,251 @@ if ( array( 'text', 'border', 'background' ) !== $eu_bg ) {
 	exit( 1 );
 }
 
+$holder_only = array( 'holder', 'holder_text', 'holder_strip' );
 $holder_caps = APD_Formats::color_field_capabilities( 'holder' );
 $holder_def  = APD_Formats::default_color_fields( 'holder' );
+$plate_caps  = array( 'text', 'border', 'background' );
+$color_extra = array( 'color_text', 'color_border', 'color_background' );
 
-if ( array( 'text', 'background', 'holder' ) !== $holder_caps || $holder_caps !== $holder_def || in_array( 'holder', APD_Formats::color_field_capabilities( 'eu' ), true ) ) {
+if ( $holder_only !== $holder_caps || $holder_caps !== $holder_def ) {
 	fwrite( STDERR, "HOLDER_COLOR_CAPS_FAIL\n" );
+	exit( 1 );
+}
+
+foreach ( array( 'eu', 'eu_plain', 'moto', 'moto_plain', 'suv', 'suv_eu', 'custom' ) as $plate_type ) {
+	if ( $plate_caps !== APD_Formats::color_field_capabilities( $plate_type ) ) {
+		fwrite( STDERR, "PLATE_COLOR_CAPS_FAIL {$plate_type}\n" );
+		exit( 1 );
+	}
+}
+
+if ( array( 'text' ) !== APD_Formats::color_field_capabilities( 'us' ) || array_merge( $plate_caps, $color_extra ) !== APD_Formats::color_field_capabilities( 'color' ) ) {
+	fwrite( STDERR, "TYPE_COLOR_CAPS_FAIL\n" );
+	exit( 1 );
+}
+
+foreach ( APD_Security::allowed_format_types() as $format_type ) {
+	$got = APD_Formats::color_field_capabilities( $format_type );
+
+	if ( APD_Formats::is_holder( $format_type ) ) {
+		foreach ( array_merge( $plate_caps, $color_extra ) as $foreign ) {
+			if ( in_array( $foreign, $got, true ) ) {
+				fwrite( STDERR, "HOLDER_FOREIGN_CAP_FAIL {$format_type} {$foreign}\n" );
+				exit( 1 );
+			}
+		}
+		if ( APD_Formats::is_photo_holder( $format_type ) && in_array( 'holder', $got, true ) ) {
+			fwrite( STDERR, "PHOTO_HOLDER_BODY_CAP_FAIL {$format_type}\n" );
+			exit( 1 );
+		}
+		continue;
+	}
+
+	foreach ( $holder_only as $foreign ) {
+		if ( in_array( $foreign, $got, true ) ) {
+			fwrite( STDERR, "PLATE_HOLDER_CAP_FAIL {$format_type} {$foreign}\n" );
+			exit( 1 );
+		}
+	}
+
+	if ( 'color' !== $format_type ) {
+		foreach ( $color_extra as $foreign ) {
+			if ( in_array( $foreign, $got, true ) ) {
+				fwrite( STDERR, "STANDARD_COLOR_CAP_FAIL {$format_type} {$foreign}\n" );
+				exit( 1 );
+			}
+		}
+	}
+}
+
+$holder_fields = APD_Formats::sanitize_color_fields(
+	array( 'holder', 'holder_text', 'holder_strip', 'text', 'border', 'background', 'color_text', 'color_border', 'color_background' ),
+	'holder'
+);
+
+if ( $holder_only !== $holder_fields ) {
+	fwrite( STDERR, "HOLDER_FIELD_SANITIZE_FAIL\n" );
+	exit( 1 );
+}
+
+$holder_palette_ids = APD_Color_Palettes::sanitize_product_ids(
+	array(
+		APD_Color_Palettes::DEFAULT_PALETTE_IDS['text'],
+		APD_Color_Palettes::DEFAULT_PALETTE_IDS['border'],
+		APD_Color_Palettes::DEFAULT_PALETTE_IDS['background'],
+		APD_Color_Palettes::DEFAULT_PALETTE_IDS['holder'],
+		APD_Color_Palettes::DEFAULT_PALETTE_IDS['color_text'],
+	),
+	'holder'
+);
+
+if ( array( APD_Color_Palettes::DEFAULT_PALETTE_IDS['holder'] ) !== array_values( $holder_palette_ids ) ) {
+	fwrite( STDERR, "HOLDER_PRODUCT_PALETTE_FAIL\n" );
+	exit( 1 );
+}
+
+$format_with_colors = APD_Formats::sanitize(
+	array(
+		'name'        => 'EU with text palette',
+		'type'        => 'eu',
+		'palette_ids' => array(
+			APD_Color_Palettes::DEFAULT_PALETTE_IDS['text'],
+			APD_Color_Palettes::DEFAULT_PALETTE_IDS['holder'],
+		),
+	)
+);
+
+if ( is_wp_error( $format_with_colors ) || array( APD_Color_Palettes::DEFAULT_PALETTE_IDS['text'] ) !== array_values( $format_with_colors['palette_ids'] ) ) {
+	fwrite( STDERR, "FORMAT_PALETTE_SANITIZE_FAIL\n" );
+	exit( 1 );
+}
+
+echo 'FORMAT_PALETTE_OK' . PHP_EOL;
+
+$saved_palette_format = APD_Formats::save( $format_with_colors );
+
+if ( is_wp_error( $saved_palette_format ) ) {
+	fwrite( STDERR, "FORMAT_PALETTE_SAVE_FAIL\n" );
+	exit( 1 );
+}
+
+$palette_product = wp_insert_post(
+	array(
+		'post_type'   => 'product',
+		'post_status' => 'draft',
+		'post_title'  => 'Palette probe',
+	)
+);
+update_post_meta( $palette_product, APD_Admin_Settings::META_FORMAT, $saved_palette_format['id'] );
+update_post_meta( $palette_product, APD_Admin_Settings::META_PALETTE_IDS, array( APD_Color_Palettes::DEFAULT_PALETTE_IDS['holder'] ) );
+$format_wins = APD_Admin_Settings::product_palette_ids( $palette_product );
+
+if ( array( APD_Color_Palettes::DEFAULT_PALETTE_IDS['text'] ) !== array_values( $format_wins ) ) {
+	fwrite( STDERR, "FORMAT_PALETTE_WINS_FAIL\n" );
+	wp_delete_post( $palette_product, true );
+	APD_Formats::delete( $saved_palette_format['id'] );
+	exit( 1 );
+}
+
+wp_delete_post( $palette_product, true );
+APD_Formats::delete( $saved_palette_format['id'] );
+
+$slot_ids = APD_Color_Palettes::DEFAULT_PALETTE_IDS;
+$slot_format = APD_Formats::sanitize(
+	array(
+		'name'          => 'Street palette slots',
+		'type'          => 'custom',
+		'width'         => 340,
+		'height'        => 200,
+		'palette_slots' => array(
+			'text'       => $slot_ids['holder'],
+			'background' => $slot_ids['color_background'],
+			'border'     => $slot_ids['border'],
+		),
+	)
+);
+$slot_missing = APD_Formats::sanitize(
+	array(
+		'name'          => 'Street palette slots missing',
+		'type'          => 'custom',
+		'width'         => 340,
+		'height'        => 200,
+		'palette_slots' => array(
+			'text'       => $slot_ids['text'],
+			'background' => '',
+			'border'     => $slot_ids['border'],
+		),
+	)
+);
+$slot_editor = APD_Formats::palette_slots_for_editor(
+	array(),
+	array( $slot_ids['text'], $slot_ids['color_text'], $slot_ids['background'] )
+);
+
+if (
+	is_wp_error( $slot_format )
+	|| $slot_ids['holder'] !== $slot_format['palette_slots']['text']
+	|| $slot_ids['color_background'] !== $slot_format['palette_slots']['background']
+	|| ! is_wp_error( $slot_missing )
+	|| '' !== $slot_editor['text']
+	|| $slot_ids['background'] !== $slot_editor['background']
+) {
+	fwrite( STDERR, "PALETTE_SLOT_SANITIZE_FAIL\n" );
+	exit( 1 );
+}
+
+$saved_slot_format = APD_Formats::save( $slot_format );
+
+if ( is_wp_error( $saved_slot_format ) ) {
+	fwrite( STDERR, "PALETTE_SLOT_SAVE_FAIL\n" );
+	exit( 1 );
+}
+
+$slot_product = wp_insert_post(
+	array(
+		'post_type'   => 'product',
+		'post_status' => 'draft',
+		'post_title'  => 'Street palette probe',
+	)
+);
+update_post_meta( $slot_product, APD_Admin_Settings::META_FORMAT, $saved_slot_format['id'] );
+update_post_meta( $slot_product, APD_Admin_Settings::META_PALETTE_IDS, array( $slot_ids['text'] ) );
+$slot_offered = APD_Admin_Settings::product_offered_colors( $slot_product );
+$slot_fields  = APD_Admin_Settings::product_color_fields( $slot_product );
+$slot_text    = isset( $slot_offered['text'][0]['hex'] ) ? strtoupper( (string) $slot_offered['text'][0]['hex'] ) : '';
+$holder_row   = APD_Color_Palettes::get( $slot_ids['holder'] );
+$holder_hex   = '';
+
+if ( is_array( $holder_row ) ) {
+	$holder_colors = APD_Color_Palettes::palette_colors( $holder_row );
+	$holder_hex    = isset( $holder_colors[0]['hex'] ) ? strtoupper( (string) $holder_colors[0]['hex'] ) : '';
+}
+
+if ( '' === $holder_hex || $holder_hex !== $slot_text || array( 'text', 'background', 'border' ) !== $slot_fields || ! empty( $slot_offered['holder'] ) ) {
+	fwrite( STDERR, "PALETTE_SLOT_SHOP_FAIL\n" );
+	exit( 1 );
+}
+
+wp_delete_post( $slot_product, true );
+APD_Formats::delete( $saved_slot_format['id'] );
+
+$swatch_rows = array(
+	'text'         => array( array( 'id' => 'plate-text', 'hex' => '#111111', 'label' => 'Plate text' ) ),
+	'background'   => array( array( 'id' => 'plate-fill', 'hex' => '#222222', 'label' => 'Plate fill' ) ),
+	'holder'       => array( array( 'id' => 'body', 'hex' => '#7D7D7D', 'label' => 'Gray' ) ),
+	'holder_text'  => array( array( 'id' => 'ink', 'hex' => '#000000', 'label' => 'Ink' ) ),
+	'holder_strip' => array( array( 'id' => 'strip', 'hex' => '#FFFFFF', 'label' => 'Strip' ) ),
+	'color_text'   => array( array( 'id' => 'color-text', 'hex' => '#333333', 'label' => 'Color text' ) ),
+);
+$stale_fields = array( 'holder', 'holder_text', 'holder_strip', 'text', 'background', 'color_text' );
+$holder_ink   = APD_Formats::shop_swatch_colors( 'holder', 'text', $stale_fields, $swatch_rows );
+$holder_fill  = APD_Formats::shop_swatch_colors( 'holder', 'background', $stale_fields, $swatch_rows );
+$eu_ink       = APD_Formats::shop_swatch_colors( 'eu', 'text', array( 'text', 'color_text', 'holder_text' ), $swatch_rows );
+$color_ink    = APD_Formats::shop_swatch_colors( 'color', 'text', array( 'text', 'color_text' ), $swatch_rows );
+$holder_ink_ids  = array_column( $holder_ink, 'id' );
+$holder_fill_ids = array_column( $holder_fill, 'id' );
+$eu_ink_ids      = array_column( $eu_ink, 'id' );
+$color_ink_ids   = array_column( $color_ink, 'id' );
+
+$photo_shared = APD_Formats::shop_swatch_colors( 'holder_moto', 'text', array( 'holder_text', 'holder_strip' ), $swatch_rows );
+$photo_fill   = APD_Formats::shop_swatch_colors( 'holder_d', 'background', array( 'holder_text', 'holder_strip' ), $swatch_rows );
+$photo_ids    = array_column( $photo_shared, 'id' );
+$photo_fill_ids = array_column( $photo_fill, 'id' );
+
+if ( array( 'strip', 'ink' ) !== $photo_ids || $photo_ids !== $photo_fill_ids ) {
+	fwrite( STDERR, "PHOTO_HOLDER_SWATCH_FAIL\n" );
+	exit( 1 );
+}
+
+if ( array( 'ink' ) !== $holder_ink_ids || array( 'strip' ) !== $holder_fill_ids || array( 'plate-text' ) !== $eu_ink_ids || array( 'plate-text', 'color-text' ) !== $color_ink_ids ) {
+	fwrite( STDERR, "SWATCH_SCOPE_FAIL\n" );
+	exit( 1 );
+}
+
+$admin_js = file_get_contents( APD_PLUGIN_DIR . 'assets/js/admin-settings.js' );
+
+if ( false === $admin_js || false !== strpos( $admin_js, 'stripColorLabel' ) || false !== strpos( $admin_js, 'data-apd-background-label' ) ) {
+	fwrite( STDERR, "HOLDER_LABEL_LEAK_FAIL\n" );
 	exit( 1 );
 }
 
@@ -626,6 +1027,31 @@ foreach ( $named as $palette ) {
 
 if ( ! $holder_palette ) {
 	fwrite( STDERR, "HOLDER_PALETTE_FAIL\n" );
+	exit( 1 );
+}
+
+$special_purposes = array();
+$gray_hex         = false;
+
+foreach ( $library as $color ) {
+	if ( isset( $color['hex'] ) && '#7D7D7D' === strtoupper( (string) $color['hex'] ) ) {
+		$gray_hex = true;
+	}
+}
+
+foreach ( $named as $palette ) {
+	if ( isset( $palette['purpose'] ) ) {
+		$special_purposes[] = (string) $palette['purpose'];
+	}
+}
+
+if ( ! $gray_hex || ! in_array( 'color_text', $special_purposes, true ) || ! in_array( 'color_border', $special_purposes, true ) || ! in_array( 'color_background', $special_purposes, true ) ) {
+	fwrite( STDERR, "SPECIAL_PALETTE_FAIL\n" );
+	exit( 1 );
+}
+
+if ( in_array( APD_Color_Palettes::DEFAULT_PALETTE_IDS['holder_text'], $named_ids, true ) || in_array( APD_Color_Palettes::DEFAULT_PALETTE_IDS['holder_strip'], $named_ids, true ) || ! in_array( 'holder_text', APD_Color_Palettes::purposes(), true ) || ! in_array( 'holder_strip', APD_Color_Palettes::purposes(), true ) ) {
+	fwrite( STDERR, "HOLDER_PALETTE_SEED_FAIL\n" );
 	exit( 1 );
 }
 

@@ -71,6 +71,7 @@ $apd_design_scope = static function ( $design ) {
 <div class="apd-tab">
 	<h2><?php esc_html_e( 'USA designs', 'auto-plate-designer' ); ?></h2>
 	<p class="description"><?php esc_html_e( 'Arizona, California, and other state graphics belong here — they are not formats. Keep as many USA formats as you need (car, motorcycle, …) and attach a design to all of them or only some.', 'auto-plate-designer' ); ?></p>
+	<p class="description"><?php esc_html_e( 'Create product opens one WooCommerce product for this graphic. When the design belongs to more than one USA format, choose the format first. Shoppers see only that picture and type on the text area you place on it. The catalog photo is the product image you set in the product editor.', 'auto-plate-designer' ); ?></p>
 
 	<div class="apd-table-scroll">
 	<table class="widefat striped">
@@ -109,6 +110,26 @@ $apd_design_scope = static function ( $design ) {
 							<a href="<?php echo esc_url( add_query_arg( 'edit', $design['id'], $apd_admin->tab_url( 'designs' ) ) ); ?>"><?php esc_html_e( 'Edit', 'auto-plate-designer' ); ?></a>
 							|
 							<a class="apd-js-confirm" href="<?php echo esc_url( $apd_admin->delete_url( 'designs', $design['id'] ) ); ?>"><?php esc_html_e( 'Delete', 'auto-plate-designer' ); ?></a>
+							<?php
+							$row_formats     = APD_Designs::formats_for( $design );
+							$new_product_url = admin_url( 'post-new.php?post_type=product' );
+							?>
+							<?php if ( 1 === count( $row_formats ) ) : ?>
+								|
+								<a href="<?php echo esc_url( add_query_arg( array( 'apd_format' => $row_formats[0]['id'], 'apd_design' => $design['id'] ), $new_product_url ) ); ?>"><?php esc_html_e( 'Create product', 'auto-plate-designer' ); ?></a>
+							<?php elseif ( count( $row_formats ) > 1 ) : ?>
+								<form method="get" action="<?php echo esc_url( admin_url( 'post-new.php' ) ); ?>" class="apd-create-design-product">
+									<input type="hidden" name="post_type" value="product">
+									<input type="hidden" name="apd_design" value="<?php echo esc_attr( $design['id'] ); ?>">
+									<label class="screen-reader-text" for="apd-design-format-<?php echo esc_attr( $design['id'] ); ?>"><?php esc_html_e( 'Format', 'auto-plate-designer' ); ?></label>
+									<select name="apd_format" id="apd-design-format-<?php echo esc_attr( $design['id'] ); ?>">
+										<?php foreach ( $row_formats as $row_format ) : ?>
+											<option value="<?php echo esc_attr( $row_format['id'] ); ?>"><?php echo esc_html( $row_format['name'] ); ?></option>
+										<?php endforeach; ?>
+									</select>
+									<button type="submit" class="button-link"><?php esc_html_e( 'Create product', 'auto-plate-designer' ); ?></button>
+								</form>
+							<?php endif; ?>
 						</td>
 					</tr>
 				<?php endforeach; ?>
@@ -166,12 +187,23 @@ $apd_design_scope = static function ( $design ) {
 				<td>
 					<?php
 					$apd_text_box            = $text_box;
+					$apd_text_box_type       = 'us';
 					$apd_text_box_name       = 'apd_design[text_box]';
 					$apd_text_box_ratio      = $stage_ratio;
 					$apd_text_box_image      = $image_full ? $image_full : '';
 					$apd_text_box_help       = __( 'Drag the box onto the number hole of this graphic. The same percentages are used on every USA format this design is attached to. Shoppers cannot move the text.', 'auto-plate-designer' );
 					$apd_text_box_show_stage = (bool) $image_full;
+					$apd_text_box_design     = true;
 					$apd_text_box_band       = false;
+					$apd_split_ui            = true;
+					$apd_split_on            = ! empty( $editing['split_text'] );
+					$apd_split_name          = 'apd_design[split_text]';
+					$apd_right_box_name      = 'apd_design[text_box_right]';
+					$apd_side_left_name      = 'apd_design[max_chars_left]';
+					$apd_side_right_name     = 'apd_design[max_chars_right]';
+					$apd_text_box_right      = isset( $editing['text_box_right'] ) && is_array( $editing['text_box_right'] ) ? $editing['text_box_right'] : array();
+					$apd_side_left_max       = isset( $editing['max_chars_left'] ) ? (int) $editing['max_chars_left'] : APD_Formats::US_SIDE_LEFT_MAX;
+					$apd_side_right_max      = isset( $editing['max_chars_right'] ) ? (int) $editing['max_chars_right'] : APD_Formats::US_SIDE_RIGHT_MAX;
 					include APD_PLUGIN_DIR . 'templates/admin/partials/text-box-editor.php';
 					?>
 				</td>

@@ -67,7 +67,6 @@ $i18n = array(
 	'chooseCountry' => 'Choose country',
 	'closeDialog'   => 'Close',
 	'bandHint'      => 'Click the country band to change country',
-	'designLabel'   => 'Plate design',
 	'textColor'     => 'Text color',
 	'borderColor'   => 'Border color',
 	'plateColor'    => 'Plate color',
@@ -215,6 +214,38 @@ if ( false !== strpos( $us_html, 'name="apd_frame"' ) || false !== strpos( $us_h
 	exit( 1 );
 }
 
+$us_ui['designs'] = array(
+	array(
+		'id'        => 'ca',
+		'name'      => 'California',
+		'code'      => 'CA',
+		'image_url' => 'http://example.com/ca.png',
+		'text_box'  => array(
+			'x'      => 10,
+			'y'      => 20,
+			'width'  => 70,
+			'height' => 40,
+			'align'  => 'center',
+			'valign' => 'middle',
+		),
+	),
+	array(
+		'id'        => 'az',
+		'name'      => 'Arizona',
+		'code'      => 'AZ',
+		'image_url' => 'http://example.com/az.png',
+	),
+);
+$apd_payload['format'] = $us_ui;
+ob_start();
+include APD_PLUGIN_DIR . 'templates/product-configurator.php';
+$us_design_html = ob_get_clean();
+
+if ( false !== strpos( $us_design_html, 'data-apd-design-id' ) || false === strpos( $us_design_html, 'name="apd_design_id"' ) || false === strpos( $us_design_html, 'value="ca"' ) ) {
+	fwrite( STDERR, "SHOP_US_DESIGN_PICKER_FAIL\n" );
+	exit( 1 );
+}
+
 if ( false === strpos( $us_html, '--apd-frame-w: 500px' ) || false === strpos( $html, '--apd-frame-w: 500px' ) ) {
 	fwrite( STDERR, "SHOP_FRAME_WIDTH_FAIL\n" );
 	exit( 1 );
@@ -284,21 +315,79 @@ if ( false === strpos( $suv_html, 'name="apd_text_row_1"' ) || false === strpos(
 	exit( 1 );
 }
 
-$holder_payload                         = $apd_payload;
-$holder_payload['format']['type']       = 'holder';
-$holder_payload['color_fields']         = array( 'text', 'background', 'holder' );
-$holder_payload['palettes']['holder']   = array(
+$moto_format = APD_Formats::sanitize(
+	array(
+		'id'     => 'ui-moto',
+		'name'   => 'Moto UI',
+		'type'   => 'moto',
+		'width'  => 199,
+		'height' => 154,
+	)
+);
+if ( is_wp_error( $moto_format ) ) {
+	fwrite( STDERR, 'MOTO_FORMAT_ERR ' . $moto_format->get_error_message() . PHP_EOL );
+	exit( 1 );
+}
+$moto_ui = APD_Formats::frontend_payload( $moto_format );
+$moto_ui['fonts']   = array();
+$moto_ui['presets'] = array();
+$moto_ui['designs'] = array();
+$apd_payload = array(
+	'format'       => $moto_ui,
+	'palettes'     => $palettes,
+	'i18n'         => $i18n,
+	'color_fields' => array( 'text', 'border', 'background' ),
+	'layouts'      => array( 'text_only' ),
+	'minFont'      => 12,
+	'default_text' => "CA\n1234",
+);
+unset( $apd_payload['cart_restore'] );
+ob_start();
+include APD_PLUGIN_DIR . 'templates/product-configurator.php';
+$moto_html = ob_get_clean();
+
+if ( false === strpos( $moto_html, 'name="apd_text_row_1"' ) || false === strpos( $moto_html, 'name="apd_text_row_2"' ) || false === strpos( $moto_html, 'value="CA"' ) || false === strpos( $moto_html, 'value="1234"' ) || false === strpos( $moto_html, 'maxlength="5"' ) || false === strpos( $moto_html, 'maxlength="4"' ) ) {
+	fwrite( STDERR, "SHOP_MOTO_ROWS_FAIL\n" );
+	exit( 1 );
+}
+
+$holder_payload                           = $apd_payload;
+$holder_payload['format']['type']         = 'holder';
+$holder_payload['color_fields']           = array( 'holder', 'holder_text', 'holder_strip', 'text', 'background' );
+$holder_payload['i18n']['holderTextColor'] = 'Holder inscription';
+$holder_payload['palettes']['holder']     = array(
 	array(
 		'id'    => 'body',
 		'hex'   => '#000000',
 		'label' => 'Black',
 	),
 );
-$holder_payload['palettes']['background'] = array(
+$holder_payload['palettes']['holder_text'] = array(
 	array(
-		'id'    => 'white',
+		'id'    => 'ink',
+		'hex'   => '#111111',
+		'label' => 'Ink',
+	),
+);
+$holder_payload['palettes']['holder_strip'] = array(
+	array(
+		'id'    => 'strip',
 		'hex'   => '#FFFFFF',
 		'label' => 'White',
+	),
+);
+$holder_payload['palettes']['text'] = array(
+	array(
+		'id'    => 'plate-text',
+		'hex'   => '#010101',
+		'label' => 'PlateTextDecoy',
+	),
+);
+$holder_payload['palettes']['background'] = array(
+	array(
+		'id'    => 'plate-fill',
+		'hex'   => '#020202',
+		'label' => 'PlateFillDecoy',
 	),
 );
 $apd_payload = $holder_payload;
@@ -306,13 +395,13 @@ ob_start();
 include APD_PLUGIN_DIR . 'templates/product-configurator.php';
 $holder_html = ob_get_clean();
 
-if ( false === strpos( $holder_html, 'name="apd_holder_color"' ) || false === strpos( $holder_html, '>Holder color<' ) || false === strpos( $holder_html, 'name="apd_background_color"' ) || false === strpos( $holder_html, '>White strip color<' ) || strpos( $holder_html, 'name="apd_holder_color"' ) > strpos( $holder_html, 'name="apd_background_color"' ) || false !== strpos( $holder_html, 'name="apd_border_color"' ) || false !== strpos( $holder_html, 'name="apd_frame"' ) ) {
+if ( false === strpos( $holder_html, 'name="apd_holder_color"' ) || false === strpos( $holder_html, '>Holder color<' ) || false === strpos( $holder_html, 'name="apd_background_color"' ) || false === strpos( $holder_html, '>White strip color<' ) || false === strpos( $holder_html, '>Holder inscription<' ) || false === strpos( $holder_html, 'title="Ink"' ) || strpos( $holder_html, 'name="apd_holder_color"' ) > strpos( $holder_html, 'name="apd_background_color"' ) || false !== strpos( $holder_html, 'PlateTextDecoy' ) || false !== strpos( $holder_html, 'PlateFillDecoy' ) || false !== strpos( $holder_html, 'name="apd_border_color"' ) || false !== strpos( $holder_html, 'name="apd_frame"' ) ) {
 	fwrite( STDERR, "SHOP_HOLDER_COLORS_FAIL\n" );
 	exit( 1 );
 }
 
 $shop_js = file_get_contents( APD_PLUGIN_DIR . 'assets/js/configurator.js' );
-if ( false === strpos( $shop_js, 'groups.join' ) || false === strpos( $shop_js, 'bindStayOnProduct' ) || false === strpos( $shop_js, "format.type === 'us'" ) || false === strpos( $shop_js, "new CustomEvent('wc-blocks_added_to_cart', { bubbles: true })" ) || false === strpos( $shop_js, 'placeBandInsideFrame' ) || false === strpos( $shop_js, 'apd-band-layer' ) || false === strpos( $shop_js, 'plateSnapshot' ) || false === strpos( $shop_js, 'drawImageCover' ) || false === strpos( $shop_js, 'rowsForPlate' ) || false === strpos( $shop_js, 'syncSuvRows' ) || false === strpos( $shop_js, 'rowLimit' ) || false === strpos( $shop_js, 'plateGlyphs' ) || false === strpos( $shop_js, 'clampBoxInsideFrame' ) || false === strpos( $shop_js, 'paintHolderBody' ) || false === strpos( $shop_js, "source-in" ) ) {
+if ( false === strpos( $shop_js, 'groups.join' ) || false === strpos( $shop_js, 'bindStayOnProduct' ) || false === strpos( $shop_js, "format.type === 'us'" ) || false === strpos( $shop_js, "new CustomEvent('wc-blocks_added_to_cart', { bubbles: true })" ) || false === strpos( $shop_js, 'placeBandInsideFrame' ) || false === strpos( $shop_js, 'apd-band-layer' ) || false === strpos( $shop_js, 'plateSnapshot' ) || false === strpos( $shop_js, 'drawImageCover' ) || false === strpos( $shop_js, 'drawPlateArtwork' ) || false === strpos( $shop_js, 'artworkSourceBox' ) || false === strpos( $shop_js, 'design.text_box' ) || false === strpos( $shop_js, 'rowsForPlate' ) || false === strpos( $shop_js, 'syncSuvRows' ) || false === strpos( $shop_js, 'rowLimit' ) || false === strpos( $shop_js, 'plateGlyphs' ) || false === strpos( $shop_js, 'glyphInkScale' ) || false === strpos( $shop_js, 'wrapLines' ) || false === strpos( $shop_js, 'clampBoxInsideFrame' ) || false === strpos( $shop_js, 'paintHolderBody' ) || false === strpos( $shop_js, "source-in" ) ) {
 	fwrite( STDERR, "SHOP_JS_RULES_FAIL\n" );
 	exit( 1 );
 }

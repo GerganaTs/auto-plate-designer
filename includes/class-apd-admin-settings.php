@@ -18,6 +18,7 @@ final class APD_Admin_Settings {
 
 	const META_ENABLED      = '_apd_enabled';
 	const META_FORMAT       = '_apd_format_id';
+	const META_DESIGN       = '_apd_design_id';
 	const META_LAYOUTS      = '_apd_layouts';
 	const META_HIDE_IMAGE   = '_apd_hide_image';
 	const META_COLOR_FIELDS = '_apd_color_fields';
@@ -194,12 +195,27 @@ final class APD_Admin_Settings {
 				'sampleFontFill'     => APD_Formats::SAMPLE_FONT_FILL,
 				'adminSamplePainted' => APD_Formats::ADMIN_SAMPLE_PAINTED,
 				'adminSampleSuv'    => APD_Formats::ADMIN_SAMPLE_SUV,
-				'plateColorLabel'   => __( 'Plate color', 'auto-plate-designer' ),
-				'stripColorLabel'   => __( 'White strip color', 'auto-plate-designer' ),
 				'holderImageLabel'  => __( 'Holder photo', 'auto-plate-designer' ),
 				'holderImageHelp'   => __( 'The standard car holder is already shown. Upload a PNG, JPEG, or WebP photo to replace it. An SVG plugin is not needed.', 'auto-plate-designer' ),
 				'holderImageUrl'    => APD_Formats::bundled_holder_image_url(),
+				'photoHolderImages' => array(
+					'holder_moto' => APD_Formats::bundled_holder_image_url( 'holder_moto' ),
+					'holder_d'    => APD_Formats::bundled_holder_image_url( 'holder_d' ),
+				),
+				'paletteSlotTypes'  => array( 'color', 'custom', 'eu_plain', 'moto_plain', 'suv', 'us' ),
+				'usImageLabel'      => __( 'Plate graphic', 'auto-plate-designer' ),
+				'usImageHelp'       => __( 'Upload the plate graphic, then drag the text area onto the number hole. Set the character limit above.', 'auto-plate-designer' ),
 				'holderStrip'       => APD_Formats::holder_strip_box(),
+				'holderStrips'      => array(
+					'holder'      => APD_Formats::holder_strip_box( 'holder' ),
+					'holder_moto' => APD_Formats::holder_strip_box( 'holder_moto' ),
+					'holder_d'    => APD_Formats::holder_strip_box( 'holder_d' ),
+				),
+				'holderStripRadii'  => array(
+					'holder'      => APD_Formats::holder_strip_radius( 'holder' ),
+					'holder_moto' => APD_Formats::holder_strip_radius( 'holder_moto' ),
+					'holder_d'    => APD_Formats::holder_strip_radius( 'holder_d' ),
+				),
 				'suvImageLabel'     => __( 'Plate graphic', 'auto-plate-designer' ),
 				'suvImageHelp'      => __( 'Upload the full SUV / crossover plate image. Shoppers only change the text in the number area.', 'auto-plate-designer' ),
 			)
@@ -455,6 +471,7 @@ final class APD_Admin_Settings {
 		$layouts      = get_post_meta( $post->ID, self::META_LAYOUTS, true );
 		$hide_image   = 'no' !== get_post_meta( $post->ID, self::META_HIDE_IMAGE, true );
 		$default_text = (string) get_post_meta( $post->ID, self::META_DEFAULT_TEXT, true );
+		$design_id    = (string) get_post_meta( $post->ID, self::META_DESIGN, true );
 		$formats    = APD_Formats::all();
 		$available  = array( 'text_only', 'text_image_text', 'image_text', 'multiline_text' );
 
@@ -467,7 +484,14 @@ final class APD_Admin_Settings {
 			}
 		}
 
-		$palette_ids  = self::product_palette_ids( $post->ID, $format );
+		if ( '' === $design_id && isset( $_GET['apd_design'] ) ) { // phpcs:ignore WordPress.Security.NonceVerification.Recommended
+			$requested_design = sanitize_text_field( wp_unslash( $_GET['apd_design'] ) ); // phpcs:ignore WordPress.Security.NonceVerification.Recommended
+
+			if ( is_array( APD_Designs::get( $requested_design ) ) ) {
+				$design_id = $requested_design;
+				$enabled   = true;
+			}
+		}
 
 		if ( ! is_array( $layouts ) ) {
 			$layouts = $available;
@@ -513,13 +537,45 @@ final class APD_Admin_Settings {
 
 		echo '</select></p>';
 
+		$selected_format = '' !== $format ? APD_Formats::get( $format ) : null;
+		$selected_type   = is_array( $selected_format ) && isset( $selected_format['type'] ) ? (string) $selected_format['type'] : '';
+		$design_open     = 'us' === $selected_type;
+
+		echo '<p data-apd-product-design' . ( $design_open ? '' : ' hidden' ) . '><label for="apd_design_id">' . esc_html__( 'Plate design', 'auto-plate-designer' ) . '</label><br>';
+		echo '<select name="apd_design_id" id="apd_design_id" class="widefat"' . ( $design_open ? '' : ' disabled' ) . '>';
+		echo '<option value="">' . esc_html__( 'Select a design', 'auto-plate-designer' ) . '</option>';
+
+		foreach ( APD_Designs::all() as $design_row ) {
+			if ( empty( $design_row['active'] ) || empty( $design_row['id'] ) ) {
+				continue;
+			}
+
+			$scope_ids = isset( $design_row['allowed_format_ids'] ) && is_array( $design_row['allowed_format_ids'] )
+				? $design_row['allowed_format_ids']
+				: array();
+			$label     = (string) $design_row['name'];
+
+			if ( ! empty( $design_row['code'] ) ) {
+				$label .= ' (' . $design_row['code'] . ')';
+			}
+
+			printf(
+				'<option value="%1$s" data-apd-formats="%2$s" %3$s>%4$s</option>',
+				esc_attr( (string) $design_row['id'] ),
+				esc_attr( implode( ',', $scope_ids ) ),
+				selected( $design_id, (string) $design_row['id'], false ),
+				esc_html( $label )
+			);
+		}
+
+		echo '</select>';
+		echo '<span class="description">' . esc_html__( 'This product shows only this graphic. Shoppers cannot switch to another state. The catalog photo is the product image. The plate on the product page is the picture uploaded with this design.', 'auto-plate-designer' ) . '</span></p>';
+
 		if ( empty( $formats ) ) {
 			echo '<p class="description">' . esc_html__( 'Add formats under WooCommerce → Auto Plate Designer first.', 'auto-plate-designer' ) . '</p>';
 		}
 
-		$selected_format = '' !== $format ? APD_Formats::get( $format ) : null;
-		$selected_type   = is_array( $selected_format ) && isset( $selected_format['type'] ) ? (string) $selected_format['type'] : '';
-		$suv_default     = APD_Formats::is_suv_kind( $selected_type );
+		$suv_default     = APD_Formats::uses_two_rows( $selected_type );
 		$suv_rows        = APD_Formats::suv_plate_rows( $default_text );
 		$single_text     = str_replace( array( "\r\n", "\r", "\n" ), ' ', $default_text );
 
@@ -535,52 +591,7 @@ final class APD_Admin_Settings {
 		echo '</p>';
 		echo '</div>';
 		echo '<p class="description">' . esc_html__( 'Shown on the product page until the shopper types their own plate. Leave blank to use the format sample.', 'auto-plate-designer' ) . '</p>';
-
-		$purpose_labels = array(
-			'text'       => __( 'Text color', 'auto-plate-designer' ),
-			'border'     => __( 'Border color', 'auto-plate-designer' ),
-			'background' => __( 'Plate color', 'auto-plate-designer' ),
-			'holder'     => __( 'Holder color', 'auto-plate-designer' ),
-		);
-
-		echo '<div data-apd-color-fields>';
-		echo '<p>' . esc_html__( 'Palettes in the configurator', 'auto-plate-designer' ) . '</p>';
-		echo '<p class="description">' . esc_html__( 'Choose which palettes shoppers can pick from. Leave a group unchecked to hide that color control. New products start with none selected.', 'auto-plate-designer' ) . '</p>';
-
-		$named = APD_Color_Palettes::all();
-
-		foreach ( $purpose_labels as $purpose => $label ) {
-			$label_attr = 'background' === $purpose ? ' data-apd-background-label' : '';
-			echo '<div data-apd-color-cap="' . esc_attr( $purpose ) . '">';
-			echo '<p><strong><span' . $label_attr . '>' . esc_html( $label ) . '</span></strong></p>';
-
-			$found_palette = false;
-			echo '<div class="apd-choice-list">';
-
-			foreach ( $named as $palette ) {
-				if ( empty( $palette['active'] ) || ! isset( $palette['purpose'] ) || $palette['purpose'] !== $purpose ) {
-					continue;
-				}
-
-				$found_palette = true;
-				printf(
-					'<label class="apd-choice"><input type="checkbox" name="apd_palette_ids[]" value="%1$s" %2$s> %3$s</label>',
-					esc_attr( $palette['id'] ),
-					checked( in_array( $palette['id'], $palette_ids, true ), true, false ),
-					esc_html( $palette['name'] )
-				);
-			}
-
-			echo '</div>';
-
-			if ( ! $found_palette ) {
-				echo '<p class="description">' . esc_html__( 'No palettes for this part yet. Add them under Color palette.', 'auto-plate-designer' ) . '</p>';
-			}
-
-			echo '</div>';
-		}
-
-		echo '</div>';
+		echo '<p class="description">' . esc_html__( 'Colors come from the palettes chosen on this format.', 'auto-plate-designer' ) . '</p>';
 
 		echo '<p>' . esc_html__( 'Allowed layouts', 'auto-plate-designer' ) . '</p>';
 		echo '<div class="apd-choice-list">';
@@ -631,6 +642,36 @@ final class APD_Admin_Settings {
 
 		update_post_meta( $product_id, self::META_FORMAT, $format_id );
 
+		$format_type = '';
+		$format_row  = null;
+
+		if ( '' !== $format_id ) {
+			$format_row  = APD_Formats::get( $format_id );
+			$format_type = is_array( $format_row ) && isset( $format_row['type'] ) ? (string) $format_row['type'] : '';
+		}
+
+		$design_id = isset( $_POST['apd_design_id'] ) ? sanitize_text_field( wp_unslash( $_POST['apd_design_id'] ) ) : '';
+		$matches   = false;
+
+		if ( 'us' === $format_type && '' !== $design_id && is_array( $format_row ) ) {
+			foreach ( APD_Designs::active_for_format( $format_row ) as $candidate ) {
+				if ( isset( $candidate['id'] ) && (string) $candidate['id'] === $design_id ) {
+					$matches = true;
+					break;
+				}
+			}
+		}
+
+		if ( ! $matches ) {
+			$design_id = '';
+		}
+
+		if ( '' === $design_id ) {
+			delete_post_meta( $product_id, self::META_DESIGN );
+		} else {
+			update_post_meta( $product_id, self::META_DESIGN, $design_id );
+		}
+
 		$layouts = array();
 
 		if ( isset( $_POST['apd_layouts'] ) && is_array( $_POST['apd_layouts'] ) ) {
@@ -647,21 +688,13 @@ final class APD_Admin_Settings {
 
 		update_post_meta( $product_id, self::META_LAYOUTS, $layouts );
 
-		$format_type = '';
-		$format_row  = null;
-
-		if ( '' !== $format_id ) {
-			$format_row  = APD_Formats::get( $format_id );
-			$format_type = is_array( $format_row ) && isset( $format_row['type'] ) ? (string) $format_row['type'] : '';
-		}
-
 		$multiline   = is_array( $format_row ) && ! empty( $format_row['multiline'] );
-		$max_chars   = 'holder' === $format_type
+		$max_chars   = APD_Formats::is_holder( $format_type )
 			? APD_Formats::holder_text_limit()
 			: ( is_array( $format_row ) && isset( $format_row['max_chars'] ) ? (int) $format_row['max_chars'] : 12 );
 		$text_limit  = $max_chars > 0 ? $max_chars : 12;
 
-		if ( APD_Formats::is_suv_kind( $format_type ) ) {
+		if ( APD_Formats::uses_two_rows( $format_type ) ) {
 			$row_limits = APD_Formats::suv_row_limits( is_array( $format_row ) ? $format_row : array( 'type' => $format_type ) );
 			$row1       = isset( $_POST['apd_default_text_row_1'] ) ? (string) wp_unslash( $_POST['apd_default_text_row_1'] ) : ''; // phpcs:ignore WordPress.Security.ValidatedSanitizedInput.InputNotSanitized
 			$row2       = isset( $_POST['apd_default_text_row_2'] ) ? (string) wp_unslash( $_POST['apd_default_text_row_2'] ) : ''; // phpcs:ignore WordPress.Security.ValidatedSanitizedInput.InputNotSanitized
@@ -688,25 +721,6 @@ final class APD_Admin_Settings {
 			)
 		);
 		update_post_meta( $product_id, self::META_DEFAULT_TEXT, is_wp_error( $text_ok ) ? '' : $clean_text );
-
-		$posted_palettes = isset( $_POST['apd_palette_ids'] ) && is_array( $_POST['apd_palette_ids'] )
-			? wp_unslash( $_POST['apd_palette_ids'] ) // phpcs:ignore WordPress.Security.ValidatedSanitizedInput.InputNotSanitized
-			: array();
-
-		$palette_ids = APD_Color_Palettes::sanitize_product_ids( $posted_palettes, $format_type );
-		update_post_meta( $product_id, self::META_PALETTE_IDS, $palette_ids );
-
-		$derived_fields = array();
-
-		foreach ( $palette_ids as $palette_id ) {
-			$palette = APD_Color_Palettes::get( $palette_id );
-
-			if ( is_array( $palette ) && isset( $palette['purpose'] ) ) {
-				$derived_fields[] = $palette['purpose'];
-			}
-		}
-
-		update_post_meta( $product_id, self::META_COLOR_FIELDS, APD_Formats::sanitize_color_fields( $derived_fields, $format_type ) );
 
 		if ( 'yes' === $enabled && is_array( $format_row ) && isset( $format_row['type'] ) ) {
 			APD_Catalog::maybe_assign_product_term( $product_id, $format_row['type'] );
@@ -739,6 +753,82 @@ final class APD_Admin_Settings {
 	}
 
 	/**
+	 * Palette IDs already stored on products that use this format.
+	 *
+	 * Used once, when an older format has no palettes of its own yet.
+	 *
+	 * @param string $format_id Format ID.
+	 * @return array<int, string>
+	 */
+	public static function palette_ids_on_products( $format_id ) {
+		$format_id = sanitize_text_field( (string) $format_id );
+		$out       = array();
+
+		if ( '' === $format_id || ! function_exists( 'get_posts' ) ) {
+			return $out;
+		}
+
+		$product_ids = get_posts(
+			array(
+				'post_type'      => 'product',
+				'post_status'    => 'any',
+				'posts_per_page' => -1,
+				'fields'         => 'ids',
+				'meta_key'       => self::META_FORMAT, // phpcs:ignore WordPress.DB.SlowDBQuery.slow_db_query_meta_key
+				'meta_value'     => $format_id, // phpcs:ignore WordPress.DB.SlowDBQuery.slow_db_query_meta_value
+			)
+		);
+
+		foreach ( $product_ids as $product_id ) {
+			$stored = get_post_meta( (int) $product_id, self::META_PALETTE_IDS, true );
+
+			if ( ! is_array( $stored ) ) {
+				continue;
+			}
+
+			foreach ( $stored as $palette_id ) {
+				$out[] = sanitize_text_field( (string) $palette_id );
+			}
+		}
+
+		return array_values( array_unique( array_filter( $out ) ) );
+	}
+
+	/**
+	 * Keep only the design locked on this product.
+	 *
+	 * USA shoppers do not pick among state graphics. The catalog photo stays
+	 * the WooCommerce product image. The plate on the product page is the
+	 * picture stored on the design, including that design's text box.
+	 *
+	 * @param int                  $product_id Product ID.
+	 * @param array<string, mixed> $payload    Format payload.
+	 * @return array<string, mixed>
+	 */
+	public static function locked_design_payload( $product_id, array $payload ) {
+		$type = isset( $payload['type'] ) ? (string) $payload['type'] : '';
+
+		if ( ! APD_Formats::uses_plate_designs( $type ) ) {
+			return $payload;
+		}
+
+		$locked = (string) get_post_meta( absint( $product_id ), self::META_DESIGN, true );
+		$kept   = array();
+
+		if ( '' !== $locked && isset( $payload['designs'] ) && is_array( $payload['designs'] ) ) {
+			foreach ( $payload['designs'] as $design ) {
+				if ( isset( $design['id'] ) && (string) $design['id'] === $locked ) {
+					$kept[] = $design;
+				}
+			}
+		}
+
+		$payload['designs'] = $kept;
+
+		return $payload;
+	}
+
+	/**
 	 * Palettes attached to a product.
 	 *
 	 * @param int         $product_id Product ID.
@@ -754,6 +844,24 @@ final class APD_Admin_Settings {
 
 		$format = APD_Formats::get( (string) $format_id );
 		$type   = is_array( $format ) && isset( $format['type'] ) ? (string) $format['type'] : '';
+
+		if ( is_array( $format ) && APD_Formats::uses_palette_slots( $type ) && isset( $format['palette_slots'] ) && is_array( $format['palette_slots'] ) ) {
+			$ids = array();
+
+			foreach ( APD_Formats::palette_slot_keys() as $slot ) {
+				$id = isset( $format['palette_slots'][ $slot ] ) ? sanitize_text_field( (string) $format['palette_slots'][ $slot ] ) : '';
+
+				if ( '' !== $id ) {
+					$ids[] = $id;
+				}
+			}
+
+			return array_values( array_unique( $ids ) );
+		}
+
+		if ( is_array( $format ) && array_key_exists( 'palette_ids', $format ) ) {
+			return APD_Color_Palettes::sanitize_product_ids( $format['palette_ids'], $type );
+		}
 
 		if ( $product_id && metadata_exists( 'post', $product_id, self::META_PALETTE_IDS ) ) {
 			$stored = get_post_meta( $product_id, self::META_PALETTE_IDS, true );
@@ -786,13 +894,43 @@ final class APD_Admin_Settings {
 	 * @return array<string, array<int, array<string, string>>>
 	 */
 	public static function product_offered_colors( $product_id ) {
+		$product_id = absint( $product_id );
+		$format_id  = $product_id ? (string) get_post_meta( $product_id, self::META_FORMAT, true ) : '';
+		$format     = APD_Formats::get( $format_id );
+		$type       = is_array( $format ) && isset( $format['type'] ) ? (string) $format['type'] : '';
+		$out        = array();
+
+		foreach ( APD_Color_Palettes::purposes() as $purpose ) {
+			$out[ $purpose ] = array();
+		}
+
+		if ( is_array( $format ) && APD_Formats::uses_palette_slots( $type ) && isset( $format['palette_slots'] ) && is_array( $format['palette_slots'] ) ) {
+			foreach ( APD_Formats::palette_slot_keys() as $slot ) {
+				$id      = isset( $format['palette_slots'][ $slot ] ) ? sanitize_text_field( (string) $format['palette_slots'][ $slot ] ) : '';
+				$palette = '' !== $id ? APD_Color_Palettes::get( $id ) : null;
+
+				if ( ! is_array( $palette ) || empty( $palette['active'] ) ) {
+					continue;
+				}
+
+				$seen = array();
+
+				foreach ( APD_Color_Palettes::palette_colors( $palette ) as $color ) {
+					$hex = isset( $color['hex'] ) ? strtoupper( (string) $color['hex'] ) : '';
+
+					if ( '' === $hex || isset( $seen[ $hex ] ) ) {
+						continue;
+					}
+
+					$seen[ $hex ] = true;
+					$out[ $slot ][] = $color;
+				}
+			}
+
+			return $out;
+		}
+
 		$ids = self::product_palette_ids( $product_id );
-		$out = array(
-			'text'       => array(),
-			'border'     => array(),
-			'background' => array(),
-			'holder'     => array(),
-		);
 
 		foreach ( array_keys( $out ) as $purpose ) {
 			$out[ $purpose ] = APD_Color_Palettes::colors_for_product( $ids, $purpose );
@@ -818,6 +956,28 @@ final class APD_Admin_Settings {
 		$format = APD_Formats::get( (string) $format_id );
 		$type   = is_array( $format ) && isset( $format['type'] ) ? (string) $format['type'] : '';
 		$fields = array();
+
+		if ( is_array( $format ) && APD_Formats::uses_palette_slots( $type ) && isset( $format['palette_slots'] ) && is_array( $format['palette_slots'] ) ) {
+			foreach ( APD_Formats::palette_slot_keys() as $slot ) {
+				if ( ! empty( $format['palette_slots'][ $slot ] ) ) {
+					$fields[] = $slot;
+				}
+			}
+
+			return APD_Formats::sanitize_color_fields( $fields, $type );
+		}
+
+		if ( is_array( $format ) && array_key_exists( 'palette_ids', $format ) ) {
+			foreach ( self::product_palette_ids( $product_id, $format_id ) as $palette_id ) {
+				$palette = APD_Color_Palettes::get( $palette_id );
+
+				if ( is_array( $palette ) && isset( $palette['purpose'] ) ) {
+					$fields[] = $palette['purpose'];
+				}
+			}
+
+			return APD_Formats::sanitize_color_fields( $fields, $type );
+		}
 
 		if ( $product_id && metadata_exists( 'post', $product_id, self::META_PALETTE_IDS ) ) {
 			foreach ( self::product_palette_ids( $product_id, $format_id ) as $palette_id ) {

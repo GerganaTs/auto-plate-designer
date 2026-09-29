@@ -169,7 +169,20 @@ if ( ! $format_ok || ! $fonts_preselected ) {
 	exit( 1 );
 }
 
+if ( false === strpos( $html, 'data-apd-custom-size' ) || false === strpos( $html, 'data-apd-custom-size hidden' ) || false === strpos( $html, 'data-apd-wrap' ) || false === strpos( $html, 'name="apd_format[wrap_text]"' ) || ! preg_match( '/name="apd_format\[wrap_text\]"[^>]*disabled/', $html ) ) {
+	fwrite( STDERR, "STREET_FORM_FAIL\n" );
+	exit( 1 );
+}
+
+echo "STREET_FORM_OK\n";
+
 $admin_js = file_get_contents( APD_PLUGIN_DIR . 'assets/js/admin-settings.js' );
+
+if ( false === strpos( $html, 'name="apd_format[palette_ids][]"' ) || false === strpos( $html, 'data-apd-format-palettes' ) || false === strpos( $html, 'apd-palette-chip' ) || false === strpos( $html, 'name="apd_format[palette_slots][text]"' ) || false === strpos( $html, 'name="apd_format[palette_slots][background]"' ) || false === strpos( $html, 'name="apd_format[palette_slots][border]"' ) || false === strpos( $html, 'value="holder_moto"' ) || false === strpos( $html, 'value="holder_d"' ) || false === strpos( $html, 'data-apd-photo-palettes' ) || false === strpos( $admin_js, 'function toggleFormatPalettes' ) || false === strpos( $admin_js, 'function usesPaletteSlots' ) || false === strpos( $admin_js, 'function isPhotoHolder' ) ) {
+	fwrite( STDERR, "FORMAT_PALETTE_FORM_FAIL\n" );
+	exit( 1 );
+}
+
 if ( false === strpos( $admin_js, 'bindSelectAllFonts' ) || false === strpos( $admin_js, 'data-apd-fonts-all' ) || false === strpos( $admin_js, 'master.checked = false' ) || false === strpos( $admin_js, 'box.checked = master.checked' ) ) {
 	fwrite( STDERR, "FONT_FOLLOW_JS_FAIL\n" );
 	exit( 1 );
@@ -247,6 +260,7 @@ ob_start();
 $admin->render_page();
 $html = ob_get_clean();
 $designs_list_ok = false !== strpos( $html, 'Add design' )
+	&& false !== strpos( $html, 'Create product opens one WooCommerce product' )
 	&& false === strpos( $html, 'save_design' )
 	&& false === strpos( $html, 'apd_design[all_us]' );
 
@@ -264,7 +278,13 @@ unset( $_GET['add'] );
 $designs_ok = false !== strpos( $html, 'apd_design[all_us]' )
 	&& false !== strpos( $html, 'save_design' )
 	&& false !== strpos( $html, 'apd_design[text_box][x]' )
-	&& false !== strpos( $html, 'data-apd-text-box-stage' );
+	&& false !== strpos( $html, 'data-apd-text-box-stage' )
+	&& false !== strpos( $html, 'data-apd-design-stage' );
+
+if ( false === strpos( $admin_js, 'function updateDesignStage' ) || false === strpos( $admin_js, 'function isDesignEditor' ) || false === strpos( $admin_js, 'data-apd-design-stage' ) || false === strpos( $admin_js, 'function toggleProductDesign' ) ) {
+	fwrite( STDERR, "DESIGN_STAGE_JS_FAIL\n" );
+	exit( 1 );
+}
 
 echo $designs_ok ? "DESIGNS_TAB_OK\n" : "DESIGNS_TAB_FAIL\n";
 

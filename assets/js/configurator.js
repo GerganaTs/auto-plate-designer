@@ -65,7 +65,12 @@
 		if (caps) {
 			return !!caps.base_image;
 		}
-		return type === 'holder' || type === 'suv';
+		return type === 'holder' || type === 'holder_moto' || type === 'holder_d' || type === 'suv';
+	}
+
+	function isHolderFamily(type) {
+		type = type || formatType();
+		return type === 'holder' || type === 'holder_moto' || type === 'holder_d';
 	}
 
 	function usesTwoRows(type) {
@@ -286,7 +291,7 @@
 	}
 
 	function wantsNoFrame() {
-		if (!cfg.format || cfg.format.frame_choice === false || cfg.format.type === 'holder' || cfg.format.type === 'us') {
+		if (!cfg.format || cfg.format.frame_choice === false || isHolderFamily(cfg.format.type) || cfg.format.type === 'us') {
 			return true;
 		}
 		var box = document.querySelector('[data-apd-frame]');
@@ -538,11 +543,79 @@
 			descent = Math.max(descent, ink.descent);
 			width = Math.max(width, ink.width);
 		}
+		var cap = measureInk(ctx, 'H', size).ascent;
+		var laidDescent = 0;
+		var normalized = false;
+		width = 0;
+		for (i = 0; i < lines.length; i += 1) {
+			var laid = lineSpan(ctx, lines[i] || 'H', cap);
+			width = Math.max(width, laid.width);
+			laidDescent = Math.max(laidDescent, laid.descent);
+			if (laid.normalized) {
+				normalized = true;
+			}
+		}
+		if (cap > 0 && (normalized || ascent > cap * 1.04)) {
+			ascent = cap;
+		}
+		if (laidDescent > 0) {
+			descent = laidDescent;
+		}
 		return {
 			ascent: ascent,
 			descent: descent,
 			width: width,
 			height: ascent + descent + Math.max(0, lines.length - 1) * size
+		};
+	}
+
+	function glyphInkScale(ascent, cap) {
+		if (!(cap > 0) || !isFinite(ascent) || ascent <= 0) {
+			return 1;
+		}
+		if (ascent < cap * 0.45) {
+			return 1;
+		}
+		var ratio = ascent / cap;
+		if (ratio > 1.04 || ratio < 0.96) {
+			return cap / ascent;
+		}
+		return 1;
+	}
+
+	function lineSpan(ctx, line, cap) {
+		var chars = Array.from(String(line || ''));
+		var spans = [];
+		var width = 0;
+		var descent = 0;
+		var normalized = false;
+		var i;
+		var measured;
+		var scale;
+		var down;
+		for (i = 0; i < chars.length; i += 1) {
+			measured = ctx.measureText(chars[i]);
+			scale = glyphInkScale(measured.actualBoundingBoxAscent, cap);
+			down = measured.actualBoundingBoxDescent;
+			if (!isFinite(down) || down < 0) {
+				down = 0;
+			}
+			if (Math.abs(scale - 1) > 0.001) {
+				normalized = true;
+			}
+			spans.push({
+				scale: scale,
+				width: measured.width * scale
+			});
+			width += measured.width * scale;
+			descent = Math.max(descent, down * scale);
+		}
+		return {
+			chars: chars,
+			spans: spans,
+			width: width,
+			descent: descent,
+			normalized: normalized
 		};
 	}
 
@@ -609,16 +682,70 @@
 		return out;
 	}
 
+	function plateWraps() {
+		return !!(cfg.format && cfg.format.wrap_text);
+	}
+
+	function plateMaxLines() {
+		var lines = cfg.format && cfg.format.max_lines ? parseInt(cfg.format.max_lines, 10) : 5;
+		if (!lines || lines < 1) {
+			return 5;
+		}
+		return lines;
+	}
+
+	function wrapLines(ctx, paragraphs, maxWidth, maxLines) {
+		var out = [];
+		var p;
+		var words;
+		var i;
+		var word;
+		var trial;
+		var line;
+		for (p = 0; p < paragraphs.length && out.length < maxLines; p += 1) {
+			words = String(paragraphs[p] || '').trim().split(/\s+/);
+			if (!words[0]) {
+				continue;
+			}
+			line = '';
+			for (i = 0; i < words.length; i += 1) {
+				word = words[i];
+				trial = line ? (line + ' ' + word) : word;
+				if (!line || ctx.measureText(trial).width <= maxWidth) {
+					line = trial;
+					continue;
+				}
+				out.push(line);
+				line = word;
+				if (out.length >= maxLines) {
+					out[maxLines - 1] = out[maxLines - 1] + ' ' + words.slice(i).join(' ');
+					return out;
+				}
+			}
+			if (!line) {
+				continue;
+			}
+			if (out.length >= maxLines) {
+				out[maxLines - 1] = out[maxLines - 1] + ' ' + line;
+				return out;
+			}
+			out.push(line);
+		}
+		return out.length ? out : [''];
+	}
+
 	function fitText(ctx, text, family, weight, style, maxWidth, maxHeight, minSize) {
 		text = plateGlyphs(ctx, text, family, weight, style);
-		var lines = String(text).split('\n');
-		var size = Math.floor(lines.length === 1 ? maxHeight * 1.5 : maxHeight);
+		var sourceLines = String(text).split('\n');
+		var lines = sourceLines;
+		var size = Math.floor(sourceLines.length === 1 ? maxHeight * 1.5 : maxHeight);
 		var font;
 		var face;
 		ctx.textBaseline = 'alphabetic';
 		while (size >= minSize) {
 			font = style + ' ' + weight + ' ' + size + 'px "' + family + '", sans-serif';
 			ctx.font = font;
+			lines = plateWraps() ? wrapLines(ctx, sourceLines, maxWidth, plateMaxLines()) : sourceLines;
 			var ink = linesInk(ctx, lines, size);
 			face = faceMetrics(ctx, size);
 			var extra = Math.max(0, lines.length - 1) * size;
@@ -629,6 +756,7 @@
 			size -= 1;
 		}
 		ctx.font = style + ' ' + weight + ' ' + minSize + 'px "' + family + '", sans-serif';
+		lines = plateWraps() ? wrapLines(ctx, sourceLines, maxWidth, plateMaxLines()) : sourceLines;
 		return {
 			font: ctx.font,
 			size: minSize,
@@ -712,6 +840,67 @@
 		return clampBoxInsideFrame(resolved, w, h);
 	}
 
+	function resolvePercentBox(box, w, h) {
+		box = box || {};
+		return clampBoxInsideFrame({
+			x: (Number(box.x) / 100) * w,
+			y: (Number(box.y) / 100) * h,
+			width: (Number(box.width) / 100) * w,
+			height: (Number(box.height) / 100) * h,
+			align: box.align === 'left' || box.align === 'right' ? box.align : 'center',
+			valign: box.valign === 'top' || box.valign === 'bottom' ? box.valign : 'middle',
+			letter_align: '',
+			number_align: ''
+		}, w, h);
+	}
+
+	function activeSplitSource() {
+		var format = cfg.format || {};
+		if (format.base_image_url) {
+			if (format.split_text && format.text_box_right && format.text_box_right.width) {
+				return format;
+			}
+			return null;
+		}
+		var design = currentDesign();
+		if (design && design.split_text && design.text_box_right && design.text_box_right.width) {
+			return design;
+		}
+		return null;
+	}
+
+	function sideParts(text) {
+		text = String(text || '');
+		var nl = text.indexOf('\n');
+		if (nl === -1) {
+			return { left: text, right: '' };
+		}
+		return { left: text.slice(0, nl), right: text.slice(nl + 1) };
+	}
+
+	function drawSideText(ctx, text, font, format, design, w, h, minSize) {
+		var source = activeSplitSource();
+		if (!source) {
+			return;
+		}
+		var parts = sideParts(text);
+		var leftBox = resolveTextBox(format, format.base_image_url ? null : design, null, w, h);
+		var rightBox = resolvePercentBox(source.text_box_right, w, h);
+		rightBox.y = leftBox.y;
+		rightBox.height = leftBox.height;
+		rightBox.valign = leftBox.valign;
+		var fitL = fitText(ctx, parts.left || ' ', font.family, font.weight, font.style, leftBox.width, leftBox.height, minSize);
+		var fitR = fitText(ctx, parts.right || ' ', font.family, font.weight, font.style, rightBox.width, rightBox.height, minSize);
+		var size = Math.min(fitL.size, fitR.size);
+		var color = colorValue('apd_text_color');
+		if (parts.left) {
+			drawTextInBox(ctx, fittedAtSize(ctx, parts.left, font.family, font.weight, font.style, size), leftBox, color);
+		}
+		if (parts.right) {
+			drawTextInBox(ctx, fittedAtSize(ctx, parts.right, font.family, font.weight, font.style, size), rightBox, color);
+		}
+	}
+
 	function clampBoxInsideFrame(box, w, h) {
 		var thick = frameThickness();
 		if (!box || thick <= 0) {
@@ -740,6 +929,7 @@
 		var size = fitted.size;
 		var lines = fitted.lines;
 		var ink = linesInk(ctx, lines, size);
+		var cap = fitted.face && fitted.face.ascent > 0 ? fitted.face.ascent : ink.ascent;
 		var blockH = ink.ascent + ink.descent + Math.max(0, lines.length - 1) * size;
 		var top = box.y + (box.height - blockH) / 2;
 		if (box.valign === 'top') {
@@ -757,16 +947,13 @@
 		var lineW;
 		for (i = 0; i < lines.length; i += 1) {
 			line = lines[i] || '';
-			lineW = ctx.measureText(line).width;
-			chars = Array.from(line);
+			var laid = lineSpan(ctx, line, cap);
+			chars = laid.chars;
+			lineW = laid.width;
 			var justify = box.align === 'justify' && chars.length > 1;
 			var gap = 0;
 			if (justify) {
-				var sum = 0;
-				for (j = 0; j < chars.length; j += 1) {
-					sum += ctx.measureText(chars[j]).width;
-				}
-				gap = (box.width - sum) / (chars.length - 1);
+				gap = (box.width - lineW) / (chars.length - 1);
 				if (gap < 0) {
 					gap = 0;
 				}
@@ -783,8 +970,18 @@
 			}
 			for (j = 0; j < chars.length; j += 1) {
 				ch = chars[j];
-				ctx.fillText(ch, x, baseline + i * size);
-				x += ctx.measureText(ch).width;
+				var span = laid.spans[j];
+				var y = baseline + i * size;
+				if (span.scale < 0.999) {
+					ctx.save();
+					ctx.translate(x, y);
+					ctx.scale(span.scale, span.scale);
+					ctx.fillText(ch, 0, 0);
+					ctx.restore();
+				} else {
+					ctx.fillText(ch, x, y);
+				}
+				x += span.width;
 				if (justify && j < chars.length - 1) {
 					x += gap;
 				}
@@ -894,6 +1091,142 @@
 		ctx.drawImage(img, x, y, w, h);
 	}
 
+	function artworkSourceBox(img) {
+		var full = {
+			x: 0,
+			y: 0,
+			w: img.naturalWidth || img.width,
+			h: img.naturalHeight || img.height
+		};
+		if (img._apdArt) {
+			return img._apdArt;
+		}
+		img._apdArt = full;
+		if (full.w < 2 || full.h < 2) {
+			return full;
+		}
+		try {
+			var maxSide = 480;
+			var scale = Math.min(1, maxSide / Math.max(full.w, full.h));
+			var sw = Math.max(1, Math.round(full.w * scale));
+			var sh = Math.max(1, Math.round(full.h * scale));
+			var sample = document.createElement('canvas');
+			sample.width = sw;
+			sample.height = sh;
+			var sctx = sample.getContext('2d', { willReadFrequently: true });
+			if (!sctx) {
+				return full;
+			}
+			sctx.drawImage(img, 0, 0, sw, sh);
+			var data = sctx.getImageData(0, 0, sw, sh).data;
+			var seen = new Uint8Array(sw * sh);
+			var queue = [];
+			function isMargin(offset) {
+				if (data[offset + 3] < 20) {
+					return true;
+				}
+				return data[offset] >= 242 && data[offset + 1] >= 242 && data[offset + 2] >= 242;
+			}
+			function push(x, y) {
+				if (x < 0 || y < 0 || x >= sw || y >= sh) {
+					return;
+				}
+				var pixel = y * sw + x;
+				if (seen[pixel] || !isMargin(pixel * 4)) {
+					return;
+				}
+				seen[pixel] = 1;
+				queue.push(pixel);
+			}
+			var edge;
+			for (edge = 0; edge < sw; edge++) {
+				push(edge, 0);
+				push(edge, sh - 1);
+			}
+			for (edge = 0; edge < sh; edge++) {
+				push(0, edge);
+				push(sw - 1, edge);
+			}
+			var head = 0;
+			while (head < queue.length) {
+				var pixel = queue[head++];
+				var cx = pixel % sw;
+				var cy = (pixel / sw) | 0;
+				push(cx - 1, cy);
+				push(cx + 1, cy);
+				push(cx, cy - 1);
+				push(cx, cy + 1);
+			}
+			var minX = sw;
+			var minY = sh;
+			var maxX = -1;
+			var maxY = -1;
+			var index;
+			for (index = 0; index < seen.length; index++) {
+				if (seen[index]) {
+					continue;
+				}
+				var px = index % sw;
+				var py = (index / sw) | 0;
+				if (px < minX) {
+					minX = px;
+				}
+				if (py < minY) {
+					minY = py;
+				}
+				if (px > maxX) {
+					maxX = px;
+				}
+				if (py > maxY) {
+					maxY = py;
+				}
+			}
+			if (maxX < 0) {
+				return full;
+			}
+			var bw = maxX - minX + 1;
+			var bh = maxY - minY + 1;
+			if (bw * bh < sw * sh * 0.12) {
+				return full;
+			}
+			var x = Math.max(0, Math.floor(minX / scale) - 1);
+			var y = Math.max(0, Math.floor(minY / scale) - 1);
+			var right = Math.min(full.w, Math.ceil((maxX + 1) / scale) + 1);
+			var bottom = Math.min(full.h, Math.ceil((maxY + 1) / scale) + 1);
+			var box = { x: x, y: y, w: right - x, h: bottom - y };
+			if (box.w < 2 || box.h < 2 || (x <= 2 && y <= 2 && box.w >= full.w - 4 && box.h >= full.h - 4)) {
+				return full;
+			}
+			img._apdArt = box;
+			return box;
+		} catch (err) {
+			return full;
+		}
+	}
+
+	function drawPlateArtwork(ctx, img, dx, dy, dw, dh) {
+		var box = artworkSourceBox(img);
+		var iw = box.w;
+		var ih = box.h;
+		if (!iw || !ih || dw <= 0 || dh <= 0) {
+			return;
+		}
+		var ir = iw / ih;
+		var br = dw / dh;
+		var w = dw;
+		var h = dh;
+		var x = dx;
+		var y = dy;
+		if (ir > br) {
+			h = dw / ir;
+			y = dy + (dh - h) / 2;
+		} else {
+			w = dh * ir;
+			x = dx + (dw - w) / 2;
+		}
+		ctx.drawImage(img, box.x, box.y, box.w, box.h, x, y, w, h);
+	}
+
 	function drawBandImage(ctx, img, slot) {
 		var iw = img.naturalWidth || img.width;
 		var ih = img.naturalHeight || img.height;
@@ -978,9 +1311,6 @@
 		octx.globalCompositeOperation = 'source-in';
 		octx.fillStyle = color || '#000000';
 		octx.fillRect(0, 0, off.width, off.height);
-		octx.globalCompositeOperation = 'multiply';
-		octx.setTransform(canvas.width / w, 0, 0, canvas.height / h, 0, 0);
-		drawImageContained(octx, img, 0, 0, w, h);
 		ctx.save();
 		ctx.setTransform(1, 0, 0, 1, 0, 0);
 		ctx.drawImage(off, 0, 0);
@@ -1010,30 +1340,41 @@
 
 		if (usesPlateDesigns(type) || usesBaseImage(type)) {
 			placeBandLayer(canvas, null, '', w, h);
-			var plateUrl = format.base_image_url;
 			var design = usesPlateDesigns(type) ? currentDesign() : null;
-			if (design && design.image_url) {
+			var plateUrl = format.base_image_url || '';
+			if (!plateUrl && design && design.image_url) {
 				plateUrl = design.image_url;
+			}
+			if (plateUrl && format.base_image_url) {
+				design = null;
 			}
 			var img = plateUrl ? cache.images[plateUrl] : null;
 			if (img && img.tagName === 'IMG') {
 				if (type === 'holder') {
 					paintHolderBody(ctx, canvas, img, w, h, colorValue('apd_holder_color'));
+				} else if (type === 'us') {
+					drawPlateArtwork(ctx, img, 0, 0, w, h);
 				} else {
 					drawImageContained(ctx, img, 0, 0, w, h);
 				}
 			}
 
-			if (type === 'holder') {
-				var strip = format.strip_box && format.strip_box.width ? format.strip_box : { x: 2.73, y: 77.3, width: 94.34, height: 6.26 };
-				var stripX = w * strip.x / 100;
-				var stripY = h * strip.y / 100;
-				var stripW = w * strip.width / 100;
-				var stripH = h * strip.height / 100;
-				ctx.fillStyle = colorValue('apd_background_color');
-				ctx.beginPath();
-				roundRect(ctx, stripX, stripY, stripW, stripH, stripH * 0.25);
-				ctx.fill();
+			if (isHolderFamily(type)) {
+				var strip = format.strip_box && format.strip_box.width ? format.strip_box : null;
+				if (!strip && type === 'holder') {
+					strip = { x: 2.73, y: 77.3, width: 94.34, height: 6.26 };
+				}
+				if (strip) {
+					var stripX = w * strip.x / 100;
+					var stripY = h * strip.y / 100;
+					var stripW = w * strip.width / 100;
+					var stripH = h * strip.height / 100;
+					var radiusFactor = format.strip_radius ? Number(format.strip_radius) : 0.25;
+					ctx.fillStyle = colorValue('apd_background_color');
+					ctx.beginPath();
+					roundRect(ctx, stripX, stripY, stripW, stripH, stripH * radiusFactor);
+					ctx.fill();
+				}
 				if (text) {
 					var holderBox = resolveTextBox(format, null, null, w, h);
 					var fittedH = fitText(ctx, text, font.family, font.weight, font.style, holderBox.width, holderBox.height, minSize);
@@ -1042,7 +1383,9 @@
 				return;
 			}
 
-			if (text) {
+			if (type === 'us' && activeSplitSource()) {
+				drawSideText(ctx, text, font, format, design, w, h, minSize);
+			} else if (text) {
 				var usBox = resolveTextBox(format, design, null, w, h);
 				if (usBox.letter_align) {
 					drawConfiguredText(ctx, text, font, usBox, colorValue('apd_text_color'), minSize);
@@ -1117,7 +1460,21 @@
 		hidden.value = first.value + '\n' + second.value;
 	}
 
+	function syncSideFields(root) {
+		var left = root.querySelector('[name="apd_text_left"]');
+		var right = root.querySelector('[name="apd_text_right"]');
+		var hidden = root.querySelector('[name="apd_text"]');
+		if (!left || !right || !hidden) {
+			return;
+		}
+		hidden.value = left.value + '\n' + right.value;
+	}
+
 	function plateCharCount(root) {
+		var sides = root.querySelectorAll('[data-apd-plate-side]');
+		if (sides.length >= 2) {
+			return countChars(sides[0].value) + countChars(sides[1].value);
+		}
 		var rows = root.querySelectorAll('[data-apd-plate-row]');
 		if (rows.length >= 2) {
 			return countChars(rows[0].value) + countChars(rows[1].value);
@@ -1127,6 +1484,10 @@
 	}
 
 	function plateTextEmpty(root) {
+		var sides = root.querySelectorAll('[data-apd-plate-side]');
+		if (sides.length >= 2) {
+			return !String(sides[0].value || '').trim() && !String(sides[1].value || '').trim();
+		}
 		var rows = root.querySelectorAll('[data-apd-plate-row]');
 		if (rows.length >= 2) {
 			return !String(rows[0].value || '').trim() && !String(rows[1].value || '').trim();
@@ -1149,9 +1510,35 @@
 		counter.classList.toggle('is-over', count > max);
 	}
 
+	function sideLimit(index) {
+		var source = activeSplitSource();
+		var limits = source && source.side_max_chars;
+		if (limits && limits.length > index && limits[index] > 0) {
+			return limits[index];
+		}
+		return index === 1 ? 4 : 3;
+	}
+
+	function sideOverLimit(root) {
+		var inputs = root.querySelectorAll('[data-apd-plate-side]');
+		if (inputs.length < 2) {
+			return false;
+		}
+		return countChars(inputs[0].value) > sideLimit(0) || countChars(inputs[1].value) > sideLimit(1);
+	}
+
 	function updateCount(root) {
-		var inputs = root.querySelectorAll('[data-apd-plate-row]');
+		var sides = root.querySelectorAll('[data-apd-plate-side]');
 		var counters = root.querySelectorAll('[data-apd-count]');
+		if (sides.length >= 2 && counters.length >= 2) {
+			var s;
+			for (s = 0; s < 2; s += 1) {
+				paintCount(counters[s], countChars(sides[s].value), sideLimit(s));
+			}
+			return;
+		}
+		var inputs = root.querySelectorAll('[data-apd-plate-row]');
+		counters = root.querySelectorAll('[data-apd-count]');
 		if (inputs.length >= 2 && counters.length >= 2) {
 			var i;
 			for (i = 0; i < 2; i += 1) {
@@ -1357,6 +1744,7 @@
 		form.addEventListener('submit', function (event) {
 			event.preventDefault();
 			syncSuvRows(root);
+			syncSideFields(root);
 			var data = new FormData(form);
 			var shot = plateSnapshot();
 			if (shot) {
@@ -1450,6 +1838,7 @@
 	function bind(root, cache) {
 		root.addEventListener('input', function () {
 			syncSuvRows(root);
+			syncSideFields(root);
 			updateCount(root);
 			scheduleDraw(root, cache);
 		});
@@ -1494,20 +1883,6 @@
 				applyCountry(root, presetBtn);
 				scheduleDraw(root, cache);
 				closeCountryDialog(root);
-				return;
-			}
-
-			var designBtn = event.target.closest('[data-apd-design-id]');
-			if (designBtn) {
-				event.preventDefault();
-				var hiddenDesign = root.querySelector('[data-apd-design]');
-				if (hiddenDesign) {
-					hiddenDesign.value = designBtn.getAttribute('data-apd-design-id');
-				}
-				root.querySelectorAll('[data-apd-design-id]').forEach(function (btn) {
-					btn.setAttribute('aria-pressed', btn === designBtn ? 'true' : 'false');
-				});
-				scheduleDraw(root, cache);
 			}
 		});
 
@@ -1564,8 +1939,10 @@
 		if (form) {
 			form.addEventListener('submit', function (event) {
 				syncSuvRows(root);
+				syncSideFields(root);
+				var sides = root.querySelectorAll('[data-apd-plate-side]');
 				var rows = root.querySelectorAll('[data-apd-plate-row]');
-				var over = rows.length >= 2 ? suvRowsOverLimit(root) : plateCharCount(root) > (cfg.format.max_chars || 12);
+				var over = sides.length >= 2 ? sideOverLimit(root) : (rows.length >= 2 ? suvRowsOverLimit(root) : plateCharCount(root) > (cfg.format.max_chars || 12));
 				var allowEmpty = !!cfg.format.allow_empty;
 				if ((!allowEmpty && plateTextEmpty(root)) || over) {
 					event.preventDefault();

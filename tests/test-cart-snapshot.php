@@ -142,6 +142,31 @@ if ( ! in_array( __( 'Holder color', 'auto-plate-designer' ), $holder_keys, true
 	exit( 1 );
 }
 
+$holder_new_rows = APD_WooCommerce::config_display_rows(
+	array(
+		'format_name'            => 'Car holder',
+		'format_type'            => 'holder',
+		'text'                   => 'YOUR TEXT',
+		'color_fields'           => array( 'holder', 'holder_text', 'holder_strip' ),
+		'text_color'             => '#000000',
+		'text_color_label'       => 'Black',
+		'holder_color'           => '#C41E3A',
+		'holder_color_label'     => 'Red',
+		'background_color'       => '#FDFA00',
+		'background_color_label' => 'Yellow',
+	)
+);
+$holder_new_keys = array();
+
+foreach ( $holder_new_rows as $row ) {
+	$holder_new_keys[] = (string) $row['key'];
+}
+
+if ( ! in_array( __( 'Holder color', 'auto-plate-designer' ), $holder_new_keys, true ) || ! in_array( __( 'White strip color', 'auto-plate-designer' ), $holder_new_keys, true ) || ! in_array( __( 'Text color', 'auto-plate-designer' ), $holder_new_keys, true ) || in_array( __( 'Plate color', 'auto-plate-designer' ), $holder_new_keys, true ) ) {
+	fwrite( STDERR, "HOLDER_NEW_COLOR_ROWS_FAIL\n" );
+	exit( 1 );
+}
+
 echo 'HOLDER_COLOR_ROWS_OK' . PHP_EOL;
 
 $format = APD_Formats::save(
@@ -155,6 +180,7 @@ $format = APD_Formats::save(
 		'band_ratio'       => 0.15,
 		'band_side'        => 'left',
 		'price_adjustment' => 0,
+		'palette_ids'      => array( APD_Color_Palettes::DEFAULT_PALETTE_IDS['text'] ),
 	)
 );
 
@@ -186,7 +212,7 @@ $product_id = $product->get_id();
 
 update_post_meta( $product_id, APD_Admin_Settings::META_ENABLED, 'yes' );
 update_post_meta( $product_id, APD_Admin_Settings::META_FORMAT, $format['id'] );
-update_post_meta( $product_id, APD_Admin_Settings::META_PALETTE_IDS, array( APD_Color_Palettes::DEFAULT_PALETTE_IDS['text'] ) );
+update_post_meta( $product_id, APD_Admin_Settings::META_PALETTE_IDS, array( APD_Color_Palettes::DEFAULT_PALETTE_IDS['holder'] ) );
 
 $first = APD_WooCommerce::offer_fingerprint( $product_id );
 
@@ -221,10 +247,11 @@ if ( is_wp_error( $saved_format ) || $first === $after_price ) {
 	exit( 1 );
 }
 
-update_post_meta( $product_id, APD_Admin_Settings::META_PALETTE_IDS, array() );
-$after_palettes = APD_WooCommerce::offer_fingerprint( $product_id );
+$format['palette_ids'] = array();
+$saved_format           = APD_Formats::save( $format );
+$after_palettes         = is_wp_error( $saved_format ) ? '' : APD_WooCommerce::offer_fingerprint( $product_id );
 
-if ( $after_price === $after_palettes ) {
+if ( is_wp_error( $saved_format ) || $after_price === $after_palettes ) {
 	fwrite( STDERR, "PALETTE_FINGERPRINT_FAIL\n" );
 	APD_Formats::delete( $format['id'] );
 	APD_Formats::delete( $other['id'] );
