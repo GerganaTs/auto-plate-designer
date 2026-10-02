@@ -87,6 +87,23 @@ if ( in_array( false, $found, true ) ) {
 	exit( 1 );
 }
 
+$design_rows = APD_WooCommerce::config_display_rows(
+	array(
+		'format_name'  => 'USA plate',
+		'format_type'  => 'us',
+		'text'         => "D5U\n597",
+		'design_label' => 'Arizona',
+		'design_code'  => 'AZ',
+	)
+);
+
+foreach ( $design_rows as $row ) {
+	if ( __( 'Plate design', 'auto-plate-designer' ) === (string) $row['key'] || false !== strpos( (string) $row['value'], 'Arizona' ) ) {
+		fwrite( STDERR, "DESIGN_ROW_HIDDEN_FAIL\n" );
+		exit( 1 );
+	}
+}
+
 echo 'SNAPSHOT_DISPLAY_OK' . PHP_EOL;
 
 $no_frame_rows = APD_WooCommerce::config_display_rows(
@@ -137,7 +154,7 @@ foreach ( $holder_rows as $row ) {
 	$holder_keys[] = (string) $row['key'];
 }
 
-if ( ! in_array( __( 'Holder color', 'auto-plate-designer' ), $holder_keys, true ) || ! in_array( __( 'White strip color', 'auto-plate-designer' ), $holder_keys, true ) || ! in_array( __( 'Text color', 'auto-plate-designer' ), $holder_keys, true ) || in_array( __( 'Plate color', 'auto-plate-designer' ), $holder_keys, true ) ) {
+if ( ! in_array( __( 'Holder color', 'auto-plate-designer' ), $holder_keys, true ) || ! in_array( __( 'Strip color', 'auto-plate-designer' ), $holder_keys, true ) || ! in_array( __( 'Text color', 'auto-plate-designer' ), $holder_keys, true ) || in_array( __( 'Plate color', 'auto-plate-designer' ), $holder_keys, true ) ) {
 	fwrite( STDERR, "HOLDER_COLOR_ROWS_FAIL\n" );
 	exit( 1 );
 }
@@ -162,8 +179,131 @@ foreach ( $holder_new_rows as $row ) {
 	$holder_new_keys[] = (string) $row['key'];
 }
 
-if ( ! in_array( __( 'Holder color', 'auto-plate-designer' ), $holder_new_keys, true ) || ! in_array( __( 'White strip color', 'auto-plate-designer' ), $holder_new_keys, true ) || ! in_array( __( 'Text color', 'auto-plate-designer' ), $holder_new_keys, true ) || in_array( __( 'Plate color', 'auto-plate-designer' ), $holder_new_keys, true ) ) {
+if ( ! in_array( __( 'Holder color', 'auto-plate-designer' ), $holder_new_keys, true ) || ! in_array( __( 'Strip color', 'auto-plate-designer' ), $holder_new_keys, true ) || ! in_array( __( 'Text color', 'auto-plate-designer' ), $holder_new_keys, true ) || in_array( __( 'Plate color', 'auto-plate-designer' ), $holder_new_keys, true ) ) {
 	fwrite( STDERR, "HOLDER_NEW_COLOR_ROWS_FAIL\n" );
+	exit( 1 );
+}
+
+$empty_text_rows = APD_WooCommerce::config_display_rows(
+	array(
+		'format_name'            => 'Car holder',
+		'format_type'            => 'holder',
+		'text'                   => '',
+		'color_fields'           => array( 'holder', 'holder_text', 'holder_strip' ),
+		'text_color'             => '#000000',
+		'text_color_label'       => 'Black',
+		'holder_color'           => '#7D7D7D',
+		'holder_color_label'     => 'Gray',
+		'background_color'       => '#FFFFFF',
+		'background_color_label' => 'White',
+	)
+);
+$empty_text_map = array();
+foreach ( $empty_text_rows as $row ) {
+	$empty_text_map[ (string) $row['key'] ] = (string) $row['value'];
+}
+if ( ! isset( $empty_text_map[ __( 'NO TEXT!', 'auto-plate-designer' ) ] ) || isset( $empty_text_map[ __( 'Text color', 'auto-plate-designer' ) ] ) || ! isset( $empty_text_map[ __( 'Holder color', 'auto-plate-designer' ) ] ) || ! isset( $empty_text_map[ __( 'Strip color', 'auto-plate-designer' ) ] ) ) {
+	fwrite( STDERR, "HOLDER_EMPTY_TEXT_FAIL\n" );
+	exit( 1 );
+}
+
+$plate_empty_rows = APD_WooCommerce::config_display_rows(
+	array(
+		'format_name'        => 'EU plate',
+		'format_type'        => 'eu',
+		'text'               => '   ',
+		'color_fields'       => array( 'text', 'border' ),
+		'text_color'         => '#111111',
+		'text_color_label'   => 'Black',
+		'border_color'       => '#000000',
+		'border_color_label' => 'Black',
+	)
+);
+$plate_empty_map = array();
+foreach ( $plate_empty_rows as $row ) {
+	$plate_empty_map[ (string) $row['key'] ] = (string) $row['value'];
+}
+if ( ( $plate_empty_map[ __( 'NO TEXT!', 'auto-plate-designer' ) ] ?? '' ) !== __( 'NO TEXT!', 'auto-plate-designer' ) || isset( $plate_empty_map[ __( 'Text color', 'auto-plate-designer' ) ] ) || ! isset( $plate_empty_map[ __( 'Border color', 'auto-plate-designer' ) ] ) ) {
+	fwrite( STDERR, "PLATE_EMPTY_TEXT_FAIL\n" );
+	exit( 1 );
+}
+
+$plate_text_rows = APD_WooCommerce::config_display_rows(
+	array(
+		'format_name'      => 'EU plate',
+		'format_type'      => 'eu',
+		'text'             => 'AB 123',
+		'color_fields'     => array( 'text', 'border' ),
+		'text_color'       => '#111111',
+		'text_color_label' => 'Black',
+	)
+);
+$plate_text_map = array();
+foreach ( $plate_text_rows as $row ) {
+	$plate_text_map[ (string) $row['key'] ] = (string) $row['value'];
+}
+if ( ! isset( $plate_text_map[ __( 'Text color', 'auto-plate-designer' ) ] ) || isset( $plate_text_map[ __( 'NO TEXT!', 'auto-plate-designer' ) ] ) ) {
+	fwrite( STDERR, "PLATE_TEXT_COLOR_FAIL\n" );
+	exit( 1 );
+}
+
+$moto_empty_rows = APD_WooCommerce::config_display_rows(
+	array(
+		'format_name'      => 'Moto plate',
+		'format_type'      => 'moto',
+		'text'             => "\n",
+		'color_fields'     => array( 'text', 'border' ),
+		'text_color'       => '#111111',
+		'text_color_label' => 'Black',
+	)
+);
+$moto_empty_map = array();
+foreach ( $moto_empty_rows as $row ) {
+	$moto_empty_map[ (string) $row['key'] ] = (string) $row['value'];
+}
+if ( ( $moto_empty_map[ __( 'NO TEXT!', 'auto-plate-designer' ) ] ?? '' ) !== __( 'NO TEXT!', 'auto-plate-designer' ) || isset( $moto_empty_map[ __( 'Text color', 'auto-plate-designer' ) ] ) ) {
+	fwrite( STDERR, "MOTO_EMPTY_TEXT_FAIL\n" );
+	exit( 1 );
+}
+
+$us_empty_rows = APD_WooCommerce::config_display_rows(
+	array(
+		'format_name'      => 'USA plate',
+		'format_type'      => 'us',
+		'text'             => '',
+		'color_fields'     => array( 'text' ),
+		'text_color'       => '#FFFFFF',
+		'text_color_label' => 'White',
+	)
+);
+$us_empty_map = array();
+foreach ( $us_empty_rows as $row ) {
+	$us_empty_map[ (string) $row['key'] ] = (string) $row['value'];
+}
+if ( ( $us_empty_map[ __( 'NO TEXT!', 'auto-plate-designer' ) ] ?? '' ) !== __( 'NO TEXT!', 'auto-plate-designer' ) || isset( $us_empty_map[ __( 'Text color', 'auto-plate-designer' ) ] ) ) {
+	fwrite( STDERR, "US_EMPTY_TEXT_FAIL\n" );
+	exit( 1 );
+}
+
+$plain_rows = APD_WooCommerce::config_display_rows(
+	array(
+		'format_name'        => 'Car holder',
+		'format_type'        => 'holder',
+		'text'               => '',
+		'unstyled'           => true,
+		'color_fields'       => array( 'holder', 'holder_text', 'holder_strip' ),
+		'holder_color'       => '#7D7D7D',
+		'holder_color_label' => 'Gray',
+		'background_color'   => '#7D7D7D',
+		'background_color_label' => 'Gray',
+	)
+);
+$plain_map = array();
+foreach ( $plain_rows as $row ) {
+	$plain_map[ (string) $row['key'] ] = (string) $row['value'];
+}
+if ( ( $plain_map[ __( 'Strip color', 'auto-plate-designer' ) ] ?? '' ) !== __( 'Without styling', 'auto-plate-designer' ) || ! isset( $plain_map[ __( 'Holder color', 'auto-plate-designer' ) ] ) || ! isset( $plain_map[ __( 'NO TEXT!', 'auto-plate-designer' ) ] ) ) {
+	fwrite( STDERR, "HOLDER_PLAIN_FAIL\n" );
 	exit( 1 );
 }
 

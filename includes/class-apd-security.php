@@ -99,12 +99,12 @@ final class APD_Security {
 
 	/**
 	 * Admin character-class default (Latin, Latin Extended, Cyrillic block,
-	 * digits, space, hyphen, period). Encoded as code points so this file
-	 * stays ASCII-only.
+	 * digits, space, hyphen, period, at sign). Encoded as code points so this
+	 * file stays ASCII-only.
 	 *
 	 * @var string
 	 */
-	const DEFAULT_ADMIN_CHAR_CLASS = 'A-Za-z0-9 \.\-\\x{00C0}-\\x{024F}\\x{0400}-\\x{04FF}';
+	const DEFAULT_ADMIN_CHAR_CLASS = 'A-Za-z0-9 \.\-@!?\\x{00C0}-\\x{024F}\\x{0400}-\\x{04FF}';
 
 	/**
 	 * Singleton instance.
@@ -187,7 +187,34 @@ final class APD_Security {
 			return self::DEFAULT_ADMIN_CHAR_CLASS;
 		}
 
-		return $raw;
+		return self::ensure_plate_punctuation( $raw );
+	}
+
+	/**
+	 * Keep "!" and "?" in a saved character class.
+	 *
+	 * Inside the brackets both marks are literals. Older saved classes omitted
+	 * them, so plate text was rejected even after the default class changed.
+	 *
+	 * @param string $class Character class body.
+	 * @return string
+	 */
+	public static function ensure_plate_punctuation( $class ) {
+		if ( ! is_string( $class ) || '' === $class ) {
+			return $class;
+		}
+
+		$next = $class;
+
+		if ( false === strpos( $next, '!' ) ) {
+			$next .= '!';
+		}
+
+		if ( ! preg_match( '/(?<!\\\\)\\?/', $next ) ) {
+			$next .= '?';
+		}
+
+		return $next;
 	}
 
 	/**
@@ -223,7 +250,7 @@ final class APD_Security {
 
 		$without_hex = preg_replace( '/\\\\x\{[0-9A-Fa-f]{2,6}\}/', '', $class );
 
-		if ( ! is_string( $without_hex ) || strlen( $without_hex ) !== strcspn( $without_hex, "<>[]{}()|?*+^$#&`\"';=/" ) ) {
+		if ( ! is_string( $without_hex ) || strlen( $without_hex ) !== strcspn( $without_hex, "<>[]{}()|*+^$#&`\"';=/" ) ) {
 			return new WP_Error(
 				'apd_whitelist_meta',
 				__( 'Character whitelist contains disallowed regex syntax.', 'auto-plate-designer' )
@@ -397,6 +424,22 @@ final class APD_Security {
 	}
 
 	/**
+	 * Plate letters as capitals. Digits and punctuation stay as typed.
+	 *
+	 * @param string $text Plate text.
+	 * @return string
+	 */
+	public static function uppercase_plate_text( $text ) {
+		$text = (string) $text;
+
+		if ( function_exists( 'mb_strtoupper' ) ) {
+			return mb_strtoupper( $text, 'UTF-8' );
+		}
+
+		return strtoupper( $text );
+	}
+
+	/**
 	 * Sanitize plate text for storage. Call only after validate_plate_text() succeeds.
 	 *
 	 * @param string $text      Already-validated text.
@@ -509,7 +552,7 @@ final class APD_Security {
 	 * @return array<int, string>
 	 */
 	public static function allowed_format_types() {
-		$known = array( 'eu', 'eu_plain', 'us', 'moto', 'moto_plain', 'suv_eu', 'suv', 'custom', 'color', 'holder', 'holder_moto', 'holder_d' );
+		$known = array( 'eu', 'eu_plain', 'us', 'moto', 'moto_240', 'moto_plain', 'moto_plain_240', 'suv_eu', 'suv', 'custom', 'color', 'holder', 'holder_moto', 'holder_d' );
 
 		/**
 		 * Filter the format types offered in admin and accepted on save.
@@ -593,7 +636,9 @@ final class APD_Security {
 	 * @return true|WP_Error
 	 */
 	public static function verify_nonce( $nonce, $action = self::NONCE_ACTION ) {
-		if ( ! is_string( $nonce ) || 1 !== wp_verify_nonce( $nonce, $action ) ) {
+		$valid = is_string( $nonce ) ? wp_verify_nonce( $nonce, $action ) : false;
+
+		if ( ! $valid ) {
 			return new WP_Error(
 				'apd_nonce',
 				__( 'Security check failed. Reload the page and try again.', 'auto-plate-designer' ),

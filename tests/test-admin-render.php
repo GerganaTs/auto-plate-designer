@@ -49,7 +49,7 @@ if ( ! class_exists( 'APD_Admin_Settings' ) ) {
 }
 
 $admin = APD_Admin_Settings::instance();
-$tabs  = array( 'formats', 'catalog', 'presets', 'designs', 'palette', 'fonts', 'limits' );
+$tabs  = array( 'formats', 'presets', 'designs', 'palette', 'fonts', 'limits' );
 
 $gated_add = array(
 	'formats' => 'Add Format',
@@ -95,6 +95,7 @@ ob_start();
 $admin->render_page();
 $list_html = ob_get_clean();
 $list_ok = false !== strpos( $list_html, 'Add Format' )
+	&& false !== strpos( $list_html, '>Duplicate<' )
 	&& false === strpos( $list_html, 'data-apd-format-type' )
 	&& false === strpos( $list_html, 'data-apd-plate-studio' )
 	&& false !== strpos( $list_html, 'apd-table-scroll' );
@@ -128,7 +129,10 @@ $format_ok = false !== strpos( $html, 'name="apd_format[no_frame]"' )
 	&& false === strpos( $html, 'CA 0909 BX' )
 	&& false !== strpos( $html, 'data-apd-center-text-box' )
 	&& false !== strpos( $html, 'value="moto"' )
+	&& false !== strpos( $html, 'value="moto_240"' )
 	&& false !== strpos( $html, 'value="moto_plain"' )
+	&& false !== strpos( $html, 'value="moto_plain_240"' )
+	&& false !== strpos( $html, 'data-apd-holder-plate' )
 	&& false !== strpos( $html, 'value="suv"' )
 	&& false !== strpos( $html, 'value="suv_eu"' )
 	&& false !== strpos( $html, 'Select type' )
@@ -312,12 +316,180 @@ $admin->render_page();
 $html = ob_get_clean();
 unset( $_GET['add'] );
 $fonts_ok = false !== strpos( $html, 'save_font' )
-	&& false !== strpos( $html, 'apd_font[family]' );
+	&& false !== strpos( $html, 'apd_font[family]' )
+	&& false !== strpos( $html, 'apd_font[note]' )
+	&& false === strpos( $html, 'apd_font[weight]' )
+	&& 'Oswald — кирилица' === APD_Formats::font_shop_label( array( 'family' => 'Oswald', 'note' => 'кирилица' ) )
+	&& 'Oswald' === APD_Formats::font_shop_label( array( 'family' => 'Oswald' ) );
 
 echo $fonts_ok ? "FONTS_TAB_OK\n" : "FONTS_TAB_FAIL\n";
 
 if ( ! $fonts_ok ) {
 	exit( 1 );
 }
+
+$font_rows = APD_Plugin::get_settings()['fonts'];
+
+if ( ! empty( $font_rows[0]['id'] ) ) {
+	$_GET['tab']  = 'fonts';
+	$_GET['edit'] = $font_rows[0]['id'];
+	unset( $_GET['add'] );
+	ob_start();
+	$admin->render_page();
+	$html = ob_get_clean();
+	unset( $_GET['edit'] );
+	$font_edit_ok = false !== strpos( $html, 'Update font' )
+		&& false !== strpos( $html, 'name="apd_font[id]"' )
+		&& false !== strpos( $html, 'value="' . $font_rows[0]['id'] . '"' )
+		&& false !== strpos( $html, 'value="' . $font_rows[0]['family'] . '"' )
+		&& false !== strpos( $html, 'Leave this empty to keep the current file.' );
+
+	echo $font_edit_ok ? "FONT_EDIT_OK\n" : "FONT_EDIT_FAIL\n";
+
+	if ( ! $font_edit_ok ) {
+		exit( 1 );
+	}
+}
+
+$font_target = null;
+
+foreach ( $font_rows as $font_row ) {
+	if ( ! empty( $font_row['id'] ) && ! empty( $font_row['attachment_id'] ) && ! empty( $font_row['family'] ) ) {
+		$font_target = $font_row;
+		break;
+	}
+}
+
+if ( ! is_array( $font_target ) ) {
+	fwrite( STDERR, "FONT_NOTE_SAVE_FAIL no uploaded font\n" );
+	exit( 1 );
+}
+
+$font_backup = APD_Plugin::get_settings();
+$font_fail   = function ( $message ) use ( $font_backup ) {
+	APD_Plugin::save_settings( $font_backup );
+	fwrite( STDERR, $message . "\n" );
+	exit( 1 );
+};
+
+$save_font = new ReflectionMethod( $admin, 'save_font_row' );
+$save_font->setAccessible( true );
+
+$post_font = function ( $note, $attachment_id ) use ( $font_target, $save_font, $admin ) {
+	$_POST['apd_font'] = array(
+		'id'            => $font_target['id'],
+		'family'        => $font_target['family'],
+		'note'          => $note,
+		'weight'        => '700',
+		'style'         => isset( $font_target['style'] ) ? $font_target['style'] : 'normal',
+		'attachment_id' => (string) $attachment_id,
+	);
+
+	return $save_font->invoke( $admin );
+};
+
+if ( true !== APD_Security::validate_admin_label( 'само латиница', 40 ) || true === APD_Security::validate_admin_label( 'Oswald — кирилица', 40 ) ) {
+	$font_fail( 'FONT_NOTE_CHARS_FAIL' );
+}
+
+$_POST['apd_font'] = array(
+	'id'            => 'missing-font-note',
+	'family'        => 'Missing',
+	'note'          => 'кирилица',
+	'style'         => 'normal',
+	'attachment_id' => (string) $font_target['attachment_id'],
+);
+$missing = $save_font->invoke( $admin );
+
+if ( ! is_wp_error( $missing ) ) {
+	$font_fail( 'FONT_NOTE_MISSING_ID_FAIL' );
+}
+
+$bad_note = $post_font( '<b>кирилица</b>', $font_target['attachment_id'] );
+
+if ( ! is_wp_error( $bad_note ) ) {
+	$font_fail( 'FONT_NOTE_HTML_FAIL' );
+}
+
+$saved = $post_font( 'кирилица', $font_target['attachment_id'] );
+
+if ( true !== $saved ) {
+	$font_fail( 'FONT_NOTE_SAVE_FAIL ' . ( is_wp_error( $saved ) ? $saved->get_error_message() : 'not saved' ) );
+}
+
+$stored_note = null;
+
+foreach ( APD_Plugin::get_settings()['fonts'] as $stored_font ) {
+	if ( isset( $stored_font['id'] ) && $stored_font['id'] === $font_target['id'] ) {
+		$stored_note = $stored_font;
+		break;
+	}
+}
+
+if ( ! is_array( $stored_note ) || 'кирилица' !== $stored_note['note'] || 400 !== (int) $stored_note['weight'] || (int) $font_target['attachment_id'] !== (int) $stored_note['attachment_id'] ) {
+	$font_fail( 'FONT_NOTE_STORED_FAIL' );
+}
+
+$probe = APD_Formats::sanitize(
+	array(
+		'id'           => 'font-note-probe',
+		'name'         => 'Font note probe',
+		'type'         => 'eu',
+		'width'        => 520,
+		'height'       => 110,
+		'border_width' => 8,
+		'border_color' => '#000000',
+		'font_ids_all' => 1,
+	)
+);
+$probe_shop = is_wp_error( $probe ) ? array() : APD_Formats::frontend_payload( $probe );
+$probe_row  = null;
+
+foreach ( isset( $probe_shop['fonts'] ) ? $probe_shop['fonts'] : array() as $probe_font ) {
+	if ( isset( $probe_font['id'] ) && $probe_font['id'] === $font_target['id'] ) {
+		$probe_row = $probe_font;
+		break;
+	}
+}
+
+if ( ! is_array( $probe_row ) || $font_target['family'] !== $probe_row['family'] || 'кирилица' !== $probe_row['note'] || APD_Formats::font_shop_label( $probe_row ) !== $font_target['family'] . ' — кирилица' ) {
+	$font_fail( 'FONT_NOTE_PAYLOAD_FAIL' );
+}
+
+$_GET['tab']  = 'fonts';
+$_GET['edit'] = $font_target['id'];
+unset( $_GET['add'] );
+ob_start();
+$admin->render_page();
+$note_html = ob_get_clean();
+unset( $_GET['edit'] );
+
+if ( false === strpos( $note_html, 'name="apd_font[note]"' ) || false === strpos( $note_html, 'value="кирилица"' ) ) {
+	$font_fail( 'FONT_NOTE_EDIT_FAIL' );
+}
+
+$cleared = $post_font( '', 0 );
+
+if ( true !== $cleared ) {
+	$font_fail( 'FONT_NOTE_CLEAR_FAIL ' . ( is_wp_error( $cleared ) ? $cleared->get_error_message() : 'not saved' ) );
+}
+
+$cleared_row = null;
+
+foreach ( APD_Plugin::get_settings()['fonts'] as $stored_font ) {
+	if ( isset( $stored_font['id'] ) && $stored_font['id'] === $font_target['id'] ) {
+		$cleared_row = $stored_font;
+		break;
+	}
+}
+
+if ( ! is_array( $cleared_row ) || '' !== $cleared_row['note'] || (int) $font_target['attachment_id'] !== (int) $cleared_row['attachment_id'] || $font_target['family'] !== APD_Formats::font_shop_label( $cleared_row ) ) {
+	$font_fail( 'FONT_NOTE_CLEARED_FAIL' );
+}
+
+APD_Plugin::save_settings( $font_backup );
+unset( $_POST['apd_font'] );
+
+echo "FONT_NOTE_OK\n";
 
 echo "RENDER_OK\n";

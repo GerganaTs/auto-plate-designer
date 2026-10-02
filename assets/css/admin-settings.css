@@ -555,10 +555,15 @@ label.apd-choice input[type="radio"],
 	flex: 0 0 auto;
 }
 
-.apd-default-rows {
+.apd-default-rows,
+.apd-default-sides {
 	display: grid;
 	gap: 8px;
 	margin: 0 0 1em;
+}
+
+.apd-product-metabox [hidden] {
+	display: none !important;
 }
 
 .apd-default-rows p {

@@ -47,7 +47,7 @@
 		if (caps) {
 			return !!caps.country_band;
 		}
-		return type === 'eu' || type === 'moto' || type === 'suv_eu';
+		return type === 'eu' || type === 'moto' || type === 'moto_240' || type === 'suv_eu';
 	}
 
 	function usesPaintedPlate(type) {
@@ -56,7 +56,7 @@
 		if (caps) {
 			return !!caps.painted;
 		}
-		return type === 'eu' || type === 'eu_plain' || type === 'moto' || type === 'moto_plain' || type === 'suv_eu' || type === 'custom' || type === 'color';
+		return type === 'eu' || type === 'eu_plain' || type === 'moto' || type === 'moto_240' || type === 'moto_plain' || type === 'moto_plain_240' || type === 'suv_eu' || type === 'custom' || type === 'color';
 	}
 
 	function usesBaseImage(type) {
@@ -79,7 +79,7 @@
 		if (caps) {
 			return !!caps.two_row;
 		}
-		return type === 'moto' || type === 'moto_plain' || type === 'suv' || type === 'suv_eu';
+		return type === 'moto' || type === 'moto_240' || type === 'moto_plain' || type === 'moto_plain_240' || type === 'suv' || type === 'suv_eu';
 	}
 
 	function rowsForPlate(text) {
@@ -120,7 +120,7 @@
 	}
 
 	function plateRowAlign(value) {
-		if (value === 'left' || value === 'right' || value === 'center') {
+		if (value === 'left' || value === 'right' || value === 'center' || value === 'justify') {
 			return value;
 		}
 		return 'center';
@@ -157,12 +157,34 @@
 				break;
 			}
 		}
-		return matched || fonts[0];
+		return drawingFont(matched || fonts[0]);
+	}
+
+	function faceFamily(font) {
+		var name = font && font.family ? String(font.family) : 'sans-serif';
+		var id = font && font.id ? String(font.id) : '';
+		if (!id || name === 'sans-serif' || name.slice(-id.length) === id) {
+			return name;
+		}
+		return name + ' ' + id;
+	}
+
+	function drawingFont(font) {
+		if (!font || !font.family) {
+			return { family: 'sans-serif', weight: 400, style: 'normal' };
+		}
+		return {
+			id: font.id,
+			family: faceFamily(font),
+			weight: 400,
+			style: font.style === 'italic' ? 'italic' : 'normal',
+			url: font.url
+		};
 	}
 
 	function fontFaceSpec(font, px) {
 		var size = px || 48;
-		var weight = font && font.weight ? font.weight : 400;
+		var weight = 400;
 		var style = font && font.style === 'italic' ? 'italic' : 'normal';
 		var family = font && font.family ? font.family : 'sans-serif';
 		return style + ' ' + weight + ' ' + size + 'px "' + family + '"';
@@ -171,6 +193,7 @@
 	var fontFacePromises = {};
 
 	function ensureFontLoaded(font) {
+		font = drawingFont(font);
 		if (!font || !font.family || font.family === 'sans-serif') {
 			return Promise.resolve(true);
 		}
@@ -183,22 +206,16 @@
 			return fontFacePromises[key];
 		}
 
-		var weight = String(font.weight || 400);
 		var style = font.style === 'italic' ? 'italic' : 'normal';
 		var spec = fontFaceSpec(font, 48);
 
 		if (window.FontFace && font.url) {
 			var source = 'url(' + JSON.stringify(String(font.url)) + ')';
-			var loadFace = function (faceWeight) {
-				return new FontFace(String(font.family), source, {
-					style: style,
-					weight: faceWeight,
-					display: 'swap'
-				}).load();
-			};
-			fontFacePromises[key] = loadFace('100 900').catch(function () {
-				return loadFace(weight);
-			}).then(function (loaded) {
+			fontFacePromises[key] = new FontFace(String(font.family), source, {
+				style: style,
+				weight: '400',
+				display: 'swap'
+			}).load().then(function (loaded) {
 				document.fonts.add(loaded);
 				return document.fonts.load(spec);
 			}).then(function () {
@@ -310,12 +327,22 @@
 		colors.hidden = !box || !box.checked;
 	}
 
+	var TEXT_FRAME_GAP_MM = 8;
+
 	function frameThickness() {
 		if (wantsNoFrame()) {
 			return 0;
 		}
 		var border = cfg.format && cfg.format.border_width ? cfg.format.border_width : 0;
 		return border > 0 ? border : 0;
+	}
+
+	function frameTextInset() {
+		var thick = frameThickness();
+		if (thick <= 0 || !usesPaintedPlate()) {
+			return thick;
+		}
+		return thick + TEXT_FRAME_GAP_MM;
 	}
 
 	function paintAdminFrame(ctx, w, h) {
@@ -902,7 +929,7 @@
 	}
 
 	function clampBoxInsideFrame(box, w, h) {
-		var thick = frameThickness();
+		var thick = frameTextInset();
 		if (!box || thick <= 0) {
 			return box;
 		}
@@ -922,6 +949,7 @@
 			return;
 		}
 		ctx.save();
+		resetCanvasSpacing(ctx);
 		ctx.fillStyle = color;
 		ctx.font = fitted.font;
 		ctx.textAlign = 'left';
@@ -950,22 +978,18 @@
 			var laid = lineSpan(ctx, line, cap);
 			chars = laid.chars;
 			lineW = laid.width;
-			var justify = box.align === 'justify' && chars.length > 1;
-			var gap = 0;
-			if (justify) {
-				gap = (box.width - lineW) / (chars.length - 1);
-				if (gap < 0) {
-					gap = 0;
-				}
+			var align = box.align === 'left' || box.align === 'right' || box.align === 'justify' ? box.align : 'center';
+			var justifyGap = 0;
+			x = box.x + (box.width - lineW) / 2;
+			if (align === 'left') {
 				x = box.x;
-			} else if (chars.length === 1 && box.align === 'justify') {
-				x = box.x + (box.width - lineW) / 2;
-			} else {
-				x = box.x + (box.width - lineW) / 2;
-				if (box.align === 'left') {
+			} else if (align === 'right') {
+				x = box.x + box.width - lineW;
+			} else if (align === 'justify') {
+				var gaps = chars.length - 1;
+				if (gaps > 0) {
 					x = box.x;
-				} else if (box.align === 'right') {
-					x = box.x + box.width - lineW;
+					justifyGap = Math.max(0, (box.width - lineW) / gaps);
 				}
 			}
 			for (j = 0; j < chars.length; j += 1) {
@@ -981,10 +1005,7 @@
 				} else {
 					ctx.fillText(ch, x, y);
 				}
-				x += span.width;
-				if (justify && j < chars.length - 1) {
-					x += gap;
-				}
+				x += span.width + justifyGap;
 			}
 		}
 		ctx.restore();
@@ -1031,41 +1052,87 @@
 		}
 	}
 
+	function lineBlockHeight(face, size, lines) {
+		var count = lines > 0 ? lines : 1;
+		return face.ascent + Math.max(0, count - 1) * size + face.descent;
+	}
+
 	function drawConfiguredText(ctx, text, font, box, color, minSize, band) {
+		resetCanvasSpacing(ctx);
 		if (!box || !box.letter_align) {
 			var fitted = fitText(ctx, text, font.family, font.weight, font.style, box.width, box.height, minSize);
 			drawTextInBox(ctx, fitted, box, color);
 			return;
 		}
 		var parts = rowsForPlate(text);
-		var half = box.height / 2;
-		var letterBox = {
-			x: box.x,
-			y: box.y,
-			width: box.width,
-			height: half,
-			align: plateRowAlign(box.letter_align),
-			valign: 'middle'
-		};
-		var numberBox = {
-			x: box.x,
-			y: box.y + half,
-			width: box.width,
-			height: half,
-			align: plateRowAlign(box.number_align || box.letter_align),
-			valign: 'middle'
-		};
-		if (band && bandCoversMost(band, letterBox.y, letterBox.height) && !bandCoversMost(band, numberBox.y, numberBox.height)) {
-			insetBesideBand(letterBox, band);
+		var letterAlign = plateRowAlign(box.letter_align);
+		var numberAlign = plateRowAlign(box.number_align || box.letter_align);
+		var lines = (parts.letters ? 1 : 0) + (parts.numbers ? 1 : 0);
+		if (!lines) {
+			return;
 		}
-		var fitL = fitText(ctx, parts.letters || ' ', font.family, font.weight, font.style, letterBox.width, letterBox.height, minSize);
-		var fitN = fitText(ctx, parts.numbers || ' ', font.family, font.weight, font.style, numberBox.width, numberBox.height, minSize);
-		var size = Math.min(fitL.size, fitN.size);
-		if (parts.letters) {
-			drawTextInBox(ctx, fittedAtSize(ctx, parts.letters, font.family, font.weight, font.style, size), letterBox, color);
+		var letterWidth = box.width;
+		var letterX = box.x;
+		if (band && bandCoversMost(band, box.y, box.height / 2) && !bandCoversMost(band, box.y + box.height / 2, box.height / 2)) {
+			var inset = {
+				x: box.x,
+				y: box.y,
+				width: box.width,
+				height: box.height
+			};
+			insetBesideBand(inset, band);
+			letterX = inset.x;
+			letterWidth = inset.width;
 		}
-		if (parts.numbers) {
-			drawTextInBox(ctx, fittedAtSize(ctx, parts.numbers, font.family, font.weight, font.style, size), numberBox, color);
+		var size = Math.floor(box.height);
+		var fitL = null;
+		var fitN = null;
+		var face = null;
+		while (size >= minSize) {
+			fitL = parts.letters ? fittedAtSize(ctx, parts.letters, font.family, font.weight, font.style, size) : null;
+			fitN = parts.numbers ? fittedAtSize(ctx, parts.numbers, font.family, font.weight, font.style, size) : null;
+			face = (fitL || fitN).face;
+			var widthOk = (!fitL || fitL.ink.width <= letterWidth) && (!fitN || fitN.ink.width <= box.width);
+			if (widthOk && lineBlockHeight(face, size, lines) <= box.height) {
+				break;
+			}
+			size -= 1;
+		}
+		if (!face) {
+			size = minSize;
+			fitL = parts.letters ? fittedAtSize(ctx, parts.letters, font.family, font.weight, font.style, size) : null;
+			fitN = parts.numbers ? fittedAtSize(ctx, parts.numbers, font.family, font.weight, font.style, size) : null;
+			face = (fitL || fitN) ? (fitL || fitN).face : null;
+		}
+		if (!face) {
+			return;
+		}
+		var blockH = lineBlockHeight(face, size, lines);
+		var top = box.y + (box.height - blockH) / 2;
+		if (box.valign === 'top') {
+			top = box.y;
+		} else if (box.valign === 'bottom') {
+			top = box.y + box.height - blockH;
+		}
+		if (fitL) {
+			drawTextInBox(ctx, fitL, {
+				x: letterX,
+				y: top + (face.ascent - fitL.ink.ascent),
+				width: letterWidth,
+				height: fitL.ink.ascent + fitL.ink.descent,
+				align: letterAlign,
+				valign: 'top'
+			}, color);
+		}
+		if (fitN) {
+			drawTextInBox(ctx, fitN, {
+				x: box.x,
+				y: top + (fitL ? size : 0) + (face.ascent - fitN.ink.ascent),
+				width: box.width,
+				height: fitN.ink.ascent + fitN.ink.descent,
+				align: numberAlign,
+				valign: 'top'
+			}, color);
 		}
 	}
 
@@ -1273,7 +1340,20 @@
 		if ('imageSmoothingQuality' in ctx) {
 			ctx.imageSmoothingQuality = 'high';
 		}
+		resetCanvasSpacing(ctx);
 		return { ctx: ctx, w: fw, h: fh };
+	}
+
+	function resetCanvasSpacing(ctx) {
+		if (!ctx) {
+			return;
+		}
+		if ('letterSpacing' in ctx) {
+			ctx.letterSpacing = '0px';
+		}
+		if ('wordSpacing' in ctx) {
+			ctx.wordSpacing = '0px';
+		}
 	}
 
 	function loadImage(url, cache) {
@@ -1317,6 +1397,40 @@
 		ctx.restore();
 	}
 
+	function plainHolderOn(root) {
+		var box = root.querySelector('[data-apd-plain]');
+		return !!(box && box.checked && cfg.format && isHolderFamily(cfg.format.type));
+	}
+
+	function plainStripHex() {
+		if (cfg.format && cfg.format.type === 'holder') {
+			return '#7D7D7D';
+		}
+		return '#000000';
+	}
+
+	function applyPlainHolder(root) {
+		var on = plainHolderOn(root);
+		root.querySelectorAll('[data-apd-personal]').forEach(function (el) {
+			el.hidden = on;
+		});
+		var bg = root.querySelector('[data-apd-color="apd_background_color"]');
+		if (!bg) {
+			return;
+		}
+		if (on) {
+			if (!bg.hasAttribute('data-apd-plain-saved')) {
+				bg.setAttribute('data-apd-plain-saved', bg.value || '');
+			}
+			bg.value = plainStripHex();
+			return;
+		}
+		if (bg.hasAttribute('data-apd-plain-saved')) {
+			bg.value = bg.getAttribute('data-apd-plain-saved');
+			bg.removeAttribute('data-apd-plain-saved');
+		}
+	}
+
 	function draw(root, cache) {
 		measurePreviewStage();
 		var canvas = getCanvas();
@@ -1328,8 +1442,12 @@
 		var ctx = packed.ctx;
 		var w = packed.w;
 		var h = packed.h;
+		applyPlainHolder(root);
 		var textInput = root.querySelector('[name="apd_text"]');
 		var text = textInput ? textInput.value : '';
+		if (plainHolderOn(root)) {
+			text = '';
+		}
 		var font = currentFont(root);
 		var minSize = cfg.minFont || 12;
 		var type = format.type;
@@ -1370,7 +1488,7 @@
 					var stripW = w * strip.width / 100;
 					var stripH = h * strip.height / 100;
 					var radiusFactor = format.strip_radius ? Number(format.strip_radius) : 0.25;
-					ctx.fillStyle = colorValue('apd_background_color');
+					ctx.fillStyle = plainHolderOn(root) ? plainStripHex() : colorValue('apd_background_color');
 					ctx.beginPath();
 					roundRect(ctx, stripX, stripY, stripW, stripH, stripH * radiusFactor);
 					ctx.fill();
@@ -1421,7 +1539,7 @@
 		if (text) {
 			var euBox = resolveTextBox(format, null, preset, w, h, band);
 			if (euBox.width <= 0) {
-				euBox = {
+				euBox = clampBoxInsideFrame({
 					x: textX,
 					y: h * 0.19,
 					width: Math.max(0, textW),
@@ -1430,7 +1548,7 @@
 					valign: 'middle',
 					letter_align: usesTwoRows(type) ? 'justify' : '',
 					number_align: usesTwoRows(type) ? 'justify' : ''
-				};
+				}, w, h);
 			}
 			drawConfiguredText(ctx, text, font, euBox, colorValue('apd_text_color'), minSize, band);
 		}
@@ -1735,7 +1853,105 @@
 		}
 	}
 
-	function bindStayOnProduct(root) {
+	function plateTextControl(node) {
+		if (!node || !node.name) {
+			return false;
+		}
+		return node.name === 'apd_text' || node.name === 'apd_text_row_1' || node.name === 'apd_text_row_2' || node.name === 'apd_text_left' || node.name === 'apd_text_right';
+	}
+
+	function upperPlateControl(input) {
+		if (!input || input.type === 'hidden') {
+			return;
+		}
+		var next = String(input.value || '').toLocaleUpperCase('bg');
+		if (next === input.value) {
+			return;
+		}
+		var start = input.selectionStart;
+		var end = input.selectionEnd;
+		input.value = next;
+		if (typeof input.setSelectionRange === 'function' && typeof start === 'number') {
+			input.setSelectionRange(start, end);
+		}
+	}
+
+	function upperPlateFields(root) {
+		root.querySelectorAll('[name="apd_text"], [name="apd_text_row_1"], [name="apd_text_row_2"], [name="apd_text_left"], [name="apd_text_right"]').forEach(upperPlateControl);
+	}
+
+	function rememberInitialValues(root) {
+		root.querySelectorAll('[data-apd-color], [data-apd-preset], [data-apd-design]').forEach(function (input) {
+			if (!input.hasAttribute('data-apd-initial')) {
+				input.setAttribute('data-apd-initial', input.value);
+			}
+		});
+	}
+
+	function restoreInitialValue(input) {
+		if (!input || !input.hasAttribute('data-apd-initial')) {
+			return;
+		}
+		var initial = input.getAttribute('data-apd-initial');
+		input.defaultValue = initial;
+		input.value = initial;
+	}
+
+	function resetConfigurator(root, cache) {
+		var form = root.closest('form');
+		if (form) {
+			form.reset();
+		}
+		root.querySelectorAll('[data-apd-color], [data-apd-preset], [data-apd-design]').forEach(restoreInitialValue);
+		root.querySelectorAll('[data-apd-swatch]').forEach(function (btn) {
+			var name = btn.getAttribute('data-apd-swatch');
+			var hidden = root.querySelector('[data-apd-color="' + name + '"]');
+			var pressed = hidden && String(btn.getAttribute('data-apd-hex') || '').toLowerCase() === String(hidden.value || '').toLowerCase();
+			btn.setAttribute('aria-pressed', pressed ? 'true' : 'false');
+		});
+		var presetInput = root.querySelector('[data-apd-preset]');
+		var presetButton = null;
+		root.querySelectorAll('[data-apd-preset-id]').forEach(function (btn) {
+			var on = presetInput && btn.getAttribute('data-apd-preset-id') === presetInput.value;
+			btn.setAttribute('aria-pressed', on ? 'true' : 'false');
+			if (on) {
+				presetButton = btn;
+			}
+		});
+		if (presetButton) {
+			applyCountry(root, presetButton);
+		}
+		closeCountryDialog(root);
+		syncFrameColors();
+		upperPlateFields(root);
+		syncSuvRows(root);
+		syncSideFields(root);
+		applyPlainHolder(root);
+		updateCount(root);
+		showCartNotice(root, null);
+		scheduleDraw(root, cache);
+	}
+
+	function openKadenceCart() {
+		if (document.body.classList.contains('showing-popup-drawer-from-cart')) {
+			return;
+		}
+		var nodes = document.querySelectorAll('.header-cart-button, [data-toggle-target="#cart-drawer"]');
+		var i;
+		for (i = 0; i < nodes.length; i += 1) {
+			var box = nodes[i].getBoundingClientRect();
+			if (box.width > 0 && box.height > 0) {
+				nodes[i].click();
+				return;
+			}
+		}
+		var mini = document.querySelector('.wc-block-mini-cart__button');
+		if (mini && mini.getAttribute('aria-expanded') !== 'true') {
+			mini.click();
+		}
+	}
+
+	function bindStayOnProduct(root, cache) {
 		var form = root.closest('form');
 		if (!form || form.getAttribute('data-apd-stay')) {
 			return;
@@ -1775,11 +1991,14 @@
 			}).then(function (html) {
 				var doc = new DOMParser().parseFromString(html, 'text/html');
 				var error = doc.querySelector('.woocommerce-error, .wc-block-components-notice-banner.is-error');
-				var ok = doc.querySelector('.woocommerce-message, .wc-block-components-notice-banner.is-success');
-				showCartNotice(root, error || ok);
-				if (!error) {
-					refreshCartWidgets();
+				if (error) {
+					showCartNotice(root, error);
+					return;
 				}
+				return refreshCartWidgets().then(function () {
+					resetConfigurator(root, cache);
+					openKadenceCart();
+				});
 			}).catch(function () {
 				form.removeAttribute('data-apd-stay');
 				HTMLFormElement.prototype.submit.call(form);
@@ -1813,7 +2032,7 @@
 		var url = new URL(window.location.href);
 		url.search = '';
 		url.searchParams.set('wc-ajax', 'get_refreshed_fragments');
-		fetch(url.toString(), {
+		return fetch(url.toString(), {
 			method: 'POST',
 			credentials: 'same-origin'
 		}).then(function (response) {
@@ -1836,14 +2055,24 @@
 	}
 
 	function bind(root, cache) {
-		root.addEventListener('input', function () {
+		rememberInitialValues(root);
+		upperPlateFields(root);
+		syncSuvRows(root);
+		syncSideFields(root);
+		root.addEventListener('input', function (event) {
+			if (plateTextControl(event.target)) {
+				upperPlateControl(event.target);
+			}
 			syncSuvRows(root);
 			syncSideFields(root);
 			updateCount(root);
 			scheduleDraw(root, cache);
 		});
 		syncFrameColors();
-		root.addEventListener('change', function () {
+		root.addEventListener('change', function (event) {
+			if (event.target && event.target.hasAttribute('data-apd-plain')) {
+				applyPlainHolder(root);
+			}
 			syncFrameColors();
 			scheduleDraw(root, cache);
 		});
@@ -1886,7 +2115,7 @@
 			}
 		});
 
-		bindStayOnProduct(root);
+		bindStayOnProduct(root, cache);
 
 		document.addEventListener('keydown', function (event) {
 			var dialog = root.querySelector('[data-apd-country-dialog]');

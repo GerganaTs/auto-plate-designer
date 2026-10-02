@@ -1,6 +1,6 @@
 <?php
 /**
- * A renamed WooCommerce catalog category keeps its name in the plugin.
+ * Shop categories stay in WooCommerce. The plugin does not create or assign them.
  *
  * Run from the plugin root:
  *
@@ -35,73 +35,46 @@ if ( empty( $_SERVER['HTTP_HOST'] ) ) {
 
 require_once $wp_load;
 
-if ( ! class_exists( 'APD_Catalog' ) ) {
-	fwrite( STDERR, "APD_Catalog was not loaded. Is the plugin active?\n" );
+$plugin = file_get_contents( APD_PLUGIN_DIR . 'includes/class-apd-plugin.php' );
+$admin  = file_get_contents( APD_PLUGIN_DIR . 'includes/class-apd-admin-settings.php' );
+
+if (
+	false === $plugin
+	|| false === $admin
+	|| class_exists( 'APD_Catalog' )
+	|| file_exists( APD_PLUGIN_DIR . 'includes/class-apd-catalog.php' )
+	|| file_exists( APD_PLUGIN_DIR . 'templates/admin/catalog-tab.php' )
+	|| false !== strpos( $plugin, 'APD_Catalog' )
+	|| false !== strpos( $admin, 'maybe_assign_product_term' )
+	|| false !== strpos( $admin, 'save_catalog' )
+	|| false !== strpos( $admin, "'catalog'" )
+) {
+	fwrite( STDERR, "CATALOG_STILL_LINKED\n" );
 	exit( 1 );
 }
 
-APD_Catalog::instance()->seed_terms();
-
-$term = get_term_by( 'slug', 'plates-eu', 'product_cat' );
-
-if ( ! $term instanceof WP_Term ) {
-	fwrite( STDERR, "TERM_MISSING\n" );
-	exit( 1 );
-}
-
-$original_name = $term->name;
-$settings      = APD_Plugin::get_settings();
-$original_names = isset( $settings['catalog']['names'] ) && is_array( $settings['catalog']['names'] )
-	? $settings['catalog']['names']
-	: array();
-$renamed       = 'Европейски номера';
-$failed        = '';
-
-$updated = wp_update_term(
-	$term->term_id,
-	'product_cat',
+$before = get_terms(
 	array(
-		'name' => $renamed,
+		'taxonomy'   => 'product_cat',
+		'hide_empty' => false,
+		'fields'     => 'ids',
+	)
+);
+$count = is_array( $before ) ? count( $before ) : 0;
+
+do_action( 'init' );
+
+$after = get_terms(
+	array(
+		'taxonomy'   => 'product_cat',
+		'hide_empty' => false,
+		'fields'     => 'ids',
 	)
 );
 
-if ( is_wp_error( $updated ) ) {
-	fwrite( STDERR, 'RENAME_FAIL ' . $updated->get_error_message() . "\n" );
+if ( ! is_array( $after ) || count( $after ) !== $count ) {
+	fwrite( STDERR, "CATALOG_SEEDED\n" );
 	exit( 1 );
 }
 
-APD_Catalog::instance()->seed_terms();
-
-$after = get_term_by( 'slug', 'plates-eu', 'product_cat' );
-$defs  = APD_Catalog::definitions();
-
-if ( ! $after instanceof WP_Term || $renamed !== $after->name ) {
-	$failed = 'SEED_REVERTED ' . ( $after instanceof WP_Term ? $after->name : 'missing' );
-} elseif ( ! isset( $defs['plates-eu']['name'] ) || $renamed !== $defs['plates-eu']['name'] ) {
-	$failed = 'PLUGIN_NAME_MISS ' . ( isset( $defs['plates-eu']['name'] ) ? $defs['plates-eu']['name'] : '' );
-}
-
-wp_update_term(
-	$term->term_id,
-	'product_cat',
-	array(
-		'name' => $original_name,
-	)
-);
-
-$settings = APD_Plugin::get_settings();
-
-if ( empty( $original_names ) ) {
-	unset( $settings['catalog']['names'] );
-} else {
-	$settings['catalog']['names'] = $original_names;
-}
-
-APD_Plugin::save_settings( $settings );
-
-if ( '' !== $failed ) {
-	fwrite( STDERR, $failed . "\n" );
-	exit( 1 );
-}
-
-echo 'CATALOG_NAME_OK' . PHP_EOL;
+echo 'CATALOG_DETACHED_OK' . PHP_EOL;

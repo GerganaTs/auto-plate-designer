@@ -9,8 +9,10 @@
  *
  * - eu          painted car plate with euroband (520×110, BDS 15980)
  * - eu_plain    car plate without preset, same studio as a color plate (520×110)
- * - moto        EU motorcycle plate with euroband (199×154, BDS 15980)
- * - moto_plain  motorcycle plate without country preset (199×154, BDS 15980)
+ * - moto            EU motorcycle plate with euroband (199×154)
+ * - moto_240        EU motorcycle plate with euroband (240×130)
+ * - moto_plain      motorcycle plate without country band (199×154)
+ * - moto_plain_240  motorcycle plate without country band (240×130)
  * - suv_eu      two-line / SUV plate with euroband (280×200, BDS 15980)
  * - suv         two-line / SUV plate without preset (painted, 280×200, BDS 15980)
  * - us          state graphics
@@ -37,6 +39,12 @@ final class APD_Formats {
 	 * Real EU euroband width in millimetres (Council Regulation / Vienna plates).
 	 */
 	public const EU_BAND_WIDTH_MM = 40;
+
+	/**
+	 * Clear space inside a painted frame before the text area may begin.
+	 * The same gap is kept beside a full-height country band.
+	 */
+	public const TEXT_FRAME_GAP_MM = 8;
 
 	/**
 	 * Real EU plate (and euroband) height in millimetres.
@@ -70,21 +78,23 @@ final class APD_Formats {
 	/**
 	 * Shop and admin preview width in CSS pixels.
 	 *
-	 * Plates stay at the shared car-plate width. Motorcycle and type D holders
-	 * scale with their millimetres, so a 199 mm holder is not drawn 520 mm wide.
+	 * Plates stay at the shared car-plate width. A holder is as wide as the
+	 * plate it is made for, on the same scale (520 mm = 500 px). The photo
+	 * aspect stays the stored holder millimetres.
 	 *
 	 * @param string $type  Format type.
 	 * @param int    $width Format width in millimetres.
 	 * @return int
 	 */
 	public static function preview_frame_width( $type, $width ) {
-		$width = max( 1, (int) $width );
+		if ( self::is_holder( $type ) ) {
+			$plate = self::holder_plate_size( $type );
+			$plate_width = isset( $plate['width'] ) ? (int) $plate['width'] : max( 1, (int) $width );
 
-		if ( ! self::is_photo_holder( $type ) ) {
-			return self::canvas_display_width( $width, 0 );
+			return max( 80, (int) round( self::CANVAS_DISPLAY_MAX_PX * ( $plate_width / 520 ) ) );
 		}
 
-		return max( 80, (int) round( self::CANVAS_DISPLAY_MAX_PX * ( $width / 520 ) ) );
+		return self::canvas_display_width( $width, 0 );
 	}
 
 	/**
@@ -215,6 +225,76 @@ final class APD_Formats {
 		APD_Plugin::save_settings( $settings );
 
 		return $format;
+	}
+
+	/**
+	 * Copy a saved format under a new id. The name gains " (Copy)".
+	 *
+	 * The stored row is copied as saved, so a custom size stays as stored.
+	 *
+	 * @param string $id Source format ID.
+	 * @return array<string, mixed>|WP_Error
+	 */
+	public static function duplicate( $id ) {
+		$source = self::get( $id );
+
+		if ( ! is_array( $source ) ) {
+			return new WP_Error(
+				'apd_format_missing',
+				__( 'Format was not found.', 'auto-plate-designer' )
+			);
+		}
+
+		$copy         = $source;
+		$copy['id']   = APD_Plugin::new_id();
+		$copy['name'] = self::duplicate_name( isset( $source['name'] ) ? (string) $source['name'] : '' );
+		$name_check   = APD_Security::validate_admin_label( $copy['name'], 80 );
+
+		if ( is_wp_error( $name_check ) ) {
+			return $name_check;
+		}
+
+		$settings              = APD_Plugin::get_settings();
+		$settings['formats'][] = $copy;
+		APD_Plugin::save_settings( $settings );
+
+		return $copy;
+	}
+
+	/**
+	 * Format name for a duplicate, trimmed so the label still fits.
+	 *
+	 * @param string $name Source name.
+	 * @return string
+	 */
+	public static function duplicate_name( $name ) {
+		$suffix = ' ' . __( '(Copy)', 'auto-plate-designer' );
+		$name   = trim( $name );
+		$max    = 80;
+
+		if ( function_exists( 'mb_strlen' ) && function_exists( 'mb_substr' ) ) {
+			$room = $max - mb_strlen( $suffix, 'UTF-8' );
+
+			if ( $room < 1 ) {
+				$room = 1;
+			}
+
+			if ( mb_strlen( $name, 'UTF-8' ) > $room ) {
+				$name = rtrim( mb_substr( $name, 0, $room, 'UTF-8' ) );
+			}
+		} else {
+			$room = $max - strlen( $suffix );
+
+			if ( $room < 1 ) {
+				$room = 1;
+			}
+
+			if ( strlen( $name ) > $room ) {
+				$name = rtrim( substr( $name, 0, $room ) );
+			}
+		}
+
+		return $name . $suffix;
 	}
 
 	/**
@@ -380,27 +460,45 @@ final class APD_Formats {
 			$base_image_id = 0;
 		}
 
-		$max_default = self::default_max_chars( $type );
-		$max_chars   = self::int_in_range( isset( $raw['max_chars'] ) ? $raw['max_chars'] : $max_default, 1, APD_Security::ABSOLUTE_MAX_CHARS, $max_default );
-		$row_1_max   = 0;
-		$row_2_max   = 0;
+		$max_default    = self::default_max_chars( $type );
+		$max_chars      = self::int_in_range( isset( $raw['max_chars'] ) ? $raw['max_chars'] : $max_default, 1, APD_Security::ABSOLUTE_MAX_CHARS, $max_default );
+		$row_1_max      = 0;
+		$row_2_max      = 0;
+		$holder_max_set = false;
 
 		if ( self::uses_two_rows( $type ) ) {
 			$row_1_max = self::int_in_range( isset( $raw['max_chars_row_1'] ) ? $raw['max_chars_row_1'] : self::SUV_ROW_1_MAX, 1, APD_Security::ABSOLUTE_MAX_CHARS, self::SUV_ROW_1_MAX );
 			$row_2_max = self::int_in_range( isset( $raw['max_chars_row_2'] ) ? $raw['max_chars_row_2'] : self::SUV_ROW_2_MAX, 1, APD_Security::ABSOLUTE_MAX_CHARS, self::SUV_ROW_2_MAX );
 			$max_chars = min( APD_Security::ABSOLUTE_MAX_CHARS, $row_1_max + $row_2_max );
 		} elseif ( self::is_holder( $type ) ) {
-			$max_chars = self::holder_text_limit();
+			$posted_max = isset( $raw['max_chars'] ) ? trim( (string) $raw['max_chars'] ) : '';
+			if ( '' === $posted_max || '0' === $posted_max ) {
+				$max_chars      = 0;
+				$holder_max_set = false;
+			} else {
+				$max_chars      = self::int_in_range( $posted_max, 1, APD_Security::ABSOLUTE_MAX_CHARS, self::holder_text_limit() );
+				$holder_max_set = true;
+			}
 		}
 		$font_ids_all = ! empty( $raw['font_ids_all'] );
 		$font_ids     = $font_ids_all
 			? self::all_font_ids()
 			: self::sanitize_font_ids( isset( $raw['font_ids'] ) ? $raw['font_ids'] : array() );
 		$normalized  = array(
-			'type'       => $type,
-			'band_ratio' => $band_ratio,
-			'band_side'  => $band_side,
+			'type'         => $type,
+			'width'        => $width,
+			'height'       => $height,
+			'border_width' => $border,
+			'no_frame'     => $no_frame,
+			'band_ratio'   => $band_ratio,
+			'band_side'    => $band_side,
+			'band_box'     => $band_box,
 		);
+		$text_raw = isset( $raw['text_box'] ) && is_array( $raw['text_box'] ) ? $raw['text_box'] : array();
+
+		if ( self::is_holder( $type ) && isset( $raw['text_box_metric'] ) && 'strip' === sanitize_key( (string) $raw['text_box_metric'] ) ) {
+			$text_raw = self::strip_percent_box_to_canvas( $text_raw, $type );
+		}
 
 		$row = array(
 			'id'               => $id,
@@ -416,8 +514,9 @@ final class APD_Formats {
 			'band_box'         => $band_box,
 			'base_image_id'    => $base_image_id,
 			'color_zones'      => array(),
-			'text_box'         => self::sanitize_text_box( isset( $raw['text_box'] ) ? $raw['text_box'] : array(), $type, $normalized ),
+			'text_box'         => self::sanitize_text_box( $text_raw, $type, $normalized ),
 			'max_chars'        => $max_chars,
+			'holder_max_set'   => $holder_max_set,
 			'max_chars_row_1'  => $row_1_max,
 			'max_chars_row_2'  => $row_2_max,
 			'font_ids'         => $font_ids,
@@ -466,7 +565,7 @@ final class APD_Formats {
 	 * @return bool
 	 */
 	public static function uses_palette_slots( $type ) {
-		return in_array( (string) $type, array( 'color', 'custom', 'eu_plain', 'moto_plain', 'suv', 'us' ), true );
+		return in_array( (string) $type, array( 'color', 'custom', 'eu_plain', 'moto_plain', 'moto_plain_240', 'suv', 'us' ), true );
 	}
 
 	/**
@@ -682,6 +781,7 @@ final class APD_Formats {
 		switch ( (string) $type ) {
 			case 'eu':
 			case 'moto':
+			case 'moto_240':
 			case 'suv_eu':
 				$caps = array(
 					'painted'       => true,
@@ -691,6 +791,7 @@ final class APD_Formats {
 				);
 				break;
 			case 'moto_plain':
+			case 'moto_plain_240':
 			case 'eu_plain':
 			case 'suv':
 			case 'custom':
@@ -754,7 +855,7 @@ final class APD_Formats {
 	}
 
 	/**
-	 * Catalog category kind for a format type (moto_plain → moto, suv_eu → suv).
+	 * Family for related format types (moto_plain → moto, suv_eu → suv).
 	 *
 	 * @param string $type Format type.
 	 * @return string
@@ -762,6 +863,8 @@ final class APD_Formats {
 	public static function catalog_kind( $type ) {
 		switch ( (string) $type ) {
 			case 'moto_plain':
+			case 'moto_240':
+			case 'moto_plain_240':
 				return 'moto';
 			case 'eu_plain':
 				return 'eu';
@@ -776,7 +879,7 @@ final class APD_Formats {
 	}
 
 	/**
-	 * Car, motorcycle, and type D holders share the strip, the character limit, and the Holders category.
+	 * Car, motorcycle, and type D holders share the strip and the character limit.
 	 *
 	 * @param string $type Format type.
 	 * @return bool
@@ -806,7 +909,7 @@ final class APD_Formats {
 	}
 
 	/**
-	 * SUV catalog covers the EU SUV plate and the SUV plate without a preset.
+	 * SUV family covers the EU SUV plate and the SUV plate without a preset.
 	 *
 	 * @param string $type Format type.
 	 * @return bool
@@ -983,7 +1086,11 @@ final class APD_Formats {
 	 */
 	public static function max_chars_label( $format ) {
 		if ( self::is_holder( isset( $format['type'] ) ? (string) $format['type'] : '' ) ) {
-			return (string) self::holder_text_limit();
+			if ( empty( $format['holder_max_set'] ) ) {
+				return '—';
+			}
+
+			return (string) (int) $format['max_chars'];
 		}
 
 		if ( self::uses_two_rows( isset( $format['type'] ) ? (string) $format['type'] : '' ) ) {
@@ -1159,14 +1266,16 @@ final class APD_Formats {
 			'eu'         => __( 'EU plate', 'auto-plate-designer' ),
 			'eu_plain'   => __( 'Car plate without preset', 'auto-plate-designer' ),
 			'us'         => __( 'USA plate', 'auto-plate-designer' ),
-			'moto'       => __( 'EU motorcycle plate', 'auto-plate-designer' ),
-			'moto_plain' => __( 'Motorcycle plate without preset', 'auto-plate-designer' ),
+			'moto'            => __( 'EU motorcycle plate 199×154', 'auto-plate-designer' ),
+			'moto_240'        => __( 'EU motorcycle plate 240×130', 'auto-plate-designer' ),
+			'moto_plain'      => __( 'Motorcycle plate without country band 199×154', 'auto-plate-designer' ),
+			'moto_plain_240'  => __( 'Motorcycle plate without country band 240×130', 'auto-plate-designer' ),
 			'suv_eu'     => __( 'EU SUV plate', 'auto-plate-designer' ),
 			'suv'        => __( 'SUV plate without preset', 'auto-plate-designer' ),
 			'custom'     => __( 'Street plate', 'auto-plate-designer' ),
 			'color'      => __( 'Color plate', 'auto-plate-designer' ),
 			'holder'      => __( 'Car plate holders', 'auto-plate-designer' ),
-			'holder_moto' => __( 'Motorcycle plate holder', 'auto-plate-designer' ),
+			'holder_moto' => __( 'Motorcycle plate holder 199×154', 'auto-plate-designer' ),
 			'holder_d'    => __( 'Type D plate holder', 'auto-plate-designer' ),
 		);
 
@@ -1204,7 +1313,7 @@ final class APD_Formats {
 	 * @return bool
 	 */
 	public static function uses_two_rows( $type ) {
-		return in_array( (string) $type, array( 'moto', 'moto_plain', 'suv', 'suv_eu' ), true );
+		return in_array( (string) $type, array( 'moto', 'moto_240', 'moto_plain', 'moto_plain_240', 'suv', 'suv_eu' ), true );
 	}
 
 	/**
@@ -1262,7 +1371,7 @@ final class APD_Formats {
 	/**
 	 * Default millimetre canvas for a type.
 	 *
-	 * Bulgarian plates follow BDS 15980: car 520×110, motorcycle 199×154,
+	 * Bulgarian plates follow BDS 15980: car 520×110, motorcycle 199×154 or 240×130,
 	 * two-line 280×200. USA plates stay 12×6 in (305×152).
 	 * The car holder stays 520×260. The motorcycle holder is square and uses
 	 * the motorcycle plate width (199×199). Type D uses the two-line width;
@@ -1283,6 +1392,12 @@ final class APD_Formats {
 				return array(
 					'width'  => 199,
 					'height' => 154,
+				);
+			case 'moto_240':
+			case 'moto_plain_240':
+				return array(
+					'width'  => 240,
+					'height' => 130,
 				);
 			case 'suv':
 			case 'suv_eu':
@@ -1311,6 +1426,64 @@ final class APD_Formats {
 					'height' => 110,
 				);
 		}
+	}
+
+	/**
+	 * Plate this holder is built for, in millimetres.
+	 *
+	 * The holder canvas stays the photo size. This size is the number the
+	 * formats list prints and the width the preview uses.
+	 *
+	 * @param string $type Holder type.
+	 * @return array{width: int, height: int}
+	 */
+	public static function holder_plate_size( $type ) {
+		switch ( (string) $type ) {
+			case 'holder_moto':
+				return array(
+					'width'  => 199,
+					'height' => 154,
+				);
+			case 'holder_d':
+				return array(
+					'width'  => 280,
+					'height' => 200,
+				);
+			default:
+				return array(
+					'width'  => 520,
+					'height' => 110,
+				);
+		}
+	}
+
+	/**
+	 * Size cell for the formats list.
+	 *
+	 * Holders name the plate they fit. Other types keep their canvas millimetres.
+	 *
+	 * @param array<string, mixed> $format Format row.
+	 * @return string
+	 */
+	public static function format_size_label( $format ) {
+		$format = is_array( $format ) ? $format : array();
+		$type   = isset( $format['type'] ) ? (string) $format['type'] : '';
+
+		if ( self::is_holder( $type ) ) {
+			$plate = self::holder_plate_size( $type );
+
+			return sprintf(
+				/* translators: 1: plate width in millimetres, 2: plate height in millimetres. */
+				__( 'For a plate measuring %1$d×%2$d mm', 'auto-plate-designer' ),
+				(int) $plate['width'],
+				(int) $plate['height']
+			);
+		}
+
+		$width  = isset( $format['width'] ) ? (int) $format['width'] : 0;
+		$height = isset( $format['height'] ) ? (int) $format['height'] : 0;
+
+		return $width . ' x ' . $height;
 	}
 
 	/**
@@ -1486,9 +1659,10 @@ final class APD_Formats {
 		);
 
 		if ( self::uses_frame( $format ) ) {
-			$bw      = isset( $format['border_width'] ) ? (int) $format['border_width'] : 0;
-			$inset_x = ( $bw / $width ) * 100;
-			$inset_y = ( $bw / $height ) * 100;
+			$bw    = isset( $format['border_width'] ) ? (int) $format['border_width'] : 0;
+			$clear = $bw > 0 ? $bw + self::TEXT_FRAME_GAP_MM : 0;
+			$inset_x = ( $clear / $width ) * 100;
+			$inset_y = ( $clear / $height ) * 100;
 			$region  = array(
 				'x'      => round( $inset_x, 2 ),
 				'y'      => round( $inset_y, 2 ),
@@ -1506,6 +1680,15 @@ final class APD_Formats {
 
 			if ( $band_height >= 80 ) {
 				$region = self::subtract_band_from_region( $region, $band );
+				$gap    = ( self::TEXT_FRAME_GAP_MM / $width ) * 100;
+				$mid    = ( isset( $band['x'] ) ? (float) $band['x'] : 0.0 ) + ( ( isset( $band['width'] ) ? (float) $band['width'] : 0.0 ) / 2 );
+
+				if ( $mid < 50 ) {
+					$region['x']     = round( (float) $region['x'] + $gap, 2 );
+					$region['width'] = round( max( 5.0, (float) $region['width'] - $gap ), 2 );
+				} else {
+					$region['width'] = round( max( 5.0, (float) $region['width'] - $gap ), 2 );
+				}
 			}
 		}
 
@@ -1641,7 +1824,9 @@ final class APD_Formats {
 				return array( 'text', 'border', 'background', 'color_text', 'color_border', 'color_background' );
 			case 'eu':
 			case 'moto':
+			case 'moto_240':
 			case 'moto_plain':
+			case 'moto_plain_240':
 			case 'eu_plain':
 			case 'suv':
 			case 'suv_eu':
@@ -1757,7 +1942,9 @@ final class APD_Formats {
 				return array( 'holder_text', 'holder_strip' );
 			case 'eu':
 			case 'moto':
+			case 'moto_240':
 			case 'moto_plain':
+			case 'moto_plain_240':
 			case 'suv':
 			case 'suv_eu':
 				return array( 'text', 'border' );
@@ -1961,6 +2148,7 @@ final class APD_Formats {
 			case 'color':
 			case 'eu_plain':
 			case 'moto_plain':
+			case 'moto_plain_240':
 				return array(
 					'x'      => 6.0,
 					'y'      => 12.0,
@@ -2026,11 +2214,15 @@ final class APD_Formats {
 	public static function sanitize_text_box( $raw, $type = 'eu', $format = array() ) {
 		$defaults = self::default_text_box( $type, is_array( $format ) ? $format : array() );
 		$raw      = is_array( $raw ) ? $raw : array();
+		$holder   = self::is_holder( $type );
+		$strip    = $holder ? self::holder_strip_box( $type ) : array();
+		$min_w    = $holder ? max( 0.1, round( (float) $strip['width'] * 0.05, 1 ) ) : 5.0;
+		$min_h    = $holder ? max( 0.1, round( (float) $strip['height'] * 0.05, 1 ) ) : 5.0;
 
 		$x      = self::clamp_percent( isset( $raw['x'] ) ? $raw['x'] : $defaults['x'], 0, 95 );
 		$y      = self::clamp_percent( isset( $raw['y'] ) ? $raw['y'] : $defaults['y'], 0, 95 );
-		$width  = self::clamp_percent( isset( $raw['width'] ) ? $raw['width'] : $defaults['width'], 5, 100 );
-		$height = self::clamp_percent( isset( $raw['height'] ) ? $raw['height'] : $defaults['height'], 5, 100 );
+		$width  = self::clamp_percent( isset( $raw['width'] ) ? $raw['width'] : $defaults['width'], $min_w, 100 );
+		$height = self::clamp_percent( isset( $raw['height'] ) ? $raw['height'] : $defaults['height'], $min_h, 100 );
 
 		if ( $x + $width > 100 ) {
 			$width = round( 100 - $x, 1 );
@@ -2040,14 +2232,14 @@ final class APD_Formats {
 			$height = round( 100 - $y, 1 );
 		}
 
-		if ( $width < 5 ) {
+		if ( ! $holder && $width < 5 ) {
 			$width = 5.0;
 			$x     = min( $x, 95.0 );
 		}
 
-		if ( $height < 5 ) {
+		if ( ! $holder && $height < 5 ) {
 			$height = 5.0;
-			$y     = min( $y, 95.0 );
+			$y      = min( $y, 95.0 );
 		}
 
 		$align  = isset( $raw['align'] ) ? sanitize_key( (string) $raw['align'] ) : $defaults['align'];
@@ -2089,6 +2281,15 @@ final class APD_Formats {
 
 		if ( self::is_holder( $type ) ) {
 			$box = self::clamp_box_to_region( $box, self::holder_strip_box( $type ) );
+		} else {
+			$layout         = is_array( $format ) ? $format : array();
+			$layout['type'] = $type;
+			$plate_w        = isset( $layout['width'] ) ? (int) $layout['width'] : 0;
+			$plate_h        = isset( $layout['height'] ) ? (int) $layout['height'] : 0;
+
+			if ( $plate_w > 0 && $plate_h > 0 && self::uses_frame( $layout ) ) {
+				$box = self::clamp_box_to_region( $box, self::text_area_region( $layout ) );
+			}
 		}
 
 		return $box;
@@ -2160,6 +2361,29 @@ final class APD_Formats {
 		}
 
 		return array( $left, $right );
+	}
+
+	/**
+	 * Turn admin percentages of the white strip into percentages of the holder photo.
+	 *
+	 * @param array<string, mixed> $box  Strip-relative box.
+	 * @param string               $type Holder type.
+	 * @return array<string, mixed>
+	 */
+	public static function strip_percent_box_to_canvas( $box, $type = 'holder' ) {
+		$box   = is_array( $box ) ? $box : array();
+		$strip = self::holder_strip_box( $type );
+		$sx    = isset( $box['x'] ) ? (float) $box['x'] : 0.0;
+		$sy    = isset( $box['y'] ) ? (float) $box['y'] : 0.0;
+		$sw    = isset( $box['width'] ) ? (float) $box['width'] : 100.0;
+		$sh    = isset( $box['height'] ) ? (float) $box['height'] : 100.0;
+
+		$box['x']      = round( (float) $strip['x'] + ( (float) $strip['width'] * $sx / 100 ), 2 );
+		$box['y']      = round( (float) $strip['y'] + ( (float) $strip['height'] * $sy / 100 ), 2 );
+		$box['width']  = round( (float) $strip['width'] * $sw / 100, 2 );
+		$box['height'] = round( (float) $strip['height'] * $sh / 100, 2 );
+
+		return $box;
 	}
 
 	/**
@@ -2281,6 +2505,93 @@ final class APD_Formats {
 	}
 
 	/**
+	 * Name shown to shoppers. A note is appended only when the font has one.
+	 *
+	 * @param array<string, mixed> $font Font row.
+	 * @return string
+	 */
+	public static function font_shop_label( $font ) {
+		$family = isset( $font['family'] ) ? trim( (string) $font['family'] ) : '';
+		$note   = isset( $font['note'] ) ? trim( (string) $font['note'] ) : '';
+
+		if ( '' === $note ) {
+			return $family;
+		}
+
+		if ( '' === $family ) {
+			return $note;
+		}
+
+		return $family . ' — ' . $note;
+	}
+
+	/**
+	 * Font selected when the product page opens.
+	 *
+	 * Every plate type skips a German family when another font is offered.
+	 * USA plates still prefer a family whose name starts with "USA".
+	 *
+	 * @param array<int, array<string, mixed>> $fonts Fonts offered on this format.
+	 * @param string                            $type  Format type.
+	 * @return string
+	 */
+	public static function default_font_id( $fonts, $type ) {
+		if ( ! is_array( $fonts ) || empty( $fonts ) ) {
+			return '';
+		}
+
+		$fallback = '';
+		$usa      = '';
+
+		foreach ( $fonts as $font ) {
+			if ( empty( $font['id'] ) ) {
+				continue;
+			}
+
+			$id     = (string) $font['id'];
+			$family = isset( $font['family'] ) ? trim( (string) $font['family'] ) : '';
+
+			if ( '' === $fallback && ! self::is_german_font_family( $family ) ) {
+				$fallback = $id;
+			}
+
+			if ( 'us' === (string) $type && '' === $usa && '' !== $family && 0 === stripos( $family, 'USA' ) ) {
+				$usa = $id;
+			}
+		}
+
+		if ( 'us' === (string) $type && '' !== $usa ) {
+			return $usa;
+		}
+
+		if ( '' !== $fallback ) {
+			return $fallback;
+		}
+
+		return isset( $fonts[0]['id'] ) ? (string) $fonts[0]['id'] : '';
+	}
+
+	/**
+	 * German plate face. It must not win the shop default when another font exists.
+	 *
+	 * @param string $family Font family name.
+	 * @return bool
+	 */
+	private static function is_german_font_family( $family ) {
+		$family = trim( (string) $family );
+
+		if ( '' === $family ) {
+			return false;
+		}
+
+		if ( 0 === stripos( $family, 'German' ) ) {
+			return true;
+		}
+
+		return false !== stripos( $family, 'немски' );
+	}
+
+	/**
 	 * JSON-safe payload for the product-page configurator.
 	 *
 	 * @param array<string, mixed> $format Format row.
@@ -2312,6 +2623,7 @@ final class APD_Formats {
 			$fonts[] = array(
 				'id'     => $font['id'],
 				'family' => isset( $font['family'] ) ? (string) $font['family'] : '',
+				'note'   => isset( $font['note'] ) ? (string) $font['note'] : '',
 				'weight' => isset( $font['weight'] ) ? (int) $font['weight'] : 400,
 				'style'  => isset( $font['style'] ) ? (string) $font['style'] : 'normal',
 				'url'    => $url,
@@ -2325,7 +2637,7 @@ final class APD_Formats {
 		if ( self::uses_two_rows( $type ) ) {
 			$max_chars = $row_limits[0] + $row_limits[1];
 		} elseif ( self::is_holder( $type ) ) {
-			$max_chars = self::holder_text_limit();
+			$max_chars = ! empty( $format['holder_max_set'] ) ? (int) $format['max_chars'] : self::holder_text_limit();
 		}
 		$image_id  = ( self::uses_base_image( $type ) && isset( $format['base_image_id'] ) ) ? absint( $format['base_image_id'] ) : 0;
 		$image_url = $image_id ? wp_get_attachment_image_url( $image_id, 'full' ) : '';
@@ -2441,7 +2753,7 @@ final class APD_Formats {
 			'presets'          => $presets,
 			'designs'          => $designs,
 			'capabilities'     => self::type_capabilities( $type ),
-			'allow_empty'      => self::is_holder( $type ),
+			'allow_empty'      => true,
 			'multiline'        => self::is_street_plate( $type ),
 			'wrap_text'        => self::is_street_plate( $type ) && ! empty( $format['wrap_text'] ),
 			'max_lines'        => self::wrap_line_limit(),

@@ -633,36 +633,137 @@ if ( ! empty( $cleared_designs['designs'] ) || 1 !== count( $eu_designs['designs
 
 echo 'DESIGN_LOCK_OK' . PHP_EOL;
 
-$defs = APD_Catalog::definitions();
+$split_format = APD_Formats::save(
+	array(
+		'name'            => 'Split product fields',
+		'type'            => 'us',
+		'split_text'      => '1',
+		'max_chars_left'  => 3,
+		'max_chars_right' => 4,
+	)
+);
+$plain_format = APD_Formats::save(
+	array(
+		'name' => 'Plain product fields',
+		'type' => 'us',
+	)
+);
+$side_post = 0;
+$side_settings = APD_Plugin::get_settings();
+$side_backup   = isset( $side_settings['designs'] ) && is_array( $side_settings['designs'] ) ? $side_settings['designs'] : array();
 
-if ( empty( $defs['holders']['kind'] ) || 'holder' !== $defs['holders']['kind'] ) {
-	fwrite( STDERR, "CATALOG_FAIL\n" );
+if ( ! is_wp_error( $split_format ) && ! is_wp_error( $plain_format ) ) {
+	$side_settings['designs']   = $side_backup;
+	$side_settings['designs'][] = array(
+		'id'                 => 'd-split-fields',
+		'name'               => 'New York',
+		'code'               => 'NY',
+		'image_id'           => 1,
+		'active'             => true,
+		'split_text'         => true,
+		'max_chars_left'     => 3,
+		'max_chars_right'    => 4,
+		'allowed_format_ids' => array( $split_format['id'] ),
+		'text_box'           => array(
+			'x'      => 4.7,
+			'y'      => 21.4,
+			'width'  => 38.8,
+			'height' => 61.2,
+			'align'  => 'center',
+			'valign' => 'middle',
+		),
+		'text_box_right'     => array(
+			'x'      => 61,
+			'width'  => 34.7,
+			'align'  => 'center',
+		),
+	);
+	APD_Plugin::save_settings( $side_settings );
+
+	$side_post = wp_insert_post(
+		array(
+			'post_type'   => 'product',
+			'post_status' => 'draft',
+			'post_title'  => 'APD side fields',
+		)
+	);
+	update_post_meta( $side_post, APD_Admin_Settings::META_ENABLED, 'yes' );
+	update_post_meta( $side_post, APD_Admin_Settings::META_FORMAT, $split_format['id'] );
+	update_post_meta( $side_post, APD_Admin_Settings::META_DESIGN, 'd-split-fields' );
+	update_post_meta( $side_post, APD_Admin_Settings::META_DEFAULT_TEXT, "NY\n1234" );
+
+	ob_start();
+	APD_Admin_Settings::instance()->render_product_meta_box( get_post( $side_post ) );
+	$side_html = ob_get_clean();
+
+	update_post_meta( $side_post, APD_Admin_Settings::META_FORMAT, $plain_format['id'] );
+	update_post_meta( $side_post, APD_Admin_Settings::META_DESIGN, '' );
+	ob_start();
+	APD_Admin_Settings::instance()->render_product_meta_box( get_post( $side_post ) );
+	$plain_html = ob_get_clean();
+
+	$admin_users = get_users(
+		array(
+			'role'   => 'administrator',
+			'number' => 1,
+		)
+	);
+	if ( ! empty( $admin_users ) ) {
+		wp_set_current_user( (int) $admin_users[0]->ID );
+		$_POST['apd_product_nonce']       = wp_create_nonce( APD_Admin_Settings::PRODUCT_NONCE_ACTION );
+		$_POST['apd_enabled']             = '1';
+		$_POST['apd_format_id']           = $split_format['id'];
+		$_POST['apd_design_id']           = 'd-split-fields';
+		$_POST['apd_default_text_left']   = 'NYX';
+		$_POST['apd_default_text_right']  = '12345';
+		$_POST['apd_layouts']             = array( 'text_only' );
+		APD_Admin_Settings::instance()->save_product_meta( $side_post );
+		unset( $_POST['apd_product_nonce'], $_POST['apd_enabled'], $_POST['apd_format_id'], $_POST['apd_design_id'], $_POST['apd_default_text_left'], $_POST['apd_default_text_right'], $_POST['apd_layouts'] );
+	}
+}
+
+$side_settings            = APD_Plugin::get_settings();
+$side_settings['designs'] = $side_backup;
+APD_Plugin::save_settings( $side_settings );
+if ( ! is_wp_error( $split_format ) ) {
+	APD_Formats::delete( $split_format['id'] );
+}
+if ( ! is_wp_error( $plain_format ) ) {
+	APD_Formats::delete( $plain_format['id'] );
+}
+$stored_sides = $side_post ? (string) get_post_meta( $side_post, APD_Admin_Settings::META_DEFAULT_TEXT, true ) : '';
+if ( $side_post ) {
+	wp_delete_post( $side_post, true );
+}
+
+$admin_css = file_get_contents( APD_PLUGIN_DIR . 'assets/css/admin-settings.css' );
+$admin_js  = file_get_contents( APD_PLUGIN_DIR . 'assets/js/admin-settings.js' );
+if (
+	! isset( $side_html, $plain_html )
+	|| false === strpos( $side_html, 'type="hidden" name="apd_design_id"' )
+	|| false !== strpos( $side_html, '<select name="apd_design_id"' )
+	|| false !== strpos( $side_html, 'Plate design' )
+	|| false === strpos( $side_html, 'value="d-split-fields"' )
+	|| false === strpos( $side_html, 'data-apd-split="1"' )
+	|| false !== strpos( $side_html, 'data-apd-default-sides hidden' )
+	|| false === strpos( $side_html, 'name="apd_default_text_left"' )
+	|| false === strpos( $side_html, 'value="NY"' )
+	|| false === strpos( $side_html, 'value="1234"' )
+	|| false === strpos( $side_html, 'maxlength="3"' )
+	|| false === strpos( $side_html, 'maxlength="4"' )
+	|| false === strpos( $side_html, 'data-apd-default-rows hidden' )
+	|| false === strpos( $side_html, 'data-apd-default-single hidden' )
+	|| false === strpos( $plain_html, 'data-apd-default-sides hidden' )
+	|| false !== strpos( $plain_html, 'data-apd-default-single hidden' )
+	|| "NYX\n1234" !== $stored_sides
+	|| false === strpos( $admin_css, '.apd-product-metabox [hidden]' )
+	|| false === strpos( $admin_js, 'data-apd-default-sides' )
+) {
+	fwrite( STDERR, "PRODUCT_SIDE_FIELDS_FAIL stored=" . wp_json_encode( $stored_sides ) . PHP_EOL );
 	exit( 1 );
 }
 
-if ( empty( $defs['plates-color']['kind'] ) || 'color' !== $defs['plates-color']['kind'] ) {
-	fwrite( STDERR, "CATALOG_COLOR_FAIL\n" );
-	exit( 1 );
-}
-
-if ( empty( $defs['plates-moto']['kind'] ) || 'moto' !== $defs['plates-moto']['kind'] ) {
-	fwrite( STDERR, "CATALOG_MOTO_FAIL\n" );
-	exit( 1 );
-}
-
-if ( empty( $defs['plates-suv']['kind'] ) || 'suv' !== $defs['plates-suv']['kind'] ) {
-	fwrite( STDERR, "CATALOG_SUV_FAIL\n" );
-	exit( 1 );
-}
-
-$eu_types   = APD_Catalog::format_types_for_kind( 'eu' );
-$moto_types = APD_Catalog::format_types_for_kind( 'moto' );
-$suv_types  = APD_Catalog::format_types_for_kind( 'suv' );
-
-if ( array( 'eu', 'eu_plain' ) !== $eu_types || array( 'moto', 'moto_plain' ) !== $moto_types || array( 'suv_eu', 'suv' ) !== $suv_types ) {
-	fwrite( STDERR, 'CATALOG_TYPES_FAIL ' . wp_json_encode( array( $eu_types, $moto_types, $suv_types ) ) . PHP_EOL );
-	exit( 1 );
-}
+echo 'PRODUCT_SIDE_FIELDS_OK' . PHP_EOL;
 
 if ( true !== APD_Security::validate_format_type( 'color' ) ) {
 	fwrite( STDERR, "COLOR_TYPE_VALIDATE_FAIL\n" );
@@ -707,8 +808,6 @@ APD_Formats::delete( $color_saved['id'] );
 
 echo 'COLOR_TYPE_OK' . PHP_EOL;
 
-echo 'CATALOG_OK' . PHP_EOL;
-
 $deleted = APD_Formats::delete( $format['id'] );
 
 if ( true !== $deleted ) {
@@ -751,7 +850,7 @@ if ( $holder_only !== $holder_caps || $holder_caps !== $holder_def ) {
 	exit( 1 );
 }
 
-foreach ( array( 'eu', 'eu_plain', 'moto', 'moto_plain', 'suv', 'suv_eu', 'custom' ) as $plate_type ) {
+foreach ( array( 'eu', 'eu_plain', 'moto', 'moto_240', 'moto_plain', 'moto_plain_240', 'suv', 'suv_eu', 'custom' ) as $plate_type ) {
 	if ( $plate_caps !== APD_Formats::color_field_capabilities( $plate_type ) ) {
 		fwrite( STDERR, "PLATE_COLOR_CAPS_FAIL {$plate_type}\n" );
 		exit( 1 );
@@ -1279,4 +1378,83 @@ $settings['palettes']       = $backup_palettes;
 APD_Plugin::save_settings( $settings );
 
 echo 'PALETTE_DUP_OK' . PHP_EOL;
+
+$source = APD_Formats::save(
+	array(
+		'name'             => 'Copy source plate',
+		'type'             => 'custom',
+		'width'            => 340,
+		'height'           => 200,
+		'price_adjustment' => 4.5,
+	)
+);
+
+if ( is_wp_error( $source ) ) {
+	fwrite( STDERR, 'FORMAT_DUP_SAVE_FAIL ' . $source->get_error_message() . PHP_EOL );
+	exit( 1 );
+}
+
+$copy = APD_Formats::duplicate( $source['id'] );
+$again = is_wp_error( $copy ) ? $copy : APD_Formats::get( $copy['id'] );
+$kept  = APD_Formats::get( $source['id'] );
+$suffix = ' ' . __( '(Copy)', 'auto-plate-designer' );
+
+if (
+	is_wp_error( $copy )
+	|| ! is_array( $again )
+	|| $again['id'] === $source['id']
+	|| $source['name'] . $suffix !== $again['name']
+	|| 340 !== (int) $again['width']
+	|| 200 !== (int) $again['height']
+	|| 'custom' !== $again['type']
+	|| 4.5 !== (float) $again['price_adjustment']
+	|| ! is_array( $kept )
+	|| $kept['name'] !== $source['name']
+) {
+	fwrite( STDERR, 'FORMAT_DUP_FAIL ' . wp_json_encode( is_wp_error( $copy ) ? $copy->get_error_message() : $again ) . PHP_EOL );
+	APD_Formats::delete( $source['id'] );
+	if ( is_array( $copy ) && isset( $copy['id'] ) ) {
+		APD_Formats::delete( $copy['id'] );
+	}
+	exit( 1 );
+}
+
+$long = APD_Formats::save(
+	array(
+		'name'   => str_repeat( 'N', 80 ),
+		'type'   => 'eu',
+		'width'  => 520,
+		'height' => 110,
+	)
+);
+$long_copy = is_wp_error( $long ) ? $long : APD_Formats::duplicate( $long['id'] );
+$long_name = ( ! is_wp_error( $long_copy ) && isset( $long_copy['name'] ) ) ? (string) $long_copy['name'] : '';
+$long_len  = function_exists( 'mb_strlen' ) ? mb_strlen( $long_name, 'UTF-8' ) : strlen( $long_name );
+$long_tail = function_exists( 'mb_substr' ) ? mb_substr( $long_name, -mb_strlen( $suffix, 'UTF-8' ), null, 'UTF-8' ) : substr( $long_name, -strlen( $suffix ) );
+
+if (
+	is_wp_error( $long )
+	|| is_wp_error( $long_copy )
+	|| $long_len > 80
+	|| $long_len < 1
+	|| $suffix !== $long_tail
+) {
+	fwrite( STDERR, 'FORMAT_DUP_LONG_FAIL ' . wp_json_encode( is_wp_error( $long_copy ) ? $long_copy->get_error_message() : ( is_array( $long_copy ) ? $long_copy['name'] : '' ) ) . PHP_EOL );
+	if ( is_array( $long ) && isset( $long['id'] ) ) {
+		APD_Formats::delete( $long['id'] );
+	}
+	if ( is_array( $long_copy ) && isset( $long_copy['id'] ) ) {
+		APD_Formats::delete( $long_copy['id'] );
+	}
+	APD_Formats::delete( $source['id'] );
+	APD_Formats::delete( $copy['id'] );
+	exit( 1 );
+}
+
+APD_Formats::delete( $source['id'] );
+APD_Formats::delete( $copy['id'] );
+APD_Formats::delete( $long['id'] );
+APD_Formats::delete( $long_copy['id'] );
+
+echo 'FORMAT_DUP_OK' . PHP_EOL;
 echo 'ALL_OK' . PHP_EOL;

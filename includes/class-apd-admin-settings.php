@@ -202,7 +202,12 @@ final class APD_Admin_Settings {
 					'holder_moto' => APD_Formats::bundled_holder_image_url( 'holder_moto' ),
 					'holder_d'    => APD_Formats::bundled_holder_image_url( 'holder_d' ),
 				),
-				'paletteSlotTypes'  => array( 'color', 'custom', 'eu_plain', 'moto_plain', 'suv', 'us' ),
+				'paletteSlotTypes'  => array( 'color', 'custom', 'eu_plain', 'moto_plain', 'moto_plain_240', 'suv', 'us' ),
+				'holderPlateLabels' => array(
+					'holder'      => APD_Formats::format_size_label( array( 'type' => 'holder' ) ),
+					'holder_moto' => APD_Formats::format_size_label( array( 'type' => 'holder_moto' ) ),
+					'holder_d'    => APD_Formats::format_size_label( array( 'type' => 'holder_d' ) ),
+				),
 				'usImageLabel'      => __( 'Plate graphic', 'auto-plate-designer' ),
 				'usImageHelp'       => __( 'Upload the plate graphic, then drag the text area onto the number hole. Set the character limit above.', 'auto-plate-designer' ),
 				'holderStrip'       => APD_Formats::holder_strip_box(),
@@ -280,6 +285,11 @@ final class APD_Admin_Settings {
 
 		if ( isset( $_GET['apd_delete'], $_GET['apd_id'], $_GET['_wpnonce'] ) ) { // phpcs:ignore WordPress.Security.NonceVerification.Recommended
 			$this->handle_delete();
+			return;
+		}
+
+		if ( isset( $_GET['apd_duplicate'], $_GET['apd_id'], $_GET['_wpnonce'] ) ) { // phpcs:ignore WordPress.Security.NonceVerification.Recommended
+			$this->handle_duplicate();
 			return;
 		}
 
@@ -380,10 +390,6 @@ final class APD_Admin_Settings {
 			case 'save_limits':
 				$result = $this->save_limits_tab();
 				$tab    = 'limits';
-				break;
-			case 'save_catalog':
-				$result = $this->save_catalog_tab();
-				$tab    = 'catalog';
 				break;
 			default:
 				return;
@@ -524,14 +530,20 @@ final class APD_Admin_Settings {
 		echo '<option value="">' . esc_html__( 'Select a format', 'auto-plate-designer' ) . '</option>';
 
 		foreach ( $formats as $item ) {
+			$item_limits = APD_Formats::us_side_limits( $item );
 			printf(
-				'<option value="%1$s" data-apd-type="%2$s" data-apd-no-frame="%6$s" %3$s>%4$s (%5$s)</option>',
+				'<option value="%1$s" data-apd-type="%2$s" data-apd-rows="%11$s" data-apd-no-frame="%6$s" data-apd-split="%7$s" data-apd-photo="%8$s" data-apd-left="%9$s" data-apd-right="%10$s" %3$s>%4$s (%5$s)</option>',
 				esc_attr( $item['id'] ),
 				esc_attr( $item['type'] ),
 				selected( $format, $item['id'], false ),
 				esc_html( $item['name'] ),
 				esc_html( strtoupper( $item['type'] ) ),
-				! empty( $item['no_frame'] ) ? '1' : '0'
+				! empty( $item['no_frame'] ) ? '1' : '0',
+				! empty( $item['split_text'] ) ? '1' : '0',
+				! empty( $item['base_image_id'] ) ? '1' : '0',
+				esc_attr( (string) $item_limits[0] ),
+				esc_attr( (string) $item_limits[1] ),
+				APD_Formats::uses_two_rows( $item['type'] ) ? '1' : '0'
 			);
 		}
 
@@ -541,35 +553,21 @@ final class APD_Admin_Settings {
 		$selected_type   = is_array( $selected_format ) && isset( $selected_format['type'] ) ? (string) $selected_format['type'] : '';
 		$design_open     = 'us' === $selected_type;
 
-		echo '<p data-apd-product-design' . ( $design_open ? '' : ' hidden' ) . '><label for="apd_design_id">' . esc_html__( 'Plate design', 'auto-plate-designer' ) . '</label><br>';
-		echo '<select name="apd_design_id" id="apd_design_id" class="widefat"' . ( $design_open ? '' : ' disabled' ) . '>';
-		echo '<option value="">' . esc_html__( 'Select a design', 'auto-plate-designer' ) . '</option>';
+		$locked_design  = '' !== $design_id ? APD_Designs::get( $design_id ) : null;
+		$locked_limits  = is_array( $locked_design ) ? APD_Formats::us_side_limits( $locked_design ) : array( APD_Formats::US_SIDE_LEFT_MAX, APD_Formats::US_SIDE_RIGHT_MAX );
+		$locked_formats = ( is_array( $locked_design ) && isset( $locked_design['allowed_format_ids'] ) && is_array( $locked_design['allowed_format_ids'] ) )
+			? implode( ',', $locked_design['allowed_format_ids'] )
+			: '';
 
-		foreach ( APD_Designs::all() as $design_row ) {
-			if ( empty( $design_row['active'] ) || empty( $design_row['id'] ) ) {
-				continue;
-			}
-
-			$scope_ids = isset( $design_row['allowed_format_ids'] ) && is_array( $design_row['allowed_format_ids'] )
-				? $design_row['allowed_format_ids']
-				: array();
-			$label     = (string) $design_row['name'];
-
-			if ( ! empty( $design_row['code'] ) ) {
-				$label .= ' (' . $design_row['code'] . ')';
-			}
-
-			printf(
-				'<option value="%1$s" data-apd-formats="%2$s" %3$s>%4$s</option>',
-				esc_attr( (string) $design_row['id'] ),
-				esc_attr( implode( ',', $scope_ids ) ),
-				selected( $design_id, (string) $design_row['id'], false ),
-				esc_html( $label )
-			);
-		}
-
-		echo '</select>';
-		echo '<span class="description">' . esc_html__( 'This product shows only this graphic. Shoppers cannot switch to another state. The catalog photo is the product image. The plate on the product page is the picture uploaded with this design.', 'auto-plate-designer' ) . '</span></p>';
+		printf(
+			'<input type="hidden" name="apd_design_id" id="apd_design_id" data-apd-product-design value="%1$s" data-apd-formats="%2$s" data-apd-split="%3$s" data-apd-left="%4$s" data-apd-right="%5$s"%6$s>',
+			esc_attr( $design_id ),
+			esc_attr( $locked_formats ),
+			is_array( $locked_design ) && ! empty( $locked_design['split_text'] ) ? '1' : '0',
+			esc_attr( (string) $locked_limits[0] ),
+			esc_attr( (string) $locked_limits[1] ),
+			$design_open ? '' : ' disabled'
+		);
 
 		if ( empty( $formats ) ) {
 			echo '<p class="description">' . esc_html__( 'Add formats under WooCommerce → Auto Plate Designer first.', 'auto-plate-designer' ) . '</p>';
@@ -578,10 +576,27 @@ final class APD_Admin_Settings {
 		$suv_default     = APD_Formats::uses_two_rows( $selected_type );
 		$suv_rows        = APD_Formats::suv_plate_rows( $default_text );
 		$single_text     = str_replace( array( "\r\n", "\r", "\n" ), ' ', $default_text );
+		$side_limits     = ( is_array( $selected_format ) && 'us' === $selected_type )
+			? APD_Formats::active_us_side_limits( APD_Formats::frontend_payload( $selected_format ), $design_id )
+			: null;
+		$sides_default   = is_array( $side_limits );
+		$side_source     = str_replace( array( "\r\n", "\r" ), "\n", $default_text );
+		$side_parts      = false !== strpos( $side_source, "\n" ) ? explode( "\n", $side_source, 2 ) : array( $default_text, '' );
+		$side_left_max   = $sides_default ? (int) $side_limits[0] : APD_Formats::US_SIDE_LEFT_MAX;
+		$side_right_max  = $sides_default ? (int) $side_limits[1] : APD_Formats::US_SIDE_RIGHT_MAX;
+		$single_open     = ! $suv_default && ! $sides_default;
 
-		echo '<p data-apd-default-single' . ( $suv_default ? ' hidden' : '' ) . '><label for="apd_default_text">' . esc_html__( 'Initial plate text', 'auto-plate-designer' ) . '</label><br>';
-		echo '<input type="text" class="widefat" id="apd_default_text" name="apd_default_text" value="' . esc_attr( $single_text ) . '" maxlength="32" autocomplete="off"' . ( $suv_default ? ' disabled' : '' ) . '>';
+		echo '<p data-apd-default-single' . ( $single_open ? '' : ' hidden' ) . '><label for="apd_default_text">' . esc_html__( 'Initial plate text', 'auto-plate-designer' ) . '</label><br>';
+		echo '<input type="text" class="widefat" id="apd_default_text" name="apd_default_text" value="' . esc_attr( $single_text ) . '" maxlength="32" autocomplete="off"' . ( $single_open ? '' : ' disabled' ) . '>';
 		echo '</p>';
+		echo '<div class="apd-default-sides" data-apd-default-sides' . ( $sides_default ? '' : ' hidden' ) . '>';
+		echo '<p><label for="apd_default_text_left">' . esc_html__( 'Left text', 'auto-plate-designer' ) . '</label><br>';
+		echo '<input type="text" class="widefat" id="apd_default_text_left" name="apd_default_text_left" value="' . esc_attr( $side_parts[0] ) . '" maxlength="' . esc_attr( (string) $side_left_max ) . '" autocomplete="off"' . ( $sides_default ? '' : ' disabled' ) . '>';
+		echo '</p>';
+		echo '<p><label for="apd_default_text_right">' . esc_html__( 'Right text', 'auto-plate-designer' ) . '</label><br>';
+		echo '<input type="text" class="widefat" id="apd_default_text_right" name="apd_default_text_right" value="' . esc_attr( isset( $side_parts[1] ) ? $side_parts[1] : '' ) . '" maxlength="' . esc_attr( (string) $side_right_max ) . '" autocomplete="off"' . ( $sides_default ? '' : ' disabled' ) . '>';
+		echo '</p>';
+		echo '</div>';
 		echo '<div class="apd-default-rows" data-apd-default-rows' . ( $suv_default ? '' : ' hidden' ) . '>';
 		echo '<p><label for="apd_default_text_row_1">' . esc_html__( 'First row', 'auto-plate-designer' ) . '</label><br>';
 		echo '<input type="text" class="widefat" id="apd_default_text_row_1" name="apd_default_text_row_1" value="' . esc_attr( $suv_rows[0] ) . '" maxlength="32" autocomplete="off"' . ( $suv_default ? '' : ' disabled' ) . '>';
@@ -694,6 +709,10 @@ final class APD_Admin_Settings {
 			: ( is_array( $format_row ) && isset( $format_row['max_chars'] ) ? (int) $format_row['max_chars'] : 12 );
 		$text_limit  = $max_chars > 0 ? $max_chars : 12;
 
+		$side_limits = ( is_array( $format_row ) && 'us' === $format_type )
+			? APD_Formats::active_us_side_limits( APD_Formats::frontend_payload( $format_row ), $design_id )
+			: null;
+
 		if ( APD_Formats::uses_two_rows( $format_type ) ) {
 			$row_limits = APD_Formats::suv_row_limits( is_array( $format_row ) ? $format_row : array( 'type' => $format_type ) );
 			$row1       = isset( $_POST['apd_default_text_row_1'] ) ? (string) wp_unslash( $_POST['apd_default_text_row_1'] ) : ''; // phpcs:ignore WordPress.Security.ValidatedSanitizedInput.InputNotSanitized
@@ -701,6 +720,12 @@ final class APD_Admin_Settings {
 			$clean_text = APD_Formats::limit_suv_rows( $row1, $row2, $row_limits[0], $row_limits[1] );
 			$multiline  = true;
 			$text_limit = $row_limits[0] + $row_limits[1] + ( false !== strpos( $clean_text, "\n" ) ? 1 : 0 );
+		} elseif ( is_array( $side_limits ) ) {
+			$side_left  = isset( $_POST['apd_default_text_left'] ) ? (string) wp_unslash( $_POST['apd_default_text_left'] ) : ''; // phpcs:ignore WordPress.Security.ValidatedSanitizedInput.InputNotSanitized
+			$side_right = isset( $_POST['apd_default_text_right'] ) ? (string) wp_unslash( $_POST['apd_default_text_right'] ) : ''; // phpcs:ignore WordPress.Security.ValidatedSanitizedInput.InputNotSanitized
+			$clean_text = APD_Formats::limit_suv_rows( $side_left, $side_right, $side_limits[0], $side_limits[1] );
+			$multiline  = true;
+			$text_limit = $side_limits[0] + $side_limits[1] + ( false !== strpos( $clean_text, "\n" ) ? 1 : 0 );
 		} else {
 			$posted_text = isset( $_POST['apd_default_text'] ) ? (string) wp_unslash( $_POST['apd_default_text'] ) : ''; // phpcs:ignore WordPress.Security.ValidatedSanitizedInput.InputNotSanitized
 			$clean_text  = APD_Security::sanitize_plate_text( $posted_text, $multiline );
@@ -722,9 +747,6 @@ final class APD_Admin_Settings {
 		);
 		update_post_meta( $product_id, self::META_DEFAULT_TEXT, is_wp_error( $text_ok ) ? '' : $clean_text );
 
-		if ( 'yes' === $enabled && is_array( $format_row ) && isset( $format_row['type'] ) ) {
-			APD_Catalog::maybe_assign_product_term( $product_id, $format_row['type'] );
-		}
 	}
 
 	/**
@@ -1050,7 +1072,6 @@ final class APD_Admin_Settings {
 	private function tabs() {
 		return array(
 			'formats' => __( 'Formats', 'auto-plate-designer' ),
-			'catalog' => __( 'Catalog', 'auto-plate-designer' ),
 			'presets' => __( 'Country presets', 'auto-plate-designer' ),
 			'designs' => __( 'USA designs', 'auto-plate-designer' ),
 			'palette' => __( 'Color palette', 'auto-plate-designer' ),
@@ -1084,6 +1105,27 @@ final class APD_Admin_Settings {
 				'tab'  => $tab,
 			),
 			admin_url( 'admin.php' )
+		);
+	}
+
+	/**
+	 * Duplicate URL with nonce.
+	 *
+	 * @param string $id Format ID.
+	 * @return string
+	 */
+	public function duplicate_url( $id ) {
+		return wp_nonce_url(
+			add_query_arg(
+				array(
+					'page'          => self::PAGE_SLUG,
+					'tab'           => 'formats',
+					'apd_duplicate' => 'formats',
+					'apd_id'        => $id,
+				),
+				admin_url( 'admin.php' )
+			),
+			'apd_duplicate_formats_' . $id
 		);
 	}
 
@@ -1173,6 +1215,33 @@ final class APD_Admin_Settings {
 	}
 
 	/**
+	 * Handle a signed request to copy one format.
+	 */
+	private function handle_duplicate() {
+		$cap = APD_Security::require_capability();
+
+		if ( is_wp_error( $cap ) ) {
+			wp_die( esc_html( $cap->get_error_message() ), '', array( 'response' => 403 ) );
+		}
+
+		$id    = isset( $_GET['apd_id'] ) ? sanitize_text_field( wp_unslash( $_GET['apd_id'] ) ) : ''; // phpcs:ignore WordPress.Security.NonceVerification.Recommended
+		$nonce = isset( $_GET['_wpnonce'] ) ? sanitize_text_field( wp_unslash( $_GET['_wpnonce'] ) ) : ''; // phpcs:ignore WordPress.Security.NonceVerification.Recommended
+		$check = APD_Security::verify_nonce( $nonce, 'apd_duplicate_formats_' . $id );
+
+		if ( is_wp_error( $check ) ) {
+			wp_die( esc_html( $check->get_error_message() ), '', array( 'response' => 403 ) );
+		}
+
+		$result = APD_Formats::duplicate( $id );
+
+		if ( is_wp_error( $result ) ) {
+			$this->redirect( 'formats', 'error', $result->get_error_message() );
+		}
+
+		$this->redirect( 'formats', 'updated', __( 'Format duplicated.', 'auto-plate-designer' ) );
+	}
+
+	/**
 	 * Handle signed delete requests.
 	 */
 	private function handle_delete() {
@@ -1245,8 +1314,35 @@ final class APD_Admin_Settings {
 			return $family_check;
 		}
 
+		$settings    = APD_Plugin::get_settings();
+		$id          = isset( $posted['id'] ) ? sanitize_text_field( (string) $posted['id'] ) : '';
+		$existing    = null;
+		$found_index = null;
+
+		if ( '' !== $id ) {
+			foreach ( $settings['fonts'] as $index => $font ) {
+				if ( isset( $font['id'] ) && $font['id'] === $id ) {
+					$existing    = $font;
+					$found_index = $index;
+					break;
+				}
+			}
+
+			if ( null === $existing ) {
+				return new WP_Error(
+					'apd_font_missing',
+					__( 'Font was not found.', 'auto-plate-designer' )
+				);
+			}
+		}
+
 		$attachment_id = isset( $posted['attachment_id'] ) ? absint( $posted['attachment_id'] ) : 0;
-		$font_check    = APD_Security::validate_attachment(
+
+		if ( 0 === $attachment_id && is_array( $existing ) ) {
+			$attachment_id = isset( $existing['attachment_id'] ) ? absint( $existing['attachment_id'] ) : 0;
+		}
+
+		$font_check = APD_Security::validate_attachment(
 			$attachment_id,
 			array(
 				'allow_font' => true,
@@ -1259,14 +1355,19 @@ final class APD_Admin_Settings {
 			return $font_check;
 		}
 
-		$weight = isset( $posted['weight'] ) ? absint( $posted['weight'] ) : 400;
+		$note = isset( $posted['note'] ) ? trim( (string) $posted['note'] ) : '';
 
-		if ( $weight < 100 || $weight > 900 ) {
-			$weight = 400;
+		if ( '' !== $note ) {
+			$note_check = APD_Security::validate_admin_label( $note, 40 );
+
+			if ( is_wp_error( $note_check ) ) {
+				return $note_check;
+			}
+
+			$note = APD_Security::sanitize_admin_label( $note );
 		}
 
 		$style = isset( $posted['style'] ) && 'italic' === $posted['style'] ? 'italic' : 'normal';
-		$id    = isset( $posted['id'] ) ? sanitize_text_field( (string) $posted['id'] ) : '';
 
 		if ( '' === $id ) {
 			$id = APD_Plugin::new_id();
@@ -1275,23 +1376,15 @@ final class APD_Admin_Settings {
 		$font = array(
 			'id'            => $id,
 			'family'        => APD_Security::sanitize_admin_label( (string) $posted['family'] ),
+			'note'          => $note,
 			'attachment_id' => $attachment_id,
-			'weight'        => $weight,
+			'weight'        => 400,
 			'style'         => $style,
 		);
 
-		$settings = APD_Plugin::get_settings();
-		$found    = false;
-
-		foreach ( $settings['fonts'] as $index => $existing ) {
-			if ( isset( $existing['id'] ) && $existing['id'] === $id ) {
-				$settings['fonts'][ $index ] = $font;
-				$found                       = true;
-				break;
-			}
-		}
-
-		if ( ! $found ) {
+		if ( null !== $found_index ) {
+			$settings['fonts'][ $found_index ] = $font;
+		} else {
 			$settings['fonts'][] = $font;
 			$settings['formats'] = APD_Formats::grant_font_to_following_formats(
 				isset( $settings['formats'] ) && is_array( $settings['formats'] ) ? $settings['formats'] : array(),
@@ -1417,24 +1510,6 @@ final class APD_Admin_Settings {
 
 			$settings['char_whitelist'] = $whitelist;
 		}
-
-		APD_Plugin::save_settings( $settings );
-
-		return true;
-	}
-
-	/**
-	 * Save which catalog categories are published.
-	 *
-	 * @return true|WP_Error
-	 */
-	private function save_catalog_tab() {
-		$posted   = $this->unslash_array( isset( $_POST['apd_catalog'] ) ? $_POST['apd_catalog'] : array() );
-		$settings = APD_Plugin::get_settings();
-
-		$settings['catalog']['published'] = APD_Catalog::sanitize_published(
-			isset( $posted['published'] ) ? $posted['published'] : array()
-		);
 
 		APD_Plugin::save_settings( $settings );
 

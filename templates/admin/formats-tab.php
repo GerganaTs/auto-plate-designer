@@ -132,11 +132,13 @@ $details_hidden  = $has_type ? '' : ' hidden';
 					<tr>
 						<td><?php echo esc_html( $format['name'] ); ?></td>
 						<td><?php echo esc_html( APD_Formats::type_label( $format['type'] ) ); ?></td>
-						<td><?php echo esc_html( (int) $format['width'] . ' x ' . (int) $format['height'] ); ?></td>
+						<td><?php echo esc_html( APD_Formats::format_size_label( $format ) ); ?></td>
 						<td><?php echo esc_html( APD_Formats::max_chars_label( $format ) ); ?></td>
 						<td><?php echo esc_html( (string) $format['price_adjustment'] ); ?></td>
 						<td>
 							<a href="<?php echo esc_url( add_query_arg( 'edit', $format['id'], $apd_admin->tab_url( 'formats' ) ) ); ?>"><?php esc_html_e( 'Edit', 'auto-plate-designer' ); ?></a>
+							|
+							<a href="<?php echo esc_url( $apd_admin->duplicate_url( $format['id'] ) ); ?>"><?php esc_html_e( 'Duplicate', 'auto-plate-designer' ); ?></a>
 							|
 							<a href="<?php echo esc_url( add_query_arg( 'apd_format', $format['id'], $new_product_url ) ); ?>"><?php esc_html_e( 'Create product', 'auto-plate-designer' ); ?></a>
 							|
@@ -179,6 +181,7 @@ $details_hidden  = $has_type ? '' : ' hidden';
 							<option value="<?php echo esc_attr( $type_slug ); ?>" <?php selected( $format_type, $type_slug ); ?>><?php echo esc_html( APD_Formats::type_label( $type_slug ) ); ?></option>
 						<?php endforeach; ?>
 					</select>
+					<p class="description" data-apd-holder-plate<?php echo ( $has_type && APD_Formats::is_holder( $format_type ) ) ? '' : ' hidden'; ?>><?php echo ( $has_type && APD_Formats::is_holder( $format_type ) ) ? esc_html( APD_Formats::format_size_label( array( 'type' => $format_type ) ) ) : ''; ?></p>
 				</td>
 			</tr>
 			<tr class="apd-canvas-fields" data-apd-format-details<?php echo ( $has_type && ! APD_Formats::is_holder( $format_type ) ) ? '' : ' hidden'; ?>>
@@ -211,12 +214,19 @@ $details_hidden  = $has_type ? '' : ' hidden';
 				)
 			);
 			$show_us_split   = $has_type && 'us' === $format_type && ! empty( $editing['split_text'] );
-			$show_single_max = $has_type && ! $show_suv_rows && ! APD_Formats::is_holder( $format_type ) && ! $show_us_split;
+			$show_single_max  = $has_type && ! $show_suv_rows && ! $show_us_split;
+			$max_field_value  = (string) $editing['max_chars'];
+			$holder_max_attr  = '';
+			if ( APD_Formats::is_holder( $format_type ) && empty( $editing['holder_max_set'] ) ) {
+				$max_field_value = '';
+			} elseif ( APD_Formats::is_holder( $format_type ) ) {
+				$holder_max_attr = ' data-apd-holder-max="1"';
+			}
 			?>
 			<tr data-apd-format-details data-apd-max-single<?php echo $show_single_max ? '' : ' hidden'; // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped ?>>
 				<th><label for="apd_format_max_chars"><?php esc_html_e( 'Maximum characters', 'auto-plate-designer' ); ?></label></th>
 				<td>
-					<input type="number" id="apd_format_max_chars" name="apd_format[max_chars]" min="1" max="<?php echo esc_attr( (string) APD_Security::ABSOLUTE_MAX_CHARS ); ?>" value="<?php echo esc_attr( (string) $editing['max_chars'] ); ?>"<?php echo $show_suv_rows ? ' disabled' : ''; ?>>
+					<input type="number" id="apd_format_max_chars" name="apd_format[max_chars]" min="1" max="<?php echo esc_attr( (string) APD_Security::ABSOLUTE_MAX_CHARS ); ?>" value="<?php echo esc_attr( $max_field_value ); ?>"<?php echo $show_suv_rows ? ' disabled' : ''; ?><?php echo $holder_max_attr; // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped ?>>
 				</td>
 			</tr>
 			<tr data-apd-format-details data-apd-wrap<?php echo ( $has_type && APD_Formats::is_street_plate( $format_type ) ) ? '' : ' hidden'; // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped ?>>
@@ -254,7 +264,13 @@ $details_hidden  = $has_type ? '' : ' hidden';
 						<?php foreach ( $fonts as $font ) : ?>
 							<label class="apd-choice">
 								<input type="checkbox" name="apd_format[font_ids][]" value="<?php echo esc_attr( $font['id'] ); ?>" <?php checked( ! empty( $editing['font_ids_all'] ) || in_array( (string) $font['id'], $editing['font_ids'], true ) ); ?>>
-								<?php echo esc_html( $font['family'] . ' (' . $font['weight'] . ')' ); ?>
+								<?php
+								$font_label = APD_Formats::font_shop_label( $font );
+								if ( isset( $font['style'] ) && 'italic' === $font['style'] ) {
+									$font_label .= ' (' . __( 'Italic', 'auto-plate-designer' ) . ')';
+								}
+								echo esc_html( $font_label );
+								?>
 							</label>
 						<?php endforeach; ?>
 						</div>

@@ -32,7 +32,7 @@ $restore        = isset( $apd_payload['cart_restore'] ) && is_array( $apd_payloa
 if ( isset( $restore['text'] ) && '' !== (string) $restore['text'] ) {
 	$default_text = (string) $restore['text'];
 }
-$default_font   = ! empty( $fonts ) ? $fonts[0]['id'] : '';
+$default_font   = APD_Formats::default_font_id( $fonts, $type );
 if ( ! empty( $restore['font_id'] ) ) {
 	$default_font = (string) $restore['font_id'];
 }
@@ -114,6 +114,15 @@ $apd_swatches = static function ( $label, $name, $colors, $current ) {
 	</div>
 
 	<div class="apd-fields">
+		<?php if ( $show_strip ) : ?>
+			<p class="form-row form-row-wide apd-field">
+				<label class="apd-choice">
+					<input type="checkbox" name="apd_plain" value="1" data-apd-plain>
+					<?php esc_html_e( 'I do not want personalization', 'auto-plate-designer' ); ?>
+				</label>
+			</p>
+		<?php endif; ?>
+		<div data-apd-personal>
 		<?php if ( APD_Formats::uses_two_rows( $type ) ) : ?>
 			<?php
 			$suv_rows = APD_Formats::suv_plate_rows( $default_text );
@@ -130,6 +139,7 @@ $apd_swatches = static function ( $label, $name, $colors, $current ) {
 			<div class="apd-row-fields">
 				<p class="form-row form-row-wide apd-field">
 					<label for="apd_text_row_1"><?php esc_html_e( 'First row', 'auto-plate-designer' ); ?></label>
+					<span class="apd-font-hint"><?php esc_html_e( 'Allowed characters are digits, letters, "-", ".", "@", "!" and "?".', 'auto-plate-designer' ); ?></span>
 					<input type="text" class="input-text" id="apd_text_row_1" name="apd_text_row_1" data-apd-plate-row value="<?php echo esc_attr( $suv_rows[0] ); ?>" maxlength="<?php echo esc_attr( (string) $row1_max ); ?>" autocomplete="off">
 					<span class="apd-count" data-apd-count data-apd-row-index="0"></span>
 				</p>
@@ -160,6 +170,7 @@ $apd_swatches = static function ( $label, $name, $colors, $current ) {
 			<div class="apd-side-fields">
 				<p class="form-row form-row-wide apd-field">
 					<label for="apd_text_left"><?php esc_html_e( 'Left text', 'auto-plate-designer' ); ?></label>
+					<span class="apd-font-hint"><?php esc_html_e( 'Allowed characters are digits, letters, "-", ".", "@", "!" and "?".', 'auto-plate-designer' ); ?></span>
 					<input type="text" class="input-text" id="apd_text_left" name="apd_text_left" data-apd-plate-side value="<?php echo esc_attr( $side_left ); ?>" maxlength="<?php echo esc_attr( (string) $side_left_max ); ?>" autocomplete="off">
 					<span class="apd-count" data-apd-count></span>
 				</p>
@@ -173,6 +184,7 @@ $apd_swatches = static function ( $label, $name, $colors, $current ) {
 		<?php else : ?>
 			<p class="form-row form-row-wide apd-field">
 				<label for="apd_text"><?php echo esc_html( $i18n['textLabel'] ); ?></label>
+				<span class="apd-font-hint"><?php esc_html_e( 'Allowed characters are digits, letters, "-", ".", "@", "!" and "?".', 'auto-plate-designer' ); ?></span>
 				<?php if ( $multiline ) : ?>
 					<textarea class="input-text" id="apd_text" name="apd_text" rows="3" maxlength="<?php echo esc_attr( (string) $max ); ?>"><?php echo esc_textarea( $default_text ); ?></textarea>
 				<?php else : ?>
@@ -185,9 +197,10 @@ $apd_swatches = static function ( $label, $name, $colors, $current ) {
 		<?php if ( count( $fonts ) > 1 ) : ?>
 			<p class="form-row form-row-wide apd-field">
 				<label for="apd_font_id"><?php echo esc_html( $i18n['fontLabel'] ); ?></label>
+				<span class="apd-font-hint"><?php esc_html_e( 'For a perfect look, choose a font that matches the plate style and the language of your text (Latin or Cyrillic).', 'auto-plate-designer' ); ?></span>
 				<select id="apd_font_id" name="apd_font_id">
 					<?php foreach ( $fonts as $font ) : ?>
-						<option value="<?php echo esc_attr( $font['id'] ); ?>" <?php selected( $font['id'], $default_font ); ?>><?php echo esc_html( $font['family'] ); ?></option>
+						<option value="<?php echo esc_attr( $font['id'] ); ?>" <?php selected( $font['id'], $default_font ); ?>><?php echo esc_html( APD_Formats::font_shop_label( $font ) ); ?></option>
 					<?php endforeach; ?>
 				</select>
 			</p>
@@ -297,7 +310,7 @@ $apd_swatches = static function ( $label, $name, $colors, $current ) {
 		}
 
 		if ( $show_strip ) {
-			$strip_label = isset( $i18n['stripColor'] ) ? $i18n['stripColor'] : __( 'White strip color', 'auto-plate-designer' );
+			$strip_label = isset( $i18n['stripColor'] ) ? $i18n['stripColor'] : __( 'Strip color', 'auto-plate-designer' );
 			$text_label  = isset( $i18n['holderTextColor'] ) ? $i18n['holderTextColor'] : __( 'Holder inscription', 'auto-plate-designer' );
 
 			if ( ! empty( $apd_plate_colors ) ) {
@@ -309,5 +322,45 @@ $apd_swatches = static function ( $label, $name, $colors, $current ) {
 			}
 		}
 		?>
+		</div>
 	</div>
 </div>
+<script>
+(function () {
+	var root = document.querySelector('[data-apd-root]');
+	var preview = root ? root.querySelector('.apd-preview') : null;
+	if (!preview || document.querySelector('.apd-product-layout')) {
+		return;
+	}
+	var layout = document.createElement('div');
+	var left = document.createElement('div');
+	var right = document.createElement('div');
+	layout.className = 'apd-product-layout alignwide';
+	left.className = 'apd-product-layout__preview';
+	right.className = 'apd-product-layout__details';
+	left.appendChild(preview);
+	layout.appendChild(left);
+	layout.appendChild(right);
+	var columns = document.querySelector('.wp-block-columns');
+	if (columns && columns.parentNode) {
+		columns.parentNode.insertBefore(layout, columns);
+		var title = document.querySelector('.wp-block-post-title, h1.product_title, .product_title.entry-title');
+		if (title && !columns.contains(title) && !right.contains(title)) {
+			right.appendChild(title);
+		}
+		right.appendChild(columns);
+		return;
+	}
+	var summary = document.querySelector('div.product div.summary, div.product .entry-summary');
+	if (summary && summary.parentNode) {
+		summary.parentNode.insertBefore(layout, summary);
+		right.appendChild(summary);
+		return;
+	}
+	var heading = document.querySelector('.wp-block-post-title, h1.product_title, .product_title.entry-title');
+	if (heading && heading.parentNode) {
+		heading.parentNode.insertBefore(layout, heading);
+		right.appendChild(heading);
+	}
+})();
+</script>

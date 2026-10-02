@@ -75,6 +75,13 @@ function apd_is_error( $result ) {
 
 apd_assert( true === APD_Security::validate_plate_text( 'PB1234CD' ), 'Accepts plain Latin plate text' );
 apd_assert( true === APD_Security::validate_plate_text( 'CA-12.34' ), 'Accepts hyphen and period' );
+apd_assert( true === APD_Security::validate_plate_text( 'A@1' ), 'Accepts at sign' );
+apd_assert( true === APD_Security::validate_plate_text( 'CA!' ), 'Accepts exclamation mark' );
+apd_assert( true === APD_Security::validate_plate_text( 'CA?' ), 'Accepts question mark' );
+apd_assert( 'A-Za-z0-9\s\-\.@!?' === APD_Security::ensure_plate_punctuation( 'A-Za-z0-9\s\-\.@' ), 'Older whitelist gains exclamation and question marks' );
+apd_assert( true === APD_Security::validate_admin_char_class( 'A-Za-z0-9 \.\-@!?' ), 'Question mark is a literal inside the class' );
+apd_assert( 'CA@1' === APD_Security::uppercase_plate_text( 'ca@1' ), 'Uppercases Latin letters and keeps the at sign' );
+apd_assert( "\u{0410}\u{0411}\u{0412}" === APD_Security::uppercase_plate_text( "\u{0430}\u{0431}\u{0432}" ), 'Uppercases Cyrillic letters' );
 apd_assert( true === APD_Security::validate_plate_text( "MUN\u{00DC}CHEN" ), 'Accepts Latin Extended letters' );
 apd_assert( true === APD_Security::validate_plate_text( "\u{0411}\u{0413}1234" ), 'Accepts Cyrillic letters via code points' );
 
@@ -83,6 +90,9 @@ apd_assert( apd_is_error( APD_Security::validate_plate_text( 'PB1234<img src=x o
 apd_assert( apd_is_error( APD_Security::validate_plate_text( "'; DROP TABLE wp_posts;--" ) ), 'Rejects SQL-like punctuation' );
 apd_assert( apd_is_error( APD_Security::validate_plate_text( '[gallery]' ) ), 'Rejects shortcode brackets' );
 apd_assert( apd_is_error( APD_Security::validate_plate_text( '' ) ), 'Rejects empty text by default' );
+apd_assert( true === APD_Security::validate_plate_text( '', array( 'allow_empty' => true ) ), 'Accepts empty plate text when the shopper may leave it blank' );
+apd_assert( '' === APD_Formats::join_suv_rows( '', '   ' ), 'Two blank rows join to an empty plate' );
+apd_assert( true === APD_Security::validate_plate_text( APD_Formats::join_suv_rows( '', '' ), array( 'allow_empty' => true, 'multiline' => true ) ), 'Accepts a two-row plate with both rows empty' );
 apd_assert( apd_is_error( APD_Security::validate_plate_text( str_repeat( 'A', 501 ) ) ), 'Rejects text over the absolute max length' );
 apd_assert( apd_is_error( APD_Security::validate_plate_text( "LINE1\nLINE2" ) ), 'Rejects newlines in single-line mode' );
 apd_assert( true === APD_Security::validate_plate_text( "LINE1\nLINE2", array( 'multiline' => true ) ), 'Accepts newlines in multiline mode' );
@@ -113,6 +123,8 @@ apd_assert( true === APD_Security::validate_format_type( 'eu_plain' ), 'Accepts 
 apd_assert( true === APD_Security::validate_format_type( 'color' ), 'Accepts color format type' );
 apd_assert( true === APD_Security::validate_format_type( 'moto' ), 'Accepts motorcycle format type' );
 apd_assert( true === APD_Security::validate_format_type( 'moto_plain' ), 'Accepts motorcycle without preset' );
+apd_assert( true === APD_Security::validate_format_type( 'moto_240' ), 'Accepts 240x130 motorcycle with a euroband' );
+apd_assert( true === APD_Security::validate_format_type( 'moto_plain_240' ), 'Accepts 240x130 motorcycle without a country band' );
 apd_assert( true === APD_Security::validate_format_type( 'suv' ), 'Accepts SUV format type' );
 apd_assert( true === APD_Security::validate_format_type( 'suv_eu' ), 'Accepts EU SUV format type' );
 apd_assert( apd_is_error( APD_Security::validate_format_type( 'custom_52' ) ), 'Rejects removed 52x11 type' );
@@ -212,6 +224,21 @@ apd_assert( true === $svg_allowed, 'Allows SVG when opted in after sanitization 
 @unlink( $tmp_png ); // phpcs:ignore WordPress.PHP.NoSilencedErrors.Discouraged
 @unlink( $tmp_php ); // phpcs:ignore WordPress.PHP.NoSilencedErrors.Discouraged
 @unlink( $tmp_svg ); // phpcs:ignore WordPress.PHP.NoSilencedErrors.Discouraged
+
+$settings_action = 'apd_save_settings';
+$fresh_nonce     = APD_Security::create_nonce( $settings_action );
+apd_assert( true === APD_Security::verify_nonce( $fresh_nonce, $settings_action ), 'Accepts a fresh settings nonce' );
+apd_assert( apd_is_error( APD_Security::verify_nonce( 'not-a-nonce', $settings_action ) ), 'Rejects a bad settings nonce' );
+
+$nonce_uid = (int) get_current_user_id();
+if ( ! $nonce_uid ) {
+	$nonce_uid = (int) apply_filters( 'nonce_user_logged_out', $nonce_uid, $settings_action );
+}
+$nonce_tick = ( new ReflectionFunction( 'wp_nonce_tick' ) )->getNumberOfParameters() > 0
+	? wp_nonce_tick( $settings_action )
+	: wp_nonce_tick();
+$aged_nonce = substr( wp_hash( ( $nonce_tick - 1 ) . '|' . $settings_action . '|' . $nonce_uid . '|' . wp_get_session_token(), 'nonce' ), -12, 10 );
+apd_assert( true === APD_Security::verify_nonce( $aged_nonce, $settings_action ), 'Accepts a settings nonce from the previous 12-hour window' );
 
 echo "\n{$passed} passed, {$failed} failed\n";
 

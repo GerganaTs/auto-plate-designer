@@ -70,7 +70,7 @@ $i18n = array(
 	'textColor'     => 'Text color',
 	'borderColor'   => 'Border color',
 	'plateColor'    => 'Plate color',
-	'stripColor'    => 'White strip color',
+	'stripColor'    => 'Strip color',
 	'holderColor'   => 'Holder color',
 	'frameLabel'    => 'Frame',
 	'chars'         => '%1$s / %2$s characters',
@@ -96,6 +96,12 @@ $palettes = array(
 );
 
 $payload = APD_Formats::frontend_payload( $format );
+
+if ( empty( $payload['allow_empty'] ) ) {
+	fwrite( STDERR, "SHOP_EMPTY_TEXT_FAIL\n" );
+	exit( 1 );
+}
+
 $payload['fonts']   = array();
 $payload['presets'] = array();
 $payload['designs'] = array();
@@ -120,6 +126,11 @@ if ( false === strpos( $html, 'name="apd_frame"' ) || false === strpos( $html, '
 
 if ( false === strpos( $html, 'CA 0909 BX' ) ) {
 	fwrite( STDERR, "SHOP_DEFAULT_TEXT_FAIL\n" );
+	exit( 1 );
+}
+
+if ( false === strpos( $html, 'apd-product-layout__preview' ) || false === strpos( $html, 'apd-product-layout__details' ) ) {
+	fwrite( STDERR, "SHOP_LAYOUT_HOIST_FAIL\n" );
 	exit( 1 );
 }
 
@@ -351,6 +362,88 @@ if ( false === strpos( $moto_html, 'name="apd_text_row_1"' ) || false === strpos
 	exit( 1 );
 }
 
+$plain_format = APD_Formats::sanitize(
+	array(
+		'id'     => 'ui-moto-plain',
+		'name'   => 'Moto plain UI',
+		'type'   => 'moto_plain',
+	)
+);
+if ( is_wp_error( $plain_format ) ) {
+	fwrite( STDERR, 'MOTO_PLAIN_FORMAT_ERR ' . $plain_format->get_error_message() . PHP_EOL );
+	exit( 1 );
+}
+$plain_ui = APD_Formats::frontend_payload( $plain_format );
+$plain_ui['fonts']   = array();
+$plain_ui['presets'] = array();
+$plain_ui['designs'] = array();
+$apd_payload = array(
+	'format'       => $plain_ui,
+	'palettes'     => $palettes,
+	'i18n'         => $i18n,
+	'color_fields' => array( 'text', 'border', 'background' ),
+	'layouts'      => array( 'text_only' ),
+	'minFont'      => 12,
+	'default_text' => "CA\n1234",
+);
+unset( $apd_payload['cart_restore'] );
+ob_start();
+include APD_PLUGIN_DIR . 'templates/product-configurator.php';
+$plain_html = ob_get_clean();
+
+if ( empty( $plain_ui['capabilities']['two_row'] ) || false === strpos( $plain_html, 'name="apd_text_row_1"' ) || false === strpos( $plain_html, 'name="apd_text_row_2"' ) || false === strpos( $plain_html, 'value="CA"' ) || false === strpos( $plain_html, 'value="1234"' ) || false === strpos( $plain_html, 'maxlength="5"' ) || false === strpos( $plain_html, 'maxlength="4"' ) || false === strpos( $plain_html, 'class="apd-row-fields"' ) || false !== strpos( $plain_html, 'id="apd_text" name="apd_text" value="CA 1234"' ) ) {
+	fwrite( STDERR, "SHOP_MOTO_PLAIN_ROWS_FAIL\n" );
+	exit( 1 );
+}
+
+foreach ( array( 'moto_240', 'moto_plain_240' ) as $wide_type ) {
+	$wide_format = APD_Formats::sanitize(
+		array(
+			'id'   => 'ui-' . str_replace( '_', '-', $wide_type ),
+			'name' => 'Wide ' . str_replace( '_', ' ', $wide_type ),
+			'type' => $wide_type,
+		)
+	);
+	if ( is_wp_error( $wide_format ) || 240 !== (int) $wide_format['width'] || 130 !== (int) $wide_format['height'] ) {
+		fwrite( STDERR, "SHOP_MOTO_240_FORMAT_FAIL {$wide_type}\n" );
+		exit( 1 );
+	}
+	$wide_ui = APD_Formats::frontend_payload( $wide_format );
+	$wide_ui['fonts']   = array();
+	$wide_ui['presets'] = array();
+	$wide_ui['designs'] = array();
+	$apd_payload = array(
+		'format'       => $wide_ui,
+		'palettes'     => $palettes,
+		'i18n'         => $i18n,
+		'color_fields' => array( 'text', 'border', 'background' ),
+		'layouts'      => array( 'text_only' ),
+		'minFont'      => 12,
+		'default_text' => "CA\n1234",
+	);
+	unset( $apd_payload['cart_restore'] );
+	ob_start();
+	include APD_PLUGIN_DIR . 'templates/product-configurator.php';
+	$wide_html = ob_get_clean();
+	$expects_band = ( 'moto_240' === $wide_type );
+	if (
+		empty( $wide_ui['capabilities']['two_row'] )
+		|| empty( $wide_ui['allow_empty'] )
+		|| $expects_band !== ! empty( $wide_ui['capabilities']['country_band'] )
+		|| false === strpos( $wide_html, 'name="apd_text_row_1"' )
+		|| false === strpos( $wide_html, 'name="apd_text_row_2"' )
+		|| false !== strpos( $wide_html, 'data-apd-row-styles' )
+	) {
+		fwrite( STDERR, "SHOP_MOTO_240_ROWS_FAIL {$wide_type}\n" );
+		exit( 1 );
+	}
+}
+
+if ( empty( $suv_ui['allow_empty'] ) || empty( $moto_ui['allow_empty'] ) || empty( $us_ui['allow_empty'] ) || empty( $plain_ui['allow_empty'] ) ) {
+	fwrite( STDERR, "SHOP_EMPTY_TEXT_TYPES_FAIL\n" );
+	exit( 1 );
+}
+
 $holder_payload                           = $apd_payload;
 $holder_payload['format']['type']         = 'holder';
 $holder_payload['color_fields']           = array( 'holder', 'holder_text', 'holder_strip', 'text', 'background' );
@@ -395,16 +488,278 @@ ob_start();
 include APD_PLUGIN_DIR . 'templates/product-configurator.php';
 $holder_html = ob_get_clean();
 
-if ( false === strpos( $holder_html, 'name="apd_holder_color"' ) || false === strpos( $holder_html, '>Holder color<' ) || false === strpos( $holder_html, 'name="apd_background_color"' ) || false === strpos( $holder_html, '>White strip color<' ) || false === strpos( $holder_html, '>Holder inscription<' ) || false === strpos( $holder_html, 'title="Ink"' ) || strpos( $holder_html, 'name="apd_holder_color"' ) > strpos( $holder_html, 'name="apd_background_color"' ) || false !== strpos( $holder_html, 'PlateTextDecoy' ) || false !== strpos( $holder_html, 'PlateFillDecoy' ) || false !== strpos( $holder_html, 'name="apd_border_color"' ) || false !== strpos( $holder_html, 'name="apd_frame"' ) ) {
+if ( false === strpos( $holder_html, 'name="apd_holder_color"' ) || false === strpos( $holder_html, '>Holder color<' ) || false === strpos( $holder_html, 'name="apd_background_color"' ) || false === strpos( $holder_html, '>Strip color<' ) || false === strpos( $holder_html, 'data-apd-plain' ) || false === strpos( $holder_html, 'name="apd_plain"' ) || false === strpos( $holder_html, '>Holder inscription<' ) || false === strpos( $holder_html, 'title="Ink"' ) || strpos( $holder_html, 'name="apd_holder_color"' ) > strpos( $holder_html, 'name="apd_background_color"' ) || false !== strpos( $holder_html, 'PlateTextDecoy' ) || false !== strpos( $holder_html, 'PlateFillDecoy' ) || false !== strpos( $holder_html, 'name="apd_border_color"' ) || false !== strpos( $holder_html, 'name="apd_frame"' ) ) {
 	fwrite( STDERR, "SHOP_HOLDER_COLORS_FAIL\n" );
 	exit( 1 );
 }
 
+$shop_css = file_get_contents( APD_PLUGIN_DIR . 'assets/css/configurator.css' );
+if ( false === strpos( $shop_css, '.apd-row-fields,' ) || false === strpos( $shop_css, 'flex-direction: column' ) || false === strpos( $shop_css, 'padding-bottom: 5px' ) || false !== strpos( $shop_css, 'grid-template-columns: 1fr 1fr' ) ) {
+	fwrite( STDERR, "SHOP_FIELD_STACK_CSS_FAIL\n" );
+	exit( 1 );
+}
+
+if ( false === strpos( $moto_html, 'class="apd-row-fields"' ) || false === strpos( $suv_html, 'class="apd-row-fields"' ) ) {
+	fwrite( STDERR, "SHOP_ROW_STACK_MARKUP_FAIL\n" );
+	exit( 1 );
+}
+
+$split_ui = $us_ui;
+$split_ui['split_text']      = true;
+$split_ui['base_image_url']  = 'http://example.com/ny.png';
+$split_ui['text_box_right']  = array(
+	'x'      => 61,
+	'y'      => 21.4,
+	'width'  => 34.7,
+	'height' => 61.2,
+	'align'  => 'center',
+	'valign' => 'middle',
+);
+$split_ui['side_max_chars'] = array( 3, 4 );
+$split_ui['designs']        = array();
+$apd_payload = array(
+	'format'       => $split_ui,
+	'palettes'     => $palettes,
+	'i18n'         => $i18n,
+	'color_fields' => array( 'text' ),
+	'layouts'      => array( 'text_only' ),
+	'minFont'      => 12,
+	'default_text' => "230\n7196",
+);
+unset( $apd_payload['cart_restore'] );
+ob_start();
+include APD_PLUGIN_DIR . 'templates/product-configurator.php';
+$split_html = ob_get_clean();
+$left_label  = __( 'Left text', 'auto-plate-designer' );
+$right_label = __( 'Right text', 'auto-plate-designer' );
+
+if ( false === strpos( $split_html, 'class="apd-side-fields"' ) || false === strpos( $split_html, '>' . $left_label . '<' ) || false === strpos( $split_html, '>' . $right_label . '<' ) || false === strpos( $split_html, 'value="230"' ) || false === strpos( $split_html, 'value="7196"' ) || false === strpos( $split_html, 'maxlength="3"' ) || false === strpos( $split_html, 'maxlength="4"' ) || strpos( $split_html, 'apd_text_left' ) > strpos( $split_html, 'apd_text_right' ) ) {
+	fwrite( STDERR, "SHOP_SIDE_FIELDS_FAIL\n" );
+	exit( 1 );
+}
+
+$editor = file_get_contents( APD_PLUGIN_DIR . 'templates/admin/partials/text-box-editor.php' );
+if ( false === strpos( $editor, 'Left maximum' ) || false === strpos( $editor, 'Right maximum' ) || false === strpos( $editor, '$apd_side_left_name' ) || false === strpos( $editor, '$apd_side_right_name' ) ) {
+	fwrite( STDERR, "ADMIN_SIDE_MAX_FIELDS_FAIL\n" );
+	exit( 1 );
+}
+
 $shop_js = file_get_contents( APD_PLUGIN_DIR . 'assets/js/configurator.js' );
-if ( false === strpos( $shop_js, 'groups.join' ) || false === strpos( $shop_js, 'bindStayOnProduct' ) || false === strpos( $shop_js, "format.type === 'us'" ) || false === strpos( $shop_js, "new CustomEvent('wc-blocks_added_to_cart', { bubbles: true })" ) || false === strpos( $shop_js, 'placeBandInsideFrame' ) || false === strpos( $shop_js, 'apd-band-layer' ) || false === strpos( $shop_js, 'plateSnapshot' ) || false === strpos( $shop_js, 'drawImageCover' ) || false === strpos( $shop_js, 'drawPlateArtwork' ) || false === strpos( $shop_js, 'artworkSourceBox' ) || false === strpos( $shop_js, 'design.text_box' ) || false === strpos( $shop_js, 'rowsForPlate' ) || false === strpos( $shop_js, 'syncSuvRows' ) || false === strpos( $shop_js, 'rowLimit' ) || false === strpos( $shop_js, 'plateGlyphs' ) || false === strpos( $shop_js, 'glyphInkScale' ) || false === strpos( $shop_js, 'wrapLines' ) || false === strpos( $shop_js, 'clampBoxInsideFrame' ) || false === strpos( $shop_js, 'paintHolderBody' ) || false === strpos( $shop_js, "source-in" ) ) {
+if ( false === strpos( $shop_js, 'groups.join' ) || false === strpos( $shop_js, 'bindStayOnProduct' ) || false === strpos( $shop_js, 'function resetConfigurator' ) || false === strpos( $shop_js, 'data-apd-initial' ) || false === strpos( $shop_js, 'function openKadenceCart' ) || false === strpos( $shop_js, '.header-cart-button' ) || false === strpos( $shop_js, "format.type === 'us'" ) || false === strpos( $shop_js, "new CustomEvent('wc-blocks_added_to_cart', { bubbles: true })" ) || false === strpos( $shop_js, 'placeBandInsideFrame' ) || false === strpos( $shop_js, 'apd-band-layer' ) || false === strpos( $shop_js, 'plateSnapshot' ) || false === strpos( $shop_js, 'drawImageCover' ) || false === strpos( $shop_js, 'drawPlateArtwork' ) || false === strpos( $shop_js, 'artworkSourceBox' ) || false === strpos( $shop_js, 'design.text_box' ) || false === strpos( $shop_js, 'rowsForPlate' ) || false === strpos( $shop_js, 'syncSuvRows' ) || false === strpos( $shop_js, 'rowLimit' ) || false === strpos( $shop_js, 'plateGlyphs' ) || false === strpos( $shop_js, 'glyphInkScale' ) || false === strpos( $shop_js, 'wrapLines' ) || false === strpos( $shop_js, 'clampBoxInsideFrame' ) || false === strpos( $shop_js, 'paintHolderBody' ) || false === strpos( $shop_js, "source-in" ) || false === strpos( $shop_js, 'function upperPlateFields' ) || false === strpos( $shop_js, 'function applyPlainHolder' ) || false === strpos( $shop_js, "toLocaleUpperCase('bg')" ) || false === strpos( $shop_js, 'cfg.format.allow_empty' ) ) {
 	fwrite( STDERR, "SHOP_JS_RULES_FAIL\n" );
 	exit( 1 );
 }
 
+$shop_php = file_get_contents( APD_PLUGIN_DIR . 'includes/class-apd-woocommerce.php' );
+if ( false !== strpos( $shop_js, "'100 900'" ) || false === strpos( $shop_js, "weight: '400'" ) || false === strpos( $shop_js, 'function drawingFont' ) || false === strpos( $shop_php, 'font-weight:400;' ) || false === strpos( $shop_js, "ctx.letterSpacing = '0px'" ) || false === strpos( $shop_js, 'function lineBlockHeight' ) || false !== strpos( $shop_js, '(chars.length - 1)' ) || false === strpos( $shop_css, 'letter-spacing: 0' ) || false === strpos( $shop_css, 'line-height: 1' ) ) {
+	fwrite( STDERR, "SHOP_BOLD_FONT_FACE_FAIL\n" );
+	exit( 1 );
+}
+
+$label_ui           = APD_Formats::frontend_payload( $format );
+$label_ui['fonts']  = array(
+	array(
+		'id'     => 'font-note',
+		'family' => 'Oswald',
+		'note'   => 'кирилица',
+		'weight' => 400,
+		'style'  => 'normal',
+		'url'    => 'https://example.invalid/oswald.woff2',
+	),
+	array(
+		'id'     => 'font-plain',
+		'family' => 'Barlow',
+		'note'   => '',
+		'weight' => 400,
+		'style'  => 'normal',
+		'url'    => 'https://example.invalid/barlow.woff2',
+	),
+);
+$apd_payload = array(
+	'format'       => $label_ui,
+	'palettes'     => $palettes,
+	'i18n'         => $i18n,
+	'color_fields' => array( 'text', 'border' ),
+	'layouts'      => array( 'text_only' ),
+	'minFont'      => 12,
+);
+unset( $apd_payload['cart_restore'] );
+ob_start();
+include APD_PLUGIN_DIR . 'templates/product-configurator.php';
+$label_html = ob_get_clean();
+
+if ( false === strpos( $label_html, '>Oswald — кирилица<' ) || false === strpos( $label_html, 'value="font-note"' ) || false === strpos( $label_html, '>Barlow<' ) || false !== strpos( $label_html, 'Barlow —' ) || false === strpos( $label_html, 'class="apd-font-hint"' ) || false === strpos( $label_html, 'За перфектна визия изберете шрифт' ) || false === strpos( $label_html, 'Позволените символи са цифри, букви' ) || false === strpos( $label_html, '&quot;!&quot;' ) || false === strpos( $label_html, '&quot;?&quot;' ) || false === strpos( $shop_css, 'font-weight: 700' ) || false !== strpos( $shop_css, 'padding-bottom: 0' ) || false === strpos( substr( $shop_css, (int) strpos( $shop_css, '.apd-field select {' ), 80 ), 'width: 100%' ) || false !== strpos( $shop_css, 'max-width: 50%' ) || false === strpos( $shop_js, "align === 'justify'" ) ) {
+	fwrite( STDERR, "SHOP_FONT_LABEL_FAIL\n" );
+	exit( 1 );
+}
+
+echo "SHOP_FONT_LABEL_OK\n";
+
+$usa_fonts = array(
+	array(
+		'id'     => 'font-oswald',
+		'family' => 'Oswald',
+		'note'   => '',
+		'weight' => 400,
+		'style'  => 'normal',
+		'url'    => 'https://example.invalid/oswald.woff2',
+	),
+	array(
+		'id'     => 'font-usa',
+		'family' => 'USA',
+		'note'   => '',
+		'weight' => 400,
+		'style'  => 'normal',
+		'url'    => 'https://example.invalid/usa.woff2',
+	),
+	array(
+		'id'     => 'font-later',
+		'family' => 'USABLE',
+		'note'   => '',
+		'weight' => 400,
+		'style'  => 'normal',
+		'url'    => 'https://example.invalid/usable.woff2',
+	),
+);
+
+if (
+	'font-usa' !== APD_Formats::default_font_id( $usa_fonts, 'us' )
+	|| 'font-oswald' !== APD_Formats::default_font_id( $usa_fonts, 'eu' )
+	|| 'font-oswald' !== APD_Formats::default_font_id( $usa_fonts, 'suv' )
+	|| 'font-oswald' !== APD_Formats::default_font_id(
+		array(
+			$usa_fonts[0],
+			array(
+				'id'     => 'font-middle',
+				'family' => 'My USA',
+				'note'   => '',
+			),
+		),
+		'us'
+	)
+) {
+	fwrite( STDERR, "SHOP_USA_FONT_FAIL helper\n" );
+	exit( 1 );
+}
+
+$usa_ui          = $label_ui;
+$usa_ui['type']  = 'us';
+$usa_ui['fonts'] = $usa_fonts;
+$apd_payload     = array(
+	'format'       => $usa_ui,
+	'palettes'     => $palettes,
+	'i18n'         => $i18n,
+	'color_fields' => array( 'text' ),
+	'layouts'      => array( 'text_only' ),
+	'minFont'      => 12,
+);
+unset( $apd_payload['cart_restore'] );
+ob_start();
+include APD_PLUGIN_DIR . 'templates/product-configurator.php';
+$usa_html = ob_get_clean();
+
+if ( ! preg_match( '/<option value="font-usa"[^>]*selected/', $usa_html ) || preg_match( '/<option value="font-oswald"[^>]*selected/', $usa_html ) ) {
+	fwrite( STDERR, "SHOP_USA_FONT_FAIL html\n" );
+	exit( 1 );
+}
+
+$eu_ui          = $label_ui;
+$eu_ui['type']  = 'eu';
+$eu_ui['fonts'] = $usa_fonts;
+$apd_payload    = array(
+	'format'       => $eu_ui,
+	'palettes'     => $palettes,
+	'i18n'         => $i18n,
+	'color_fields' => array( 'text', 'border' ),
+	'layouts'      => array( 'text_only' ),
+	'minFont'      => 12,
+);
+ob_start();
+include APD_PLUGIN_DIR . 'templates/product-configurator.php';
+$eu_font_html = ob_get_clean();
+
+if ( ! preg_match( '/<option value="font-oswald"[^>]*selected/', $eu_font_html ) || preg_match( '/<option value="font-usa"[^>]*selected/', $eu_font_html ) ) {
+	fwrite( STDERR, "SHOP_USA_FONT_FAIL eu\n" );
+	exit( 1 );
+}
+
+$german_first = array(
+	array(
+		'id'     => 'font-german',
+		'family' => 'German Font',
+	),
+	array(
+		'id'     => 'font-oswald',
+		'family' => 'Oswald',
+	),
+);
+
+$usa_over_german = array(
+	array(
+		'id'     => 'font-german',
+		'family' => 'german plate',
+	),
+	array(
+		'id'     => 'font-usa',
+		'family' => 'USA Plate',
+	),
+);
+$cyrillic_german = array(
+	array(
+		'id'     => 'font-bg',
+		'family' => 'немски шрифт',
+	),
+	array(
+		'id'     => 'font-oswald',
+		'family' => 'Oswald',
+	),
+);
+
+if (
+	'font-oswald' !== APD_Formats::default_font_id( $german_first, 'eu' )
+	|| 'font-oswald' !== APD_Formats::default_font_id( $german_first, 'suv' )
+	|| 'font-oswald' !== APD_Formats::default_font_id( $german_first, 'holder' )
+	|| 'font-oswald' !== APD_Formats::default_font_id( $german_first, 'us' )
+	|| 'font-german' !== APD_Formats::default_font_id( array( $german_first[0] ), 'eu' )
+	|| 'font-usa' !== APD_Formats::default_font_id( $usa_over_german, 'us' )
+	|| 'font-usa' !== APD_Formats::default_font_id( $usa_over_german, 'eu' )
+	|| 'font-oswald' !== APD_Formats::default_font_id( $cyrillic_german, 'moto' )
+	|| 'font-oswald' !== APD_Formats::default_font_id( $cyrillic_german, 'holder_moto' )
+) {
+	fwrite( STDERR, "SHOP_GERMAN_FONT_FAIL\n" );
+	exit( 1 );
+}
+
+echo "SHOP_USA_FONT_OK\n";
 echo 'SHOP_US_AND_RESTORE_OK' . PHP_EOL;
+
+$woo   = APD_WooCommerce::instance();
+$tell  = new ReflectionMethod( APD_WooCommerce::class, 'notice_stale_cart_item' );
+$tell->setAccessible( true );
+$tell->invoke( $woo, array(), 0 );
+ob_start();
+$woo->render_stale_toasts();
+$toast = ob_get_clean();
+ob_start();
+$woo->render_stale_toasts();
+$again = ob_get_clean();
+$plate = __( 'This plate', 'auto-plate-designer' );
+
+if (
+	false === strpos( $toast, 'class="apd-stale-toasts"' )
+	|| false === strpos( $toast, 'class="apd-stale-toast"' )
+	|| false === strpos( $toast, 'data-apd-stale-close' )
+	|| false === strpos( $toast, 'position: fixed' )
+	|| false === strpos( $toast, 'right: 1rem' )
+	|| false === strpos( $toast, 'background: #fff' )
+	|| false === strpos( $toast, $plate )
+	|| '' !== $again
+	|| false !== strpos( $toast, 'woocommerce-info' )
+	|| false !== strpos( $toast, 'woocommerce-message' )
+) {
+	fwrite( STDERR, "SHOP_STALE_TOAST_FAIL\n" );
+	exit( 1 );
+}
+
+echo "SHOP_STALE_TOAST_OK\n";
 echo 'ALL_OK' . PHP_EOL;

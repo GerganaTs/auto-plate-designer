@@ -50,7 +50,6 @@ final class APD_Plugin {
 		require_once APD_PLUGIN_DIR . 'includes/class-apd-presets.php';
 		require_once APD_PLUGIN_DIR . 'includes/class-apd-designs.php';
 		require_once APD_PLUGIN_DIR . 'includes/class-apd-color-palettes.php';
-		require_once APD_PLUGIN_DIR . 'includes/class-apd-catalog.php';
 		require_once APD_PLUGIN_DIR . 'includes/class-apd-admin-settings.php';
 		require_once APD_PLUGIN_DIR . 'includes/class-apd-ajax.php';
 		require_once APD_PLUGIN_DIR . 'includes/class-apd-woocommerce.php';
@@ -89,7 +88,6 @@ final class APD_Plugin {
 		APD_Presets::instance();
 		APD_Designs::instance();
 		APD_Color_Palettes::instance();
-		APD_Catalog::instance();
 		APD_Admin_Settings::instance();
 		APD_Ajax::instance();
 		APD_WooCommerce::instance();
@@ -227,9 +225,6 @@ final class APD_Plugin {
 				'background' => self::starter_palette( 'background' ),
 			),
 			'fonts'            => array(),
-			'catalog'          => array(
-				'published' => array( 'plates-eu', 'plates-us', 'plates-moto', 'plates-suv', 'plates-custom', 'plates-color', 'holders' ),
-			),
 			'swatch_display'   => array(
 				'size'         => 28,
 				'shape'        => 'circle',
@@ -281,7 +276,7 @@ final class APD_Plugin {
 		$cached = get_transient( APD_CACHE_KEY );
 
 		if ( is_array( $cached ) && isset( $cached['formats'], $cached['limits'], $cached['palettes'], $cached['color_library'], $cached['color_palettes'], $cached['swatch_display']['border_color'] ) ) {
-			return $cached;
+			return self::persist_plate_punctuation( $cached );
 		}
 
 		$defaults = self::get_default_settings();
@@ -293,7 +288,35 @@ final class APD_Plugin {
 
 		$settings = self::merge_settings( $defaults, $stored );
 
-		set_transient( APD_CACHE_KEY, $settings, HOUR_IN_SECONDS );
+		return self::persist_plate_punctuation( $settings );
+	}
+
+	/**
+	 * Write "!" and "?" into a saved whitelist once, then cache the result.
+	 *
+	 * @param array<string, mixed> $settings Settings row.
+	 * @return array<string, mixed>
+	 */
+	private static function persist_plate_punctuation( $settings ) {
+		static $guard = false;
+
+		if ( $guard || ! is_array( $settings ) ) {
+			return $settings;
+		}
+
+		$raw  = isset( $settings['char_whitelist'] ) ? (string) $settings['char_whitelist'] : '';
+		$next = APD_Security::ensure_plate_punctuation( $raw );
+
+		if ( $next !== $raw && true === APD_Security::validate_admin_char_class( $next ) ) {
+			$settings['char_whitelist'] = $next;
+			$guard                      = true;
+			self::save_settings( $settings );
+			$guard = false;
+		}
+
+		if ( ! is_array( get_transient( APD_CACHE_KEY ) ) ) {
+			set_transient( APD_CACHE_KEY, $settings, HOUR_IN_SECONDS );
+		}
 
 		return $settings;
 	}
@@ -661,27 +684,6 @@ final class APD_Plugin {
 
 		if ( ! is_array( $settings['fonts'] ) ) {
 			$settings['fonts'] = array();
-		}
-
-		$settings['catalog'] = array_merge(
-			$defaults['catalog'],
-			isset( $stored['catalog'] ) && is_array( $stored['catalog'] ) ? $stored['catalog'] : array()
-		);
-
-		if ( ! isset( $settings['catalog']['published'] ) || ! is_array( $settings['catalog']['published'] ) ) {
-			$settings['catalog']['published'] = $defaults['catalog']['published'];
-		} else {
-			$published = array_values( $settings['catalog']['published'] );
-			$legacy    = array( 'plates-eu', 'plates-us', 'plates-custom', 'holders' );
-			$with_color = array( 'plates-eu', 'plates-us', 'plates-custom', 'plates-color', 'holders' );
-
-			if ( $published === $legacy || $published === $with_color ) {
-				foreach ( array( 'plates-color', 'plates-moto', 'plates-suv' ) as $extra ) {
-					if ( ! in_array( $extra, $settings['catalog']['published'], true ) ) {
-						$settings['catalog']['published'][] = $extra;
-					}
-				}
-			}
 		}
 
 		$settings['swatch_display'] = APD_Color_Palettes::sanitize_swatch_display(

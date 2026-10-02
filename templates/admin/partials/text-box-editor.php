@@ -262,6 +262,10 @@ if ( $apd_text_box_studio ) {
 <?php if ( $apd_show_metric_labels ) : ?>
 	<p class="apd-metric-heading"><?php esc_html_e( 'Text area', 'auto-plate-designer' ); ?></p>
 <?php endif; ?>
+<?php if ( empty( $apd_text_box_design ) ) : ?>
+	<input type="hidden" name="apd_format[text_box_metric]" value="" data-apd-text-box-metric>
+	<p class="description apd-holder-only"<?php echo APD_Formats::is_holder( $apd_text_box_type ) ? '' : ' hidden'; ?>><?php esc_html_e( 'X, Y, width, and height are percentages of the white strip.', 'auto-plate-designer' ); ?></p>
+<?php endif; ?>
 <div class="apd-metric-grid apd-text-box-fields">
 	<label class="apd-metric"><span data-apd-split-off<?php echo $apd_split_on ? ' hidden' : ''; ?>><?php echo esc_html__( 'X', 'auto-plate-designer' ); ?></span><span data-apd-split-on<?php echo ( $apd_split_ui && $apd_split_on ) ? '' : ' hidden'; ?>><?php echo esc_html__( 'Left X', 'auto-plate-designer' ); ?></span>
 		<span class="apd-metric__control">

@@ -280,7 +280,7 @@ if ( 5 !== (int) $moto['max_chars_row_1'] || 4 !== (int) $moto['max_chars_row_2'
 
 echo 'MOTO_TYPE_OK' . PHP_EOL;
 
-$two_row_types = array( 'moto', 'moto_plain', 'suv', 'suv_eu' );
+$two_row_types = array( 'moto', 'moto_240', 'moto_plain', 'moto_plain_240', 'suv', 'suv_eu' );
 $single_types  = array( 'eu', 'eu_plain', 'us', 'color', 'custom', 'holder', 'holder_moto', 'holder_d' );
 
 foreach ( $two_row_types as $two_type ) {
@@ -367,6 +367,138 @@ if ( 'moto' !== APD_Formats::catalog_kind( 'moto_plain' ) ) {
 }
 
 echo 'MOTO_PLAIN_TYPE_OK' . PHP_EOL;
+
+$moto_240 = APD_Formats::sanitize(
+	array(
+		'name'   => 'Moto 240',
+		'type'   => 'moto_240',
+		'width'  => 199,
+		'height' => 154,
+	)
+);
+$moto_plain_240 = APD_Formats::sanitize(
+	array(
+		'name'   => 'Moto plain 240',
+		'type'   => 'moto_plain_240',
+		'width'  => 520,
+		'height' => 110,
+	)
+);
+
+$band_width = ( ! is_wp_error( $moto_240 ) && isset( $moto_240['band_box']['width'] ) ) ? (float) $moto_240['band_box']['width'] : 0;
+$band_height = ( ! is_wp_error( $moto_240 ) && isset( $moto_240['band_box']['height'] ) ) ? (float) $moto_240['band_box']['height'] : 0;
+$text_x = ( ! is_wp_error( $moto_240 ) && isset( $moto_240['text_box']['x'] ) ) ? (float) $moto_240['text_box']['x'] : 0;
+$plain_x = ( ! is_wp_error( $moto_plain_240 ) && isset( $moto_plain_240['text_box']['x'] ) ) ? (float) $moto_plain_240['text_box']['x'] : 0;
+
+if (
+	is_wp_error( $moto_240 )
+	|| is_wp_error( $moto_plain_240 )
+	|| 240 !== (int) $moto_240['width']
+	|| 130 !== (int) $moto_240['height']
+	|| 240 !== (int) $moto_plain_240['width']
+	|| 130 !== (int) $moto_plain_240['height']
+	|| ! APD_Formats::uses_country_band( 'moto_240' )
+	|| APD_Formats::uses_country_band( 'moto_plain_240' )
+	|| ! APD_Formats::uses_painted_plate( 'moto_240' )
+	|| ! APD_Formats::uses_painted_plate( 'moto_plain_240' )
+	|| APD_Formats::uses_palette_slots( 'moto_240' )
+	|| ! APD_Formats::uses_palette_slots( 'moto_plain_240' )
+	|| 'moto' !== APD_Formats::catalog_kind( 'moto_240' )
+	|| 'moto' !== APD_Formats::catalog_kind( 'moto_plain_240' )
+	|| abs( $band_width - 19.7 ) > 0.2
+	|| 100.0 !== $band_height
+	|| $text_x < 15
+	|| (float) $moto_plain_240['text_box']['x'] + 0.05 < (float) APD_Formats::text_area_region( $moto_plain_240 )['x']
+	|| 'justify' !== $moto_240['text_box']['letter_align']
+	|| 'justify' !== $moto_plain_240['text_box']['number_align']
+) {
+	fwrite( STDERR, 'MOTO_240_FAIL ' . wp_json_encode( array( $moto_240, $moto_plain_240 ) ) . PHP_EOL );
+	exit( 1 );
+}
+
+$holder_for_car  = APD_Formats::format_size_label( array( 'type' => 'holder', 'width' => 520, 'height' => 260 ) );
+$holder_for_moto = APD_Formats::format_size_label( array( 'type' => 'holder_moto', 'width' => 199, 'height' => 199 ) );
+$holder_for_d    = APD_Formats::format_size_label( array( 'type' => 'holder_d', 'width' => 280, 'height' => 159 ) );
+$plate_size      = APD_Formats::format_size_label( array( 'type' => 'moto', 'width' => 199, 'height' => 154 ) );
+
+if (
+	false === strpos( $holder_for_car, '520' )
+	|| false === strpos( $holder_for_car, '110' )
+	|| false !== strpos( $holder_for_car, '260' )
+	|| false === strpos( $holder_for_moto, '199' )
+	|| false === strpos( $holder_for_moto, '154' )
+	|| false === strpos( $holder_for_d, '280' )
+	|| false === strpos( $holder_for_d, '200' )
+	|| '199 x 154' !== $plate_size
+	|| 500 !== APD_Formats::preview_frame_width( 'holder', 520 )
+	|| 191 !== APD_Formats::preview_frame_width( 'holder_moto', 199 )
+	|| 269 !== APD_Formats::preview_frame_width( 'holder_d', 280 )
+) {
+	fwrite( STDERR, 'HOLDER_PLATE_SIZE_FAIL ' . wp_json_encode( array( $holder_for_car, $holder_for_moto, $holder_for_d, $plate_size ) ) . PHP_EOL );
+	exit( 1 );
+}
+
+$oversized = APD_Formats::sanitize(
+	array(
+		'name'     => 'Moto gap',
+		'type'     => 'moto_240',
+		'text_box' => array(
+			'x'      => 0,
+			'y'      => 0,
+			'width'  => 100,
+			'height' => 100,
+		),
+	)
+);
+$gap_region = is_wp_error( $oversized ) ? array() : APD_Formats::text_area_region( $oversized );
+$gap_box    = is_wp_error( $oversized ) ? array() : $oversized['text_box'];
+$gap_top_mm = ( ! is_wp_error( $oversized ) ) ? ( (float) $gap_box['y'] / 100 ) * 130 : 0;
+$gap_side   = ( ! is_wp_error( $oversized ) ) ? ( (float) $gap_box['x'] / 100 ) * 240 : 0;
+if (
+	is_wp_error( $oversized )
+	|| (float) $gap_box['x'] + 0.15 < (float) $gap_region['x']
+	|| (float) $gap_box['y'] + 0.15 < (float) $gap_region['y']
+	|| (float) $gap_box['x'] + (float) $gap_box['width'] > (float) $gap_region['x'] + (float) $gap_region['width'] + 0.15
+	|| (float) $gap_box['y'] + (float) $gap_box['height'] > (float) $gap_region['y'] + (float) $gap_region['height'] + 0.15
+	|| $gap_top_mm + 0.2 < 16
+	|| $gap_side + 0.2 < 16
+) {
+	fwrite( STDERR, 'TEXT_FRAME_GAP_FAIL ' . wp_json_encode( array( $gap_box, $gap_region ) ) . PHP_EOL );
+	exit( 1 );
+}
+
+$open_plate = APD_Formats::sanitize(
+	array(
+		'name'     => 'Open color',
+		'type'     => 'color',
+		'no_frame' => '1',
+		'text_box' => array(
+			'x'      => 1,
+			'y'      => 1,
+			'width'  => 90,
+			'height' => 90,
+		),
+	)
+);
+if ( is_wp_error( $open_plate ) || 1.0 !== (float) $open_plate['text_box']['x'] || 1.0 !== (float) $open_plate['text_box']['y'] ) {
+	fwrite( STDERR, 'NO_FRAME_GAP_FAIL ' . ( is_wp_error( $open_plate ) ? $open_plate->get_error_message() : wp_json_encode( $open_plate['text_box'] ) ) . PHP_EOL );
+	exit( 1 );
+}
+
+$shop_draw = file_get_contents( APD_PLUGIN_DIR . 'assets/js/configurator.js' );
+$admin_draw = file_get_contents( APD_PLUGIN_DIR . 'assets/js/admin-settings.js' );
+if (
+	false === strpos( $shop_draw, 'TEXT_FRAME_GAP_MM = 8' )
+	|| false === strpos( $shop_draw, 'function frameTextInset' )
+	|| false === strpos( $shop_draw, 'frameTextInset()' )
+	|| false === strpos( $admin_draw, 'TEXT_FRAME_GAP_MM = 8' )
+	|| false === strpos( $admin_draw, 'bw + TEXT_FRAME_GAP_MM' )
+) {
+	fwrite( STDERR, "TEXT_FRAME_GAP_DRAW_FAIL\n" );
+	exit( 1 );
+}
+
+echo 'MOTO_240_TYPE_OK' . PHP_EOL;
 
 $suv_eu = APD_Formats::sanitize(
 	array(
@@ -531,9 +663,8 @@ if ( abs( $holder_region['y'] - $holder_strip['y'] ) > 0.1 || abs( $holder_regio
 }
 $holder_limit_row = APD_Formats::sanitize(
 	array(
-		'name'      => 'Holder limit',
-		'type'      => 'holder',
-		'max_chars' => 24,
+		'name' => 'Holder limit',
+		'type' => 'holder',
 	)
 );
 if ( ! is_wp_error( $holder_limit_row ) ) {
@@ -541,7 +672,7 @@ if ( ! is_wp_error( $holder_limit_row ) ) {
 }
 $holder_limit_payload = is_wp_error( $holder_limit_row ) ? array() : APD_Formats::frontend_payload( $holder_limit_row );
 
-if ( APD_Formats::HOLDER_TEXT_MAX !== APD_Formats::holder_text_limit() || APD_Formats::HOLDER_TEXT_MAX !== (int) $holder_limit_payload['max_chars'] || (string) APD_Formats::HOLDER_TEXT_MAX !== APD_Formats::max_chars_label( array( 'type' => 'holder', 'max_chars' => 24 ) ) ) {
+if ( APD_Formats::HOLDER_TEXT_MAX !== APD_Formats::holder_text_limit() || APD_Formats::HOLDER_TEXT_MAX !== (int) $holder_limit_payload['max_chars'] || '—' !== APD_Formats::max_chars_label( array( 'type' => 'holder', 'max_chars' => 24 ) ) || '40' !== APD_Formats::max_chars_label( array( 'type' => 'holder', 'max_chars' => 40, 'holder_max_set' => true ) ) ) {
 	fwrite( STDERR, "HOLDER_TEXT_LIMIT_FAIL\n" );
 	exit( 1 );
 }
@@ -591,6 +722,59 @@ foreach ( $photo_holder_expect as $photo_type => $photo_expect ) {
 
 echo "PHOTO_HOLDER_OK\n";
 
+$holder_saved = APD_Formats::sanitize(
+	array(
+		'name'             => 'Strip metrics',
+		'type'             => 'holder',
+		'text_box_metric'  => 'strip',
+		'text_box'         => array(
+			'x'      => 20,
+			'y'      => 30,
+			'width'  => 60,
+			'height' => 40,
+			'align'  => 'center',
+			'valign' => 'middle',
+		),
+	)
+);
+$holder_mid_x = $holder_strip['x'] + ( $holder_strip['width'] / 2 );
+$holder_mid_y = $holder_strip['y'] + ( $holder_strip['height'] / 2 );
+if (
+	is_wp_error( $holder_saved )
+	|| abs( ( $holder_saved['text_box']['x'] + ( $holder_saved['text_box']['width'] / 2 ) ) - $holder_mid_x ) > 0.6
+	|| abs( ( $holder_saved['text_box']['y'] + ( $holder_saved['text_box']['height'] / 2 ) ) - $holder_mid_y ) > 0.6
+	|| $holder_saved['text_box']['height'] >= 5
+	|| $holder_saved['text_box']['width'] >= $holder_strip['width']
+) {
+	fwrite( STDERR, 'HOLDER_STRIP_METRICS_FAIL ' . ( is_wp_error( $holder_saved ) ? $holder_saved->get_error_message() : wp_json_encode( $holder_saved['text_box'] ) ) . PHP_EOL );
+	exit( 1 );
+}
+
+$moto_strip_saved = APD_Formats::sanitize(
+	array(
+		'name'            => 'Moto strip metrics',
+		'type'            => 'holder_moto',
+		'text_box_metric' => 'strip',
+		'text_box'        => array(
+			'x'      => 10,
+			'y'      => 25,
+			'width'  => 80,
+			'height' => 50,
+			'align'  => 'center',
+			'valign' => 'middle',
+		),
+	)
+);
+$moto_strip = APD_Formats::holder_strip_box( 'holder_moto' );
+if (
+	is_wp_error( $moto_strip_saved )
+	|| abs( $moto_strip_saved['text_box']['width'] - ( $moto_strip['width'] * 0.8 ) ) > 0.2
+	|| abs( $moto_strip_saved['text_box']['height'] - ( $moto_strip['height'] * 0.5 ) ) > 0.2
+) {
+	fwrite( STDERR, 'MOTO_STRIP_METRICS_FAIL ' . ( is_wp_error( $moto_strip_saved ) ? $moto_strip_saved->get_error_message() : wp_json_encode( $moto_strip_saved['text_box'] ) ) . PHP_EOL );
+	exit( 1 );
+}
+
 echo 'CENTER_TEXT_BOX_OK' . PHP_EOL;
 
 if ( 500 !== APD_Formats::CANVAS_DISPLAY_MAX_PX || 106 !== APD_Formats::CANVAS_DISPLAY_MAX_H_PX ) {
@@ -629,7 +813,7 @@ if ( false === strpos( $admin_css, '.apd-metric-grid' ) || false === strpos( $ad
 	exit( 1 );
 }
 
-if ( false === strpos( $admin_js, 'input.disabled = !enabled' ) || false === strpos( $admin_js, 'centerBoxInRegion' ) ) {
+if ( false === strpos( $admin_js, 'input.disabled = !enabled' ) || false === strpos( $admin_js, 'centerBoxInRegion' ) || false === strpos( $admin_js, 'canvasToStrip' ) || false === strpos( $admin_js, 'data-apd-strip-metrics' ) ) {
 	fwrite( STDERR, "ADMIN_JS_DISABLE_OR_CENTER_FAIL\n" );
 	exit( 1 );
 }
@@ -679,8 +863,10 @@ $locked_sizes = array(
 	'eu_plain'   => array( 520, 110 ),
 	'color'      => array( 520, 110 ),
 	'us'         => array( 305, 152 ),
-	'moto'       => array( 199, 154 ),
-	'moto_plain' => array( 199, 154 ),
+	'moto'            => array( 199, 154 ),
+	'moto_240'        => array( 240, 130 ),
+	'moto_plain'      => array( 199, 154 ),
+	'moto_plain_240'  => array( 240, 130 ),
 	'suv'        => array( 280, 200 ),
 	'suv_eu'     => array( 280, 200 ),
 	'holder'      => array( 520, 260 ),

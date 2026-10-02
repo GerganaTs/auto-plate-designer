@@ -29,6 +29,13 @@ final class APD_WooCommerce {
 	private $stale_notices = array();
 
 	/**
+	 * Toast HTML for cart lines removed because the plate offering changed.
+	 *
+	 * @var array<int, string>
+	 */
+	private $stale_toasts = array();
+
+	/**
 	 * Singleton instance.
 	 *
 	 * @var APD_WooCommerce|null
@@ -77,6 +84,7 @@ final class APD_WooCommerce {
 		add_action( 'woocommerce_check_cart_items', array( $this, 'check_cart_items' ) );
 		add_action( 'woocommerce_before_calculate_totals', array( $this, 'audit_cart_configs' ), 5, 1 );
 		add_action( 'woocommerce_before_calculate_totals', array( $this, 'apply_price_adjustment' ), 20, 1 );
+		add_action( 'wp_footer', array( $this, 'render_stale_toasts' ), 20 );
 	}
 
 	/**
@@ -243,12 +251,17 @@ final class APD_WooCommerce {
 		$faces = '';
 
 		foreach ( $payload['format']['fonts'] as $font ) {
+			$family = isset( $font['family'] ) ? (string) $font['family'] : '';
+
+			if ( '' !== $family && ! empty( $font['id'] ) ) {
+				$family .= ' ' . $font['id'];
+			}
+
 			$faces .= sprintf(
-				'@font-face{font-family:%1$s;src:url(%2$s) format("woff2");font-weight:%3$d;font-style:%4$s;font-display:swap;}',
-				wp_json_encode( $font['family'] ),
+				'@font-face{font-family:%1$s;src:url(%2$s) format("woff2");font-weight:400;font-style:%3$s;font-display:swap;}',
+				wp_json_encode( $family ),
 				wp_json_encode( isset( $font['url'] ) ? (string) $font['url'] : '' ),
-				(int) $font['weight'],
-				'italic' === $font['style'] ? 'italic' : 'normal'
+				( isset( $font['style'] ) && 'italic' === $font['style'] ) ? 'italic' : 'normal'
 			);
 		}
 
@@ -768,14 +781,117 @@ final class APD_WooCommerce {
 			$label = '<a href="' . esc_url( $url ) . '">' . $label . '</a>';
 		}
 
-		wc_add_notice(
-			sprintf(
-				/* translators: %s: product name, linked to the product page when possible */
-				__( '“%s” must be configured again because the plate settings have changed. It was removed from your cart.', 'auto-plate-designer' ),
-				$label
-			),
-			'notice'
+		$this->stale_toasts[] = sprintf(
+			/* translators: %s: product name, linked to the product page when possible */
+			__( '“%s” must be configured again because the plate settings have changed. It was removed from your cart.', 'auto-plate-designer' ),
+			$label
 		);
+	}
+
+	/**
+	 * White toast on the right. The theme notice bar was painting this sentence through the header.
+	 */
+	public function render_stale_toasts() {
+		if ( empty( $this->stale_toasts ) ) {
+			return;
+		}
+
+		$messages            = $this->stale_toasts;
+		$this->stale_toasts  = array();
+		$close               = __( 'Close', 'auto-plate-designer' );
+		?>
+		<div class="apd-stale-toasts" data-apd-stale-toasts>
+			<?php foreach ( $messages as $message ) : ?>
+				<div class="apd-stale-toast" role="status">
+					<p><?php echo wp_kses_post( $message ); ?></p>
+					<button type="button" class="apd-stale-toast-close" data-apd-stale-close aria-label="<?php echo esc_attr( $close ); ?>">&times;</button>
+				</div>
+			<?php endforeach; ?>
+		</div>
+		<style>
+			.apd-stale-toasts {
+				position: fixed;
+				top: 1rem;
+				right: 1rem;
+				left: auto;
+				z-index: 100000;
+				display: flex;
+				flex-direction: column;
+				gap: 0.75rem;
+				width: min(22rem, calc(100vw - 2rem));
+				margin: 0;
+				pointer-events: none;
+			}
+			body.admin-bar .apd-stale-toasts {
+				top: 3.25rem;
+			}
+			@media (max-width: 782px) {
+				body.admin-bar .apd-stale-toasts {
+					top: 4.25rem;
+				}
+			}
+			.apd-stale-toast {
+				position: relative;
+				pointer-events: auto;
+				box-sizing: border-box;
+				margin: 0;
+				padding: 1rem 2.4rem 1rem 1rem;
+				background: #fff;
+				color: #1a1a1a;
+				border: 1px solid #e4e4e4;
+				border-radius: 8px;
+				box-shadow: 0 10px 28px rgba(0, 0, 0, 0.16);
+				font-size: 0.95rem;
+				line-height: 1.45;
+			}
+			.apd-stale-toast p {
+				margin: 0;
+				color: inherit;
+				font-size: inherit;
+				line-height: inherit;
+			}
+			.apd-stale-toast a {
+				color: inherit;
+				text-decoration: underline;
+			}
+			.apd-stale-toast-close {
+				position: absolute;
+				top: 0.35rem;
+				right: 0.35rem;
+				width: 1.75rem;
+				height: 1.75rem;
+				margin: 0;
+				padding: 0;
+				border: 0;
+				border-radius: 4px;
+				background: transparent;
+				color: #1a1a1a;
+				font-size: 1.25rem;
+				line-height: 1;
+				cursor: pointer;
+			}
+			.apd-stale-toast-close:hover,
+			.apd-stale-toast-close:focus {
+				background: #f2f2f2;
+			}
+		</style>
+		<script>
+			document.addEventListener('click', function (event) {
+				var button = event.target.closest('[data-apd-stale-close]');
+				if (!button) {
+					return;
+				}
+				var toast = button.closest('.apd-stale-toast');
+				var stack = button.closest('[data-apd-stale-toasts]');
+				if (toast) {
+					toast.remove();
+				}
+				if (stack && !stack.querySelector('.apd-stale-toast')) {
+					stack.remove();
+				}
+			});
+		</script>
+		<?php
 	}
 
 	/**
@@ -1016,10 +1132,10 @@ final class APD_WooCommerce {
 	}
 
 	/**
-	 * Latest styled configuration for this product already in the cart.
+	 * Latest configuration for this product already in the cart.
 	 *
-	 * WooCommerce redirects back to the product after add to cart. The
-	 * configurator uses this snapshot so the preview stays styled.
+	 * The product page no longer prefills from this. A new visit starts from
+	 * the product defaults.
 	 *
 	 * @param int $product_id Product ID.
 	 * @return array<string, mixed>
@@ -1075,7 +1191,7 @@ final class APD_WooCommerce {
 			'color_fields' => APD_Admin_Settings::product_color_fields( $product_id ),
 			'palettes'     => APD_Admin_Settings::product_offered_colors( $product_id ),
 			'default_text' => APD_Admin_Settings::product_initial_text( $product_id, $format ),
-			'cart_restore' => self::latest_cart_config( $product_id ),
+			'cart_restore' => array(),
 			'rules'    => APD_Security::frontend_text_rules(),
 			'minFont'  => $min,
 			'i18n'     => array(
@@ -1089,7 +1205,7 @@ final class APD_WooCommerce {
 				'textColor'     => __( 'Text color', 'auto-plate-designer' ),
 				'borderColor'   => __( 'Border color', 'auto-plate-designer' ),
 				'plateColor'    => __( 'Plate color', 'auto-plate-designer' ),
-				'stripColor'    => __( 'White strip color', 'auto-plate-designer' ),
+				'stripColor'    => __( 'Strip color', 'auto-plate-designer' ),
 				'holderColor'   => __( 'Holder color', 'auto-plate-designer' ),
 				'frameLabel'    => __( 'Add frame', 'auto-plate-designer' ),
 				'chars'         => __( '%1$s / %2$s characters', 'auto-plate-designer' ),
@@ -1124,13 +1240,13 @@ final class APD_WooCommerce {
 		$allow_empty = ! empty( $payload['allow_empty'] );
 		$multiline   = ! empty( $payload['multiline'] );
 		$format_type = isset( $format['type'] ) ? (string) $format['type'] : '';
-		$text        = isset( $_POST['apd_text'] ) ? (string) wp_unslash( $_POST['apd_text'] ) : ''; // phpcs:ignore WordPress.Security.ValidatedSanitizedInput.InputNotSanitized
+		$text        = isset( $_POST['apd_text'] ) ? APD_Security::uppercase_plate_text( (string) wp_unslash( $_POST['apd_text'] ) ) : ''; // phpcs:ignore WordPress.Security.ValidatedSanitizedInput.InputNotSanitized
 		$length_limit = $max_chars;
 
 		if ( APD_Formats::uses_two_rows( $format_type ) && ( isset( $_POST['apd_text_row_1'] ) || isset( $_POST['apd_text_row_2'] ) ) ) {
 			$row_limits = APD_Formats::suv_row_limits( $format );
-			$row1       = isset( $_POST['apd_text_row_1'] ) ? (string) wp_unslash( $_POST['apd_text_row_1'] ) : ''; // phpcs:ignore WordPress.Security.ValidatedSanitizedInput.InputNotSanitized
-			$row2       = isset( $_POST['apd_text_row_2'] ) ? (string) wp_unslash( $_POST['apd_text_row_2'] ) : ''; // phpcs:ignore WordPress.Security.ValidatedSanitizedInput.InputNotSanitized
+			$row1       = isset( $_POST['apd_text_row_1'] ) ? APD_Security::uppercase_plate_text( (string) wp_unslash( $_POST['apd_text_row_1'] ) ) : ''; // phpcs:ignore WordPress.Security.ValidatedSanitizedInput.InputNotSanitized
+			$row2       = isset( $_POST['apd_text_row_2'] ) ? APD_Security::uppercase_plate_text( (string) wp_unslash( $_POST['apd_text_row_2'] ) ) : ''; // phpcs:ignore WordPress.Security.ValidatedSanitizedInput.InputNotSanitized
 			$row1_clean = APD_Security::sanitize_plate_text( $row1, false );
 			$row2_clean = APD_Security::sanitize_plate_text( $row2, false );
 			$row_length = static function ( $value ) {
@@ -1159,8 +1275,8 @@ final class APD_WooCommerce {
 		$side_limits   = APD_Formats::active_us_side_limits( $payload, $posted_design );
 
 		if ( is_array( $side_limits ) && ( isset( $_POST['apd_text_left'] ) || isset( $_POST['apd_text_right'] ) ) ) {
-			$side_left  = isset( $_POST['apd_text_left'] ) ? (string) wp_unslash( $_POST['apd_text_left'] ) : ''; // phpcs:ignore WordPress.Security.ValidatedSanitizedInput.InputNotSanitized
-			$side_right = isset( $_POST['apd_text_right'] ) ? (string) wp_unslash( $_POST['apd_text_right'] ) : ''; // phpcs:ignore WordPress.Security.ValidatedSanitizedInput.InputNotSanitized
+			$side_left  = isset( $_POST['apd_text_left'] ) ? APD_Security::uppercase_plate_text( (string) wp_unslash( $_POST['apd_text_left'] ) ) : ''; // phpcs:ignore WordPress.Security.ValidatedSanitizedInput.InputNotSanitized
+			$side_right = isset( $_POST['apd_text_right'] ) ? APD_Security::uppercase_plate_text( (string) wp_unslash( $_POST['apd_text_right'] ) ) : ''; // phpcs:ignore WordPress.Security.ValidatedSanitizedInput.InputNotSanitized
 			$left_clean  = APD_Security::sanitize_plate_text( $side_left, false );
 			$right_clean = APD_Security::sanitize_plate_text( $side_right, false );
 			$side_length = static function ( $value ) {
@@ -1186,6 +1302,14 @@ final class APD_WooCommerce {
 			$max_chars    = $side_limits[0] + $side_limits[1];
 		}
 
+		$unstyled = APD_Formats::is_holder( $format_type ) && isset( $_POST['apd_plain'] ) && '1' === sanitize_text_field( wp_unslash( $_POST['apd_plain'] ) );
+
+		if ( $unstyled ) {
+			$text         = '';
+			$multiline    = false;
+			$length_limit = $max_chars;
+		}
+
 		$text_check = APD_Security::validate_plate_text(
 			$text,
 			array(
@@ -1204,14 +1328,23 @@ final class APD_WooCommerce {
 
 		foreach ( $payload['fonts'] as $font ) {
 			if ( $font['id'] === $font_id ) {
-				$font_label = $font['family'];
+				$font_label = APD_Formats::font_shop_label( $font );
 				break;
 			}
 		}
 
-		if ( '' === $font_label && ! empty( $payload['fonts'] ) ) {
-			$font_id    = $payload['fonts'][0]['id'];
-			$font_label = $payload['fonts'][0]['family'];
+		if ( $unstyled ) {
+			$font_id    = '';
+			$font_label = '';
+		} elseif ( '' === $font_label && ! empty( $payload['fonts'] ) ) {
+			$font_id = APD_Formats::default_font_id( $payload['fonts'], isset( $format['type'] ) ? (string) $format['type'] : '' );
+
+			foreach ( $payload['fonts'] as $font ) {
+				if ( $font['id'] === $font_id ) {
+					$font_label = APD_Formats::font_shop_label( $font );
+					break;
+				}
+			}
 		}
 
 		$preset_id    = '';
@@ -1233,10 +1366,8 @@ final class APD_WooCommerce {
 			}
 		}
 
-		$design_id    = '';
-		$design_label = '';
-		$design_code  = '';
-		$type         = isset( $format['type'] ) ? (string) $format['type'] : '';
+		$design_id  = '';
+		$type       = isset( $format['type'] ) ? (string) $format['type'] : '';
 		$design_box   = APD_Formats::sanitize_text_box(
 			isset( $payload['text_box'] ) ? $payload['text_box'] : array(),
 			$type,
@@ -1247,23 +1378,21 @@ final class APD_WooCommerce {
 			$design_id = isset( $_POST['apd_design_id'] ) ? sanitize_text_field( wp_unslash( $_POST['apd_design_id'] ) ) : '';
 			$designs   = isset( $payload['designs'] ) && is_array( $payload['designs'] ) ? $payload['designs'] : array();
 
+			$design_matched = false;
+
 			foreach ( $designs as $design ) {
 				if ( $design['id'] === $design_id ) {
-					$design_label = $design['name'];
-					$design_code  = isset( $design['code'] ) ? (string) $design['code'] : '';
-					$design_box   = APD_Designs::sanitize_text_box( isset( $design['text_box'] ) ? $design['text_box'] : array() );
+					$design_box     = APD_Designs::sanitize_text_box( isset( $design['text_box'] ) ? $design['text_box'] : array() );
+					$design_matched = true;
 					break;
 				}
 			}
 
-			if ( '' === $design_label && ! empty( $designs ) ) {
-				$design_id    = $designs[0]['id'];
-				$design_label = $designs[0]['name'];
-				$design_code  = isset( $designs[0]['code'] ) ? (string) $designs[0]['code'] : '';
-				$design_box   = APD_Designs::sanitize_text_box( isset( $designs[0]['text_box'] ) ? $designs[0]['text_box'] : array() );
-			} elseif ( '' === $design_label ) {
-				$design_id   = '';
-				$design_code = '';
+			if ( ! $design_matched && ! empty( $designs ) ) {
+				$design_id  = $designs[0]['id'];
+				$design_box = APD_Designs::sanitize_text_box( isset( $designs[0]['text_box'] ) ? $designs[0]['text_box'] : array() );
+			} elseif ( ! $design_matched ) {
+				$design_id = '';
 			}
 		}
 
@@ -1302,8 +1431,8 @@ final class APD_WooCommerce {
 			'preset_id'              => $preset_id,
 			'preset_label'           => $preset_label,
 			'design_id'              => $design_id,
-			'design_label'           => $design_label,
-			'design_code'            => $design_code,
+			'design_label'           => '',
+			'design_code'            => '',
 			'text_box'               => $design_box,
 			'color_fields'           => $color_fields,
 			'no_frame'               => ! $frame_chosen,
@@ -1315,6 +1444,7 @@ final class APD_WooCommerce {
 			'background_color_label' => $fill_color['label'],
 			'holder_color'           => $holder_color['hex'],
 			'holder_color_label'     => $holder_color['label'],
+			'unstyled'               => $unstyled,
 			'price_adjustment'       => (float) $format['price_adjustment'],
 			'offer_fingerprint'      => self::offer_fingerprint( $product_id ),
 		);
@@ -1383,20 +1513,15 @@ final class APD_WooCommerce {
 			);
 		}
 
-		if ( ! empty( $config['design_label'] ) ) {
-			$design_value = (string) $config['design_label'];
+		$holder_type = APD_Formats::is_holder( $type );
+		$text_empty  = ! isset( $config['text'] ) || '' === trim( (string) $config['text'] );
 
-			if ( ! empty( $config['design_code'] ) ) {
-				$design_value .= ' (' . $config['design_code'] . ')';
-			}
-
+		if ( $text_empty && ( self::config_includes_color( $config, 'text' ) || self::config_includes_color( $config, 'holder_text' ) || self::config_includes_color( $config, 'color_text' ) || ! empty( $config['unstyled'] ) ) ) {
 			$rows[] = array(
-				'key'   => __( 'Plate design', 'auto-plate-designer' ),
-				'value' => $design_value,
+				'key'   => __( 'NO TEXT!', 'auto-plate-designer' ),
+				'value' => __( 'NO TEXT!', 'auto-plate-designer' ),
 			);
-		}
-
-		if ( ( self::config_includes_color( $config, 'text' ) || self::config_includes_color( $config, 'holder_text' ) || self::config_includes_color( $config, 'color_text' ) ) && ! empty( $config['text_color'] ) ) {
+		} elseif ( ( self::config_includes_color( $config, 'text' ) || self::config_includes_color( $config, 'holder_text' ) || self::config_includes_color( $config, 'color_text' ) ) && ! empty( $config['text_color'] ) ) {
 			$rows[] = array(
 				'key'   => __( 'Text color', 'auto-plate-designer' ),
 				'value' => self::format_color_display(
@@ -1433,9 +1558,14 @@ final class APD_WooCommerce {
 			);
 		}
 
-		if ( ( self::config_includes_color( $config, 'background' ) || self::config_includes_color( $config, 'holder_strip' ) || self::config_includes_color( $config, 'color_background' ) ) && ! empty( $config['background_color'] ) ) {
-			$fill_key = APD_Formats::is_holder( $type )
-				? __( 'White strip color', 'auto-plate-designer' )
+		if ( $holder_type && ! empty( $config['unstyled'] ) ) {
+			$rows[] = array(
+				'key'   => __( 'Strip color', 'auto-plate-designer' ),
+				'value' => __( 'Without styling', 'auto-plate-designer' ),
+			);
+		} elseif ( ( self::config_includes_color( $config, 'background' ) || self::config_includes_color( $config, 'holder_strip' ) || self::config_includes_color( $config, 'color_background' ) ) && ! empty( $config['background_color'] ) ) {
+			$fill_key = $holder_type
+				? __( 'Strip color', 'auto-plate-designer' )
 				: __( 'Plate color', 'auto-plate-designer' );
 
 			$rows[] = array(

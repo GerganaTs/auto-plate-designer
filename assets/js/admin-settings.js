@@ -15,6 +15,8 @@
 		return null;
 	}
 
+	var TEXT_FRAME_GAP_MM = 8;
+
 	function adminCfg() {
 		return window.apdAdmin || {};
 	}
@@ -82,7 +84,7 @@
 	}
 
 	function plateRowAlign(value) {
-		if (value === 'left' || value === 'right' || value === 'center') {
+		if (value === 'left' || value === 'right' || value === 'center' || value === 'justify') {
 			return value;
 		}
 		return 'center';
@@ -458,6 +460,13 @@
 			return;
 		}
 		var type = select.value;
+		var plateNote = document.querySelector('[data-apd-holder-plate]');
+		if (plateNote) {
+			var plateLabels = adminCfg().holderPlateLabels || {};
+			var holder = isHolderType(type);
+			plateNote.hidden = !holder;
+			plateNote.textContent = holder && plateLabels[type] ? plateLabels[type] : '';
+		}
 		toggleFormatPalettes(type);
 		var hasType = type !== '';
 		document.querySelectorAll('[data-apd-format-details]').forEach(function (el) {
@@ -540,15 +549,66 @@
 		syncFrameFields();
 		updateFormatStage();
 		syncSplitPanels();
+		syncHolderMetricMode();
+	}
+
+	function syncHolderMetricMode() {
+		var type = currentFormatType();
+		var holder = isHolderType(type);
+		var stage = document.querySelector('[data-apd-text-box-stage]');
+		var stored = stage ? (stage.getAttribute('data-apd-strip-metrics-type') || '') : '';
+		if (stripMetricsActive() && stored && stored !== type) {
+			var oldStrip = holderStrip(stored);
+			var fields = readTextBoxFields();
+			var canvas = oldStrip ? stripToCanvas(fields, oldStrip) : fields;
+			setStripMetricFlag(false);
+			['x', 'y', 'width', 'height'].forEach(function (name) {
+				var input = document.querySelector('[data-apd-text-box-input="' + name + '"]');
+				if (input && canvas[name] !== undefined && canvas[name] !== null) {
+					input.value = String(canvas[name]);
+				}
+			});
+		}
+		if (holder && !stripMetricsActive()) {
+			writeTextBox(readTextBox());
+			return;
+		}
+		if (!holder && stripMetricsActive()) {
+			var canvas = readTextBox();
+			setStripMetricFlag(false);
+			['x', 'y', 'width', 'height', 'align', 'valign'].forEach(function (name) {
+				var el = document.querySelector('[data-apd-text-box-input="' + name + '"]');
+				if (el && canvas[name] !== undefined && canvas[name] !== null) {
+					el.value = String(canvas[name]);
+				}
+			});
+			applyTextBoxOverlay(clampBox(canvas));
+		}
 	}
 
 	function toggleSuvCharLimits(type) {
 		var suv = usesTwoRows(type);
-		var hideSingle = suv || isHolderType(type) || !type || (type === 'us' && splitActive());
+		var holder = isHolderType(type);
+		var hideSingle = suv || !type || (type === 'us' && splitActive());
 		document.querySelectorAll('[data-apd-max-single]').forEach(function (row) {
 			row.hidden = hideSingle;
 			row.querySelectorAll('input').forEach(function (input) {
 				input.disabled = hideSingle;
+				if (holder && input.getAttribute('data-apd-holder-max') !== '1') {
+					if (!input.hasAttribute('data-apd-holder-cleared')) {
+						if (!input.hasAttribute('data-apd-prev-max')) {
+							input.setAttribute('data-apd-prev-max', input.value);
+						}
+						input.value = '';
+						input.setAttribute('data-apd-holder-cleared', '1');
+					}
+				} else if (!holder) {
+					input.removeAttribute('data-apd-holder-cleared');
+					if (input.hasAttribute('data-apd-prev-max') && !input.value) {
+						input.value = input.getAttribute('data-apd-prev-max');
+					}
+					input.removeAttribute('data-apd-prev-max');
+				}
 			});
 		});
 		document.querySelectorAll('[data-apd-max-rows]').forEach(function (row) {
@@ -898,6 +958,7 @@
 		if (band) {
 			band.hidden = !usesCountryBand(type);
 		}
+		writeTextBox(readTextBox());
 		renderPlateSample();
 		applyFrameOverlay();
 		applyBandOverlay(readBandBox());
@@ -1205,6 +1266,87 @@
 		}
 	});
 
+	function holderStrip(type) {
+		type = type || currentFormatType();
+		if (!isHolderType(type)) {
+			return null;
+		}
+		var strips = adminCfg().holderStrips || {};
+		var strip = strips[type] || (type === 'holder' ? adminCfg().holderStrip : null);
+		if (strip && strip.width && strip.height) {
+			return {
+				x: Number(strip.x),
+				y: Number(strip.y),
+				width: Number(strip.width),
+				height: Number(strip.height)
+			};
+		}
+		if (type === 'holder') {
+			return { x: 2.73, y: 77.3, width: 94.34, height: 6.26 };
+		}
+		return null;
+	}
+
+	function stripMetricsActive() {
+		var stage = document.querySelector('[data-apd-text-box-stage]');
+		return !!(stage && stage.getAttribute('data-apd-strip-metrics') === '1');
+	}
+
+	function setStripMetricFlag(on) {
+		var stage = document.querySelector('[data-apd-text-box-stage]');
+		var flag = document.querySelector('[data-apd-text-box-metric]');
+		if (stage) {
+			if (on) {
+				stage.setAttribute('data-apd-strip-metrics', '1');
+				stage.setAttribute('data-apd-strip-metrics-type', currentFormatType());
+			} else {
+				stage.removeAttribute('data-apd-strip-metrics');
+				stage.removeAttribute('data-apd-strip-metrics-type');
+			}
+		}
+		if (flag) {
+			flag.value = on ? 'strip' : '';
+		}
+	}
+
+	function stripToCanvas(box, strip) {
+		return {
+			x: strip.x + (strip.width * box.x / 100),
+			y: strip.y + (strip.height * box.y / 100),
+			width: strip.width * box.width / 100,
+			height: strip.height * box.height / 100,
+			align: box.align,
+			valign: box.valign,
+			letter_align: box.letter_align,
+			number_align: box.number_align
+		};
+	}
+
+	function canvasToStrip(box, strip) {
+		var width = (box.width / strip.width) * 100;
+		var height = (box.height / strip.height) * 100;
+		var x = ((box.x - strip.x) / strip.width) * 100;
+		var y = ((box.y - strip.y) / strip.height) * 100;
+		width = Math.max(5, Math.min(100, width));
+		height = Math.max(5, Math.min(100, height));
+		if (x + width > 100) {
+			x = 100 - width;
+		}
+		if (y + height > 100) {
+			y = 100 - height;
+		}
+		return {
+			x: round1(Math.max(0, x)),
+			y: round1(Math.max(0, y)),
+			width: round1(width),
+			height: round1(height),
+			align: box.align,
+			valign: box.valign,
+			letter_align: box.letter_align,
+			number_align: box.number_align
+		};
+	}
+
 	function clampBox(box) {
 		var next = {
 			x: box.x,
@@ -1214,38 +1356,59 @@
 			align: box.align || 'center',
 			valign: box.valign || 'middle'
 		};
-		if (next.width < 5) {
-			next.width = 5;
+		var strip = holderStrip();
+		if (strip) {
+			var minW = Math.max(0.1, round1(strip.width * 0.05));
+			var minH = Math.max(0.1, round1(strip.height * 0.05));
+			if (next.width < minW) {
+				next.width = minW;
+			}
+			if (next.height < minH) {
+				next.height = minH;
+			}
+			if (next.width > strip.width) {
+				next.width = strip.width;
+			}
+			if (next.height > strip.height) {
+				next.height = strip.height;
+			}
+			var maxX = strip.x + strip.width - next.width;
+			var maxY = strip.y + strip.height - next.height;
+			next.x = Math.max(strip.x, Math.min(maxX, next.x));
+			next.y = Math.max(strip.y, Math.min(maxY, next.y));
+		} else {
+			var region = computeTextAreaRegion();
+			if (next.width < 5) {
+				next.width = 5;
+			}
+			if (next.height < 5) {
+				next.height = 5;
+			}
+			if (next.width > region.width) {
+				next.width = region.width;
+			}
+			if (next.height > region.height) {
+				next.height = region.height;
+			}
+			var maxX = region.x + region.width - next.width;
+			var maxY = region.y + region.height - next.height;
+			next.x = Math.max(region.x, Math.min(maxX, next.x));
+			next.y = Math.max(region.y, Math.min(maxY, next.y));
 		}
-		if (next.height < 5) {
-			next.height = 5;
+		next.x = round1(next.x);
+		next.y = round1(next.y);
+		next.width = round1(next.width);
+		next.height = round1(next.height);
+		if (box.letter_align) {
+			next.letter_align = box.letter_align;
 		}
-		if (next.width > 100) {
-			next.width = 100;
+		if (box.number_align) {
+			next.number_align = box.number_align;
 		}
-		if (next.height > 100) {
-			next.height = 100;
-		}
-		if (next.x < 0) {
-			next.x = 0;
-		}
-		if (next.y < 0) {
-			next.y = 0;
-		}
-		if (next.x + next.width > 100) {
-			next.x = Math.max(0, 100 - next.width);
-		}
-		if (next.y + next.height > 100) {
-			next.y = Math.max(0, 100 - next.height);
-		}
-		next.x = Math.round(next.x * 10) / 10;
-		next.y = Math.round(next.y * 10) / 10;
-		next.width = Math.round(next.width * 10) / 10;
-		next.height = Math.round(next.height * 10) / 10;
 		return next;
 	}
 
-	function readTextBox() {
+	function readTextBoxFields() {
 		function num(name, fallback) {
 			var el = document.querySelector('[data-apd-text-box-input="' + name + '"]');
 			var value = el ? parseFloat(el.value) : fallback;
@@ -1269,18 +1432,38 @@
 		if (numberEl) {
 			box.number_align = numberEl.value || 'justify';
 		}
+		return box;
+	}
+
+	function readTextBox() {
+		var box = readTextBoxFields();
+		if (stripMetricsActive()) {
+			var strip = holderStrip();
+			if (strip) {
+				box = stripToCanvas(box, strip);
+			}
+		}
 		return clampBox(box);
 	}
 
 	function writeTextBox(box) {
+		var canvas = clampBox(box);
+		var shown = canvas;
+		var strip = holderStrip();
+		if (strip) {
+			shown = canvasToStrip(canvas, strip);
+			setStripMetricFlag(true);
+		} else {
+			setStripMetricFlag(false);
+		}
 		['x', 'y', 'width', 'height', 'align', 'valign', 'letter_align', 'number_align'].forEach(function (name) {
 			var el = document.querySelector('[data-apd-text-box-input="' + name + '"]');
-			if (el && box[name] !== undefined && box[name] !== null) {
-				el.value = String(box[name]);
+			if (el && shown[name] !== undefined && shown[name] !== null) {
+				el.value = String(shown[name]);
 			}
 		});
 		syncRowStyleButtons();
-		applyTextBoxOverlay(box);
+		applyTextBoxOverlay(canvas);
 	}
 
 	function applyTextBoxOverlay(box) {
@@ -1363,8 +1546,8 @@
 				bw = 0;
 			}
 			if (bw > 0 && mm.width > 0 && mm.height > 0) {
-				var ix = (bw / mm.width) * 100;
-				var iy = (bw / mm.height) * 100;
+				var ix = ((bw + TEXT_FRAME_GAP_MM) / mm.width) * 100;
+				var iy = ((bw + TEXT_FRAME_GAP_MM) / mm.height) * 100;
 				region = {
 					x: ix,
 					y: iy,
@@ -1375,8 +1558,15 @@
 		}
 		if (usesCountryBand(type)) {
 			var band = readBandBox();
-			if (band.height >= 80) {
+			if (band.height >= 80 && mm.width > 0) {
 				region = subtractBandFromRegion(region, band);
+				var gapX = (TEXT_FRAME_GAP_MM / mm.width) * 100;
+				if (band.x + (band.width / 2) < 50) {
+					region.x += gapX;
+					region.width = Math.max(5, region.width - gapX);
+				} else {
+					region.width = Math.max(5, region.width - gapX);
+				}
 			}
 		}
 		if (region.width < 5) {
@@ -1619,7 +1809,11 @@
 			return;
 		}
 
-		applyTextBoxOverlay(readTextBox());
+		if (isHolderType(currentFormatType())) {
+			writeTextBox(readTextBox());
+		} else {
+			applyTextBoxOverlay(readTextBox());
+		}
 		syncSplitPanels();
 		if (splitActive()) {
 			writePair(readTextBox(), readRightBox());
@@ -2161,39 +2355,78 @@
 
 	function toggleProductDesign() {
 		var select = document.getElementById('apd_format_id');
-		var row = document.querySelector('[data-apd-product-design]');
-		var designSelect = document.getElementById('apd_design_id');
-		if (!select || !row || !designSelect) {
+		var designField = document.getElementById('apd_design_id');
+		if (!select || !designField) {
 			return;
 		}
 		var option = select.options[select.selectedIndex];
 		var type = option ? option.getAttribute('data-apd-type') || '' : '';
 		var formatId = select.value;
 		var us = type === 'us';
-		row.hidden = !us;
-		designSelect.disabled = !us;
-		if (!us) {
+		designField.disabled = !us;
+		if (!us || !designField.value) {
 			return;
 		}
-		var current = designSelect.value;
-		var still = false;
-		Array.prototype.forEach.call(designSelect.options, function (opt) {
-			if (!opt.value) {
-				opt.hidden = false;
-				opt.disabled = false;
-				return;
+		var raw = designField.getAttribute('data-apd-formats') || '';
+		var ids = raw ? raw.split(',') : [];
+		if (ids.length && ids.indexOf(formatId) === -1) {
+			designField.value = '';
+		}
+	}
+
+	function productTextMode() {
+		var select = document.getElementById('apd_format_id');
+		if (!select) {
+			return 'single';
+		}
+		var option = select.options[select.selectedIndex];
+		var type = option ? option.getAttribute('data-apd-type') || '' : '';
+		if (option && option.getAttribute('data-apd-rows') === '1') {
+			return 'rows';
+		}
+		if (type === 'moto' || type === 'moto_240' || type === 'moto_plain' || type === 'moto_plain_240' || type === 'suv' || type === 'suv_eu') {
+			return 'rows';
+		}
+		if (type !== 'us' || !option) {
+			return 'single';
+		}
+		var photo = option.getAttribute('data-apd-photo') === '1';
+		var formatSplit = option.getAttribute('data-apd-split') === '1';
+		if (photo) {
+			return formatSplit ? 'sides' : 'single';
+		}
+		var designField = document.getElementById('apd_design_id');
+		if (designField && designField.value && designField.getAttribute('data-apd-split') === '1') {
+			return 'sides';
+		}
+		if ((!designField || !designField.value) && formatSplit) {
+			return 'sides';
+		}
+		return 'single';
+	}
+
+	function applySideLimits() {
+		var select = document.getElementById('apd_format_id');
+		var option = select && select.selectedIndex >= 0 ? select.options[select.selectedIndex] : null;
+		if (!option) {
+			return;
+		}
+		var left = option.getAttribute('data-apd-left') || '3';
+		var right = option.getAttribute('data-apd-right') || '4';
+		if (option.getAttribute('data-apd-photo') !== '1') {
+			var designField = document.getElementById('apd_design_id');
+			if (designField && designField.value && designField.getAttribute('data-apd-split') === '1') {
+				left = designField.getAttribute('data-apd-left') || left;
+				right = designField.getAttribute('data-apd-right') || right;
 			}
-			var raw = opt.getAttribute('data-apd-formats') || '';
-			var ids = raw ? raw.split(',') : [];
-			var ok = !ids.length || ids.indexOf(formatId) !== -1;
-			opt.hidden = !ok;
-			opt.disabled = !ok;
-			if (ok && opt.value === current) {
-				still = true;
-			}
-		});
-		if (!still) {
-			designSelect.value = '';
+		}
+		var leftInput = document.getElementById('apd_default_text_left');
+		var rightInput = document.getElementById('apd_default_text_right');
+		if (leftInput) {
+			leftInput.maxLength = parseInt(left, 10) || 3;
+		}
+		if (rightInput) {
+			rightInput.maxLength = parseInt(right, 10) || 4;
 		}
 	}
 
@@ -2201,28 +2434,41 @@
 		var select = document.getElementById('apd_format_id');
 		var single = document.querySelector('[data-apd-default-single]');
 		var rows = document.querySelector('[data-apd-default-rows]');
+		var sides = document.querySelector('[data-apd-default-sides]');
 		if (!select || !single || !rows) {
 			return;
 		}
-		var option = select.options[select.selectedIndex];
-		var type = option ? option.getAttribute('data-apd-type') || '' : '';
-		var suv = type === 'moto' || type === 'moto_plain' || type === 'suv' || type === 'suv_eu';
+		var mode = productTextMode();
+		var suv = mode === 'rows';
 		var singleInput = single.querySelector('input');
 		var rowInputs = rows.querySelectorAll('input');
+		var sideInputs = sides ? sides.querySelectorAll('input') : [];
 		if (suv && singleInput && rowInputs.length === 2 && !rowInputs[0].value && !rowInputs[1].value && singleInput.value) {
 			rowInputs[0].value = singleInput.value;
 		}
-		if (!suv && singleInput && rowInputs.length === 2 && !singleInput.value) {
+		if (mode === 'sides' && singleInput && sideInputs.length === 2 && !sideInputs[0].value && !sideInputs[1].value && singleInput.value) {
+			sideInputs[0].value = singleInput.value;
+		}
+		if (mode === 'single' && singleInput && rowInputs.length === 2 && !singleInput.value) {
 			singleInput.value = [rowInputs[0].value, rowInputs[1].value].filter(Boolean).join(' ');
 		}
-		single.hidden = suv;
-		rows.hidden = !suv;
+		single.hidden = mode !== 'single';
+		rows.hidden = mode !== 'rows';
+		if (sides) {
+			sides.hidden = mode !== 'sides';
+		}
 		if (singleInput) {
-			singleInput.disabled = suv;
+			singleInput.disabled = mode !== 'single';
 		}
 		rowInputs.forEach(function (input) {
-			input.disabled = !suv;
+			input.disabled = mode !== 'rows';
 		});
+		Array.prototype.forEach.call(sideInputs, function (input) {
+			input.disabled = mode !== 'sides';
+		});
+		if (mode === 'sides') {
+			applySideLimits();
+		}
 	}
 
 	function toggleProductColorFields() {
@@ -2286,8 +2532,11 @@
 		}
 		if (event.target.id === 'apd_format_id') {
 			toggleProductColorFields();
-			toggleProductTextRows();
 			toggleProductDesign();
+			toggleProductTextRows();
+		}
+		if (event.target.id === 'apd_design_id') {
+			toggleProductTextRows();
 		}
 		if (event.target.name === 'apd_enabled') {
 			toggleProductOptions();

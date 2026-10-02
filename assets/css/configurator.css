@@ -9,7 +9,6 @@ form.cart {
 	display: flex;
 	flex-wrap: wrap;
 	align-items: center;
-	gap: 0.75rem 1rem;
 }
 
 .apd-cart-notice {
@@ -77,7 +76,6 @@ table.wc-block-cart-items .wc-block-cart-items__row .wc-block-cart-item__image i
 }
 
 .apd-configurator {
-	margin: 0 0 1.25rem;
 	max-width: none;
 	flex: 1 0 100%;
 	width: 100%;
@@ -96,9 +94,29 @@ table.wc-block-cart-items .wc-block-cart-items__row .wc-block-cart-item__image i
 	box-sizing: border-box;
 }
 
+/* The two columns are assembled while the page is still parsing. Keep the
+   theme stack invisible until that wrapper exists, then show the finished row. */
+@keyframes apd-show-product {
+	to {
+		visibility: visible;
+	}
+}
+
+body.apd-configurator-product:not(:has(.apd-product-layout)) :is(
+	.wp-block-columns,
+	.wp-block-post-title,
+	h1.product_title,
+	.product_title,
+	div.product div.summary,
+	div.product .entry-summary
+) {
+	visibility: hidden;
+	animation: apd-show-product 0s 3s forwards;
+}
+
 @media (min-width: 960px) {
 	.apd-product-layout {
-		grid-template-columns: minmax(0, 1fr) minmax(16rem, 22rem);
+		grid-template-columns: minmax(0, 1fr) minmax(22rem, 32rem);
 	}
 }
 
@@ -193,26 +211,16 @@ table.wc-block-cart-items .wc-block-cart-items__row .wc-block-cart-item__image i
 	max-width: none !important;
 	max-height: none !important;
 	background: #fff;
-}
-
-.apd-fields {
-	margin-top: 1.25rem;
-	display: grid;
-	gap: 1rem;
+	letter-spacing: 0;
+	word-spacing: 0;
+	line-height: 1;
 }
 
 .apd-row-fields,
 .apd-side-fields {
-	display: grid;
-	gap: 0.75rem;
-}
-
-.apd-side-fields {
-	grid-template-columns: 1fr 1fr;
-}
-
-.apd-configurator:not(:has(.apd-preview)) .apd-fields {
-	margin-top: 0;
+	display: flex;
+	flex-direction: column;
+	align-items: stretch;
 }
 
 .apd-field.is-disabled {
@@ -225,7 +233,6 @@ table.wc-block-cart-items .wc-block-cart-items__row .wc-block-cart-item__image i
 }
 
 .apd-field {
-	margin: 0;
 	min-width: 0;
 	width: 100%;
 }
@@ -234,6 +241,21 @@ table.wc-block-cart-items .wc-block-cart-items__row .wc-block-cart-item__image i
 	float: none;
 	width: 100%;
 	max-width: 100%;
+}
+
+.apd-fields .form-row.form-row-wide.apd-field {
+	display: flex;
+	flex-direction: column;
+	align-items: flex-start;
+}
+
+.apd-configurator .apd-font-hint {
+	display: block;
+	width: 100%;
+	max-width: 100%;
+	padding-bottom: 5px;
+	font-size: 0.8rem;
+	opacity: 0.75;
 }
 
 .apd-field.apd-swatches,
@@ -254,19 +276,25 @@ table.wc-block-cart-items .wc-block-cart-items__row .wc-block-cart-item__image i
 	width: auto !important;
 	max-width: 100%;
 	float: none;
-	margin: 0 0 0.25rem;
+	padding-bottom: 5px;
 	font-size: inherit;
-	font-weight: inherit;
+	font-weight: 700;
 	line-height: inherit;
 }
 
-.apd-configurator :is(label, legend, .apd-count, p, select, input, textarea) {
+.apd-configurator :is(.apd-count, p, select, input, textarea) {
 	font-family: inherit;
 	font-size: inherit;
 	font-weight: inherit;
 	line-height: inherit;
 	letter-spacing: inherit;
 	text-transform: none;
+}
+
+.apd-configurator .apd-field > label,
+.apd-configurator .apd-field > legend {
+	font-weight: 700;
+	padding-bottom: 5px;
 }
 
 .apd-configurator label.apd-choice {
@@ -290,9 +318,7 @@ table.wc-block-cart-items .wc-block-cart-items__row .wc-block-cart-item__image i
 .apd-field input[type="text"],
 .apd-field textarea,
 .apd-field select,
-body.apd-configurator-product form.cart .quantity .qty,
-body.apd-configurator-product form.cart input.qty,
-body.apd-configurator-product form.cart input.input-text:not([type="hidden"]) {
+body.apd-configurator-product form.cart input.input-text:not([type="hidden"]):not(.qty) {
 	appearance: none;
 	-webkit-appearance: none;
 	box-sizing: border-box;
@@ -312,6 +338,8 @@ body.apd-configurator-product form.cart input.input-text:not([type="hidden"]) {
 }
 
 .apd-field select {
+	width: 100%;
+	max-width: 100%;
 	background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'%3E%3Cpath fill='%231e1e1e' d='M1.4 0 6 4.6 10.6 0 12 1.4 6 8 0 1.4z'/%3E%3C/svg%3E");
 	background-repeat: no-repeat;
 	background-position: right 0.85rem center;
@@ -330,16 +358,35 @@ body.apd-configurator-product form.cart input.input-text:not([type="hidden"]):fo
 	border-color: #1e1e1e;
 }
 
+body.apd-configurator-product form.cart .quantity,
+body.apd-configurator-product form.cart .wc-block-components-quantity-selector {
+	float: none;
+	width: auto;
+	max-width: none;
+	flex: 0 0 auto;
+}
+
 body.apd-configurator-product form.cart .quantity .qty,
-body.apd-configurator-product form.cart input.qty {
-	width: 5rem;
-	max-width: 5rem;
+body.apd-configurator-product form.cart input.qty,
+body.apd-configurator-product form.cart .wc-block-components-quantity-selector__input {
+	width: 4.5rem;
+	max-width: 4.5rem;
+	flex: 0 0 auto;
 	text-align: center;
 }
 
-.apd-count {
+body.apd-configurator-product form.cart .single_add_to_cart_button,
+body.apd-configurator-product form.cart button[name="add-to-cart"],
+body.apd-configurator-product form.cart .wp-block-button,
+body.apd-configurator-product form.cart .wp-element-button {
+	width: auto;
+	max-width: none;
+	flex: 0 0 auto;
+}
+
+.apd-configurator .apd-count {
 	display: block;
-	margin-top: 0.35rem;
+	font-size: 0.8rem;
 	opacity: 0.75;
 }
 
