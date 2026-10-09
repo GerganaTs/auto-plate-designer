@@ -27,6 +27,7 @@ final class APD_Color_Palettes {
 		'color_text'         => 'apd-palette-color-text',
 		'color_border'       => 'apd-palette-color-border',
 		'color_background'   => 'apd-palette-color-background',
+		'slogan'             => 'apd-palette-slogan',
 	);
 
 	/**
@@ -60,7 +61,7 @@ final class APD_Color_Palettes {
 	 * @return array<int, string>
 	 */
 	public static function purposes() {
-		return array( 'text', 'border', 'background', 'holder', 'holder_text', 'holder_strip', 'color_text', 'color_border', 'color_background' );
+		return array( 'text', 'border', 'background', 'holder', 'holder_text', 'holder_strip', 'color_text', 'color_border', 'color_background', 'slogan' );
 	}
 
 	/**
@@ -80,6 +81,7 @@ final class APD_Color_Palettes {
 			'color_text'       => __( 'Color plate text', 'auto-plate-designer' ),
 			'color_border'     => __( 'Color plate frame', 'auto-plate-designer' ),
 			'color_background' => __( 'Color plate fill', 'auto-plate-designer' ),
+			'slogan'           => __( 'Frame inscription', 'auto-plate-designer' ),
 		);
 
 		return isset( $labels[ $purpose ] ) ? $labels[ $purpose ] : $purpose;
@@ -931,6 +933,13 @@ final class APD_Color_Palettes {
 				'color_ids' => $all_ids,
 				'active'    => true,
 			),
+			array(
+				'id'        => self::DEFAULT_PALETTE_IDS['slogan'],
+				'name'      => 'Frame inscription',
+				'purpose'   => 'slogan',
+				'color_ids' => $all_ids,
+				'active'    => true,
+			),
 		);
 
 		return array(
@@ -1202,6 +1211,7 @@ final class APD_Color_Palettes {
 			'color_text'       => 'Color plate text',
 			'color_border'     => 'Color plate frame',
 			'color_background' => 'Color plate fill',
+			'slogan'           => 'Frame inscription',
 		);
 
 		foreach ( $names as $purpose => $name ) {

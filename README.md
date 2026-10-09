@@ -4,7 +4,7 @@ WooCommerce configurator for custom vehicle plates. Shoppers style a plate on th
 
 ## Shop preview
 
-Every plate preview uses the same width as a car plate: 500 CSS pixels (`APD_Formats::CANVAS_DISPLAY_MAX_PX`). Height follows that format’s aspect ratio, so a motorcycle plate, an SUV plate, and a USA plate stay as wide as the EU plate and only grow taller or shorter with their own proportions. A holder preview is as wide as the plate it is made for, on that same scale (520 mm = 500 px). A car holder stays 500 px wide. A motorcycle holder matches a 199×154 plate. A type D holder matches a 280×200 plate. The holder photo keeps its own proportions.
+A car plate and a color plate preview at 500 CSS pixels wide (`APD_Formats::CANVAS_DISPLAY_MAX_PX`). Height follows that format’s aspect ratio. Motorcycle plates use the 199 mm plate as those 500 pixels, so a 240×130 plate is wider and its letters stay the same size as on the 199×154 plate. SUV plates use the 280 mm plate as 500 pixels, so a 340×200 plate is wider and its letters stay the same size as on the 280×200 plate. A USA plate uses the 305 mm plate as 500 pixels, so a wider USA plate grows and its letters stay the same size. A holder preview is as wide as the plate it is made for, on the car-plate scale (520 mm = 500 px). A car holder stays 500 px wide. A motorcycle holder matches a 199×154 plate. A type D holder matches a 280×200 plate. The holder photo keeps its own proportions.
 
 The country-band button stays at most as tall as a car plate (about 106 pixels) so a tall plate does not stretch the country control.
 
@@ -15,6 +15,10 @@ Motorcycle plates and SUV plates (`suv`, `suv_eu`) have two fields on the produc
 There are four motorcycle types. `moto` is the 199×154 plate with a euroband. `moto_240` is the 240×130 plate with a euroband. `moto_plain` is the 199×154 plate without a country band. `moto_plain_240` is the 240×130 plate without a country band. The euroband on `moto_240` uses the same 40 mm formula as a car plate and runs the full height of the plate. Picking a type locks those millimetres. A street plate (`custom`) is still a street plate: the admin types its millimetres, including 240×130, and it stays one line. Old motorcycle formats stay on their current type. Adding a 240×130 motorcycle plate is a new format of `moto_240` or `moto_plain_240`.
 
 **Duplicate** on the Formats list copies the saved format, including its size, colors, and text area. The copy is named with ` (Copy)` after the original name (Bulgarian: ` (Копие)`).
+
+There are four SUV types. `suv_eu` is the 280×200 plate with a euroband. `suv_eu_340` is the 340×200 plate with a euroband. `suv` is the 280×200 plate without a country preset. `suv_340` is the 340×200 plate without a country preset. The euroband stays on the first row and keeps the same millimetre width as on the 280 plate, so on the wider plate it takes a smaller share of the width. The second row stays full width. Picking a type locks those millimetres. Old SUV formats stay on their current type.
+
+`eu_300` is a 300×150 plate with a country preset and two text rows. The blue band runs the full height, and both rows sit beside it. `atyp_300` is a 300×150 plate without a country preset. In the format editor that type has two choices, text on 1 row or text on 2 rows, and each choice has its own character fields. A product that uses the two-row choice shows two fields in the shop. Both plates preview at 500 CSS pixels wide. The letters fill the white area and keep the same 8 mm gap between two rows. Other format types are unchanged.
 
 The EU SUV band covers the first row only. An active country preset is shown on every EU, motorcycle, and EU SUV product. The preset graphic sits inside the frame: the shop draws it as the original image, including SVG, on top of the plate so the frame does not cover it. The cart image uses the same crop and the same blue band fill, so the preset is not stretched and the file’s rounded corner does not show through.
 
@@ -43,6 +47,26 @@ Shoppers can add or hide the admin frame on painted plates. The checkbox label i
 The product page draws the font the shopper picks. A plate font file has to contain the letters being typed. When it has no Cyrillic glyph for a letter that looks like a Latin one (А В Е К М Н О Р С Т У Х), the preview uses that font’s Latin lookalike, so Oswald, Roboto, and a plate font still look different. The text stored on the order stays what the shopper typed.
 
 Every plate type opens on the first offered font whose family does not start with “German” and does not contain “немски”. A German family is selected only when it is the only font on that format. USA plates still open on the first family whose name starts with “USA”, when one is offered. That choice does not reorder the font list. A note saved on a font is shown after the family name, for example `Oswald — кирилица`. Under the Font label the shop shows a hint to pick a face that matches the plate and the script of the text.
+
+## French and Austrian plates
+
+A French plate (`fr`) and a French temporary plate (`fr_ww`) are 520×110, white with black letters, with the country locked to F. The shop shows the groups of `AA-000-AA`. The temporary plate prints `WW` and a month and a year. Those two numbers line up with the ink of the main letters: the month with the top, the year with the bottom. The blue country band is drawn inside the same rounded corner as the plate, on a blue fill, so the transparent corners of the preset stay blue.
+
+`fr_region` is the same 520×110 French plate with a second band on the right. That band is the same blue strip, with the plate’s rounded corner on the outer right, and it does not repeat the stars or the letter from the left preset. It has no regional logo. The shop adds a fourth field, **Region** (Bulgarian: **Регион**), for two digits. On the Romanian reference plate those digits are 21.9% of the plate height and stop 17.7% above the bottom edge. The three number groups stay between the two bands. Other plate types are unchanged.
+
+An Austrian plate (`austria`) stays locked to A, with the district and the registration around the gray region box.
+
+## English and mini plates
+
+A standard English plate is 520×110 mm, the same size as the 52×11 cm plastic replica. `uk` has an open country preset (every active preset, or only the ones ticked on the format). `uk_plain` is the same plate with no country band. Neither is locked to GB.
+
+Both draw a 5 mm inner frame. The registration stays at least 10 mm inside that frame. One slogan field sits on the bottom of the plate, at least 7 mm under the registration. Leave the slogan empty and the frame stays with no small text. The format sets the slogan’s character limit (40 until you change it). The shopper picks the plate fill, the registration color, the frame color, and the slogan color from the palettes chosen on the format.
+
+A mini plate is 340×90 mm. `mini` has the same open country preset. `mini_plain` has no band. Both are one line of black text on white, with no slogan and no inner frame. Other plate types are unchanged.
+
+## Country presets on a format
+
+EU, motorcycle, EU SUV, the 300×150 EU plate, the English plate with a preset, and the mini plate with a preset can offer every active country preset, or only the presets ticked on that format. A format with no such setting keeps every active preset. French and Austrian plates stay locked to their own country. The product editor no longer has the allowed-layout checkboxes. The Limits tab is unchanged, and a product that already stored layouts still sends them with the offer.
 
 ## Plate text
 

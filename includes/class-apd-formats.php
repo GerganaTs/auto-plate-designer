@@ -14,7 +14,19 @@
  * - moto_plain      motorcycle plate without country band (199×154)
  * - moto_plain_240  motorcycle plate without country band (240×130)
  * - suv_eu      two-line / SUV plate with euroband (280×200, BDS 15980)
+ * - suv_eu_340  two-line / SUV plate with euroband (340×200)
  * - suv         two-line / SUV plate without preset (painted, 280×200, BDS 15980)
+ * - suv_340     two-line / SUV plate without preset (painted, 340×200)
+ * - eu_300      EU plate with euroband, two text rows (300×150)
+ * - atyp_300    atypical plate, no preset; the format chooses one row or two (300×150)
+ * - fr          French plate, locked F preset, three groups (520×110)
+ * - fr_ww       French temporary plate, locked F preset and WW, date on the right (520×110)
+ * - fr_region   French plate with a mirrored F band and a two-digit region (520×110)
+ * - austria     Austrian plate, locked A preset, district and registration around a region box (520×110)
+ * - uk          English plate with an open country preset, a 5 mm inner frame, and one slogan (520×110)
+ * - uk_plain    English plate without a country preset, same frame and slogan (520×110)
+ * - mini        mini plate with an open country preset, one text line, no slogan frame (340×90)
+ * - mini_plain  mini plate without a country preset, one text line, no slogan frame (340×90)
  * - us          state graphics
  * - custom      street / painted, no band, size is typed in millimetres
  * - color       painted, no band
@@ -47,6 +59,36 @@ final class APD_Formats {
 	public const TEXT_FRAME_GAP_MM = 8;
 
 	/**
+	 * Plate color outside the thin English line, in millimetres.
+	 */
+	public const UK_INSET_MARGIN_MM = 7;
+
+	/**
+	 * Thickness of the English inset line, in millimetres.
+	 */
+	public const UK_INSET_LINE_MM = 1.4;
+
+	/**
+	 * Inner frame on an English replica, in millimetres.
+	 */
+	public const UK_FRAME_MM = 5;
+
+	/**
+	 * Clearance from that frame to the registration, in millimetres.
+	 */
+	public const UK_GLYPH_CLEAR_MM = 10;
+
+	/**
+	 * Space between the registration ink and the slogan, in millimetres.
+	 */
+	public const UK_SLOGAN_GAP_MM = 7;
+
+	/**
+	 * Default character cap for the English slogan. The format can change it.
+	 */
+	public const UK_SLOGAN_MAX = 40;
+
+	/**
 	 * Real EU plate (and euroband) height in millimetres.
 	 */
 	public const EU_BAND_HEIGHT_MM = 110;
@@ -62,8 +104,7 @@ final class APD_Formats {
 	public const CANVAS_DISPLAY_MAX_H_PX = 106;
 
 	/**
-	 * Shop preview width in CSS pixels. Every plate uses the car-plate width.
-	 * Height follows the format aspect ratio.
+	 * Shop preview width in CSS pixels for a plate with no family scale.
 	 *
 	 * @param int $width  Plate width in millimetres. Unused; kept for callers.
 	 * @param int $height Plate height in millimetres. Unused; kept for callers.
@@ -76,25 +117,68 @@ final class APD_Formats {
 	}
 
 	/**
+	 * Millimetre width that already looks right at 500 CSS pixels.
+	 *
+	 * Wider plates in the same family grow past 500 px so one millimetre,
+	 * and therefore the letters, stays the same size on screen. The older
+	 * narrower plate stays at 500 px.
+	 *
+	 * @param string $type Format type.
+	 * @return int Zero when this type stays at the shared 500 px width.
+	 */
+	public static function preview_basis_mm( $type ) {
+		$type = (string) $type;
+
+		if ( in_array( $type, array( 'moto', 'moto_240', 'moto_plain', 'moto_plain_240' ), true ) ) {
+			return 199;
+		}
+
+		if ( self::is_suv_kind( $type ) ) {
+			return 280;
+		}
+
+		if ( 'us' === $type ) {
+			return 305;
+		}
+
+		if ( in_array( $type, array( 'eu_300', 'atyp_300' ), true ) ) {
+			return 199;
+		}
+
+		return 0;
+	}
+
+	/**
 	 * Shop and admin preview width in CSS pixels.
 	 *
-	 * Plates stay at the shared car-plate width. A holder is as wide as the
-	 * plate it is made for, on the same scale (520 mm = 500 px). The photo
-	 * aspect stays the stored holder millimetres.
+	 * A holder is as wide as the plate it is made for, on the car-plate scale
+	 * (520 mm = 500 px). Motorcycle, SUV, and USA plates use the older,
+	 * smaller size as 500 px, so a wider plate in that family grows and its
+	 * letters match. The 300x150 plates use the motorcycle millimetre, so
+	 * 300 mm is wider than 199 mm and 150 mm stays the same height. Other
+	 * plates stay at 500 px. Height always follows the format aspect ratio.
 	 *
 	 * @param string $type  Format type.
 	 * @param int    $width Format width in millimetres.
 	 * @return int
 	 */
 	public static function preview_frame_width( $type, $width ) {
+		$width = max( 1, (int) $width );
+
 		if ( self::is_holder( $type ) ) {
-			$plate = self::holder_plate_size( $type );
-			$plate_width = isset( $plate['width'] ) ? (int) $plate['width'] : max( 1, (int) $width );
+			$plate       = self::holder_plate_size( $type );
+			$plate_width = isset( $plate['width'] ) ? (int) $plate['width'] : $width;
 
 			return max( 80, (int) round( self::CANVAS_DISPLAY_MAX_PX * ( $plate_width / 520 ) ) );
 		}
 
-		return self::canvas_display_width( $width, 0 );
+		$basis = self::preview_basis_mm( $type );
+
+		if ( $basis < 1 ) {
+			return self::canvas_display_width( $width, 0 );
+		}
+
+		return max( 80, (int) round( self::CANVAS_DISPLAY_MAX_PX * ( $width / $basis ) ) );
 	}
 
 	/**
@@ -104,7 +188,7 @@ final class APD_Formats {
 	 * @return bool
 	 */
 	public static function offers_frame_choice( $type ) {
-		return ! in_array( (string) $type, array( 'holder', 'holder_moto', 'holder_d', 'us' ), true );
+		return ! in_array( (string) $type, array( 'holder', 'holder_moto', 'holder_d', 'us', 'fr', 'fr_ww', 'fr_region', 'austria', 'uk', 'uk_plain', 'mini', 'mini_plain' ), true );
 	}
 
 	/**
@@ -133,6 +217,73 @@ final class APD_Formats {
 	public const US_SIDE_LEFT_MAX = 3;
 
 	public const US_SIDE_RIGHT_MAX = 4;
+
+	/**
+	 * French groups: letters, digits, letters. The temporary plate fixes WW
+	 * in the first group, so the shop only asks for the last two.
+	 */
+	public const FR_GROUP_1_MAX = 2;
+
+	public const FR_GROUP_2_MAX = 3;
+
+	public const FR_GROUP_3_MAX = 2;
+
+	public const FR_WW_MARK = 'WW';
+
+	public const FR_DATE_MAX = 2;
+
+	/**
+	 * Department code on a French plate with a right band.
+	 */
+	public const FR_REGION_MAX = 2;
+
+	/**
+	 * Sample department code until the shopper types one.
+	 */
+	public const FR_REGION_SAMPLE = '95';
+
+	/**
+	 * Digit box on the Romanian reference plate: 21.9% of the plate height,
+	 * ending 17.7% above the bottom edge.
+	 */
+	public const FR_REGION_BOX_HEIGHT = 21.9;
+
+	public const FR_REGION_BOTTOM_GAP = 17.7;
+
+	public const FR_FILL = '#FFFFFF';
+
+	/**
+	 * Pink sampled from the temporary-plate reference (median of the plate body).
+	 */
+	public const FR_TEMP_FILL = '#F19DC4';
+
+	public const FR_TEXT = '#000000';
+
+	/**
+	 * Austrian district letters and the registration to the right of the region box.
+	 */
+	public const AT_LEFT_MAX = 2;
+
+	public const AT_RIGHT_MAX = 6;
+
+	public const AT_FILL = '#FFFFFF';
+
+	public const AT_TEXT = '#000000';
+
+	public const AT_REGION_FILL = '#B0B0B0';
+
+	public const AT_STRIPE = '#C7282D';
+
+	/**
+	 * Gray region placeholder, measured on the empty reference plate.
+	 */
+	public const AT_REGION_X = 33.5;
+
+	public const AT_REGION_Y = 8.7;
+
+	public const AT_REGION_W = 10.9;
+
+	public const AT_REGION_H = 82.1;
 
 	/**
 	 * Sample letters as a fraction of the dashed text-box height.
@@ -398,6 +549,11 @@ final class APD_Formats {
 		$no_frame  = self::uses_painted_plate( $type ) && ! empty( $raw['no_frame'] );
 		$band_box  = array();
 
+		if ( self::is_fixed_euro( $type ) || self::is_english( $type ) || self::is_mini( $type ) ) {
+			$no_frame = true;
+			$border   = 0;
+		}
+
 		if ( self::uses_country_band( $type ) ) {
 			$posted_box = isset( $raw['band_box'] ) && is_array( $raw['band_box'] ) ? $raw['band_box'] : array();
 			$has_box    = isset( $posted_box['width'] ) || isset( $posted_box['x'] ) || isset( $posted_box['height'] );
@@ -465,8 +621,19 @@ final class APD_Formats {
 		$row_1_max      = 0;
 		$row_2_max      = 0;
 		$holder_max_set = false;
+		$text_rows      = 0;
+		$fr_1           = self::FR_GROUP_1_MAX;
+		$fr_2           = self::FR_GROUP_2_MAX;
+		$fr_3           = self::FR_GROUP_3_MAX;
+		$at_1           = self::AT_LEFT_MAX;
+		$at_2           = self::AT_RIGHT_MAX;
+		$slogan_max     = 0;
 
-		if ( self::uses_two_rows( $type ) ) {
+		if ( self::is_atypical_300( $type ) ) {
+			$text_rows = ( isset( $raw['text_rows'] ) && '2' === (string) $raw['text_rows'] ) ? 2 : 1;
+			$row_1_max = self::int_in_range( isset( $raw['max_chars_row_1'] ) ? $raw['max_chars_row_1'] : self::SUV_ROW_1_MAX, 1, APD_Security::ABSOLUTE_MAX_CHARS, self::SUV_ROW_1_MAX );
+			$row_2_max = self::int_in_range( isset( $raw['max_chars_row_2'] ) ? $raw['max_chars_row_2'] : self::SUV_ROW_2_MAX, 1, APD_Security::ABSOLUTE_MAX_CHARS, self::SUV_ROW_2_MAX );
+		} elseif ( self::uses_two_rows( $type ) ) {
 			$row_1_max = self::int_in_range( isset( $raw['max_chars_row_1'] ) ? $raw['max_chars_row_1'] : self::SUV_ROW_1_MAX, 1, APD_Security::ABSOLUTE_MAX_CHARS, self::SUV_ROW_1_MAX );
 			$row_2_max = self::int_in_range( isset( $raw['max_chars_row_2'] ) ? $raw['max_chars_row_2'] : self::SUV_ROW_2_MAX, 1, APD_Security::ABSOLUTE_MAX_CHARS, self::SUV_ROW_2_MAX );
 			$max_chars = min( APD_Security::ABSOLUTE_MAX_CHARS, $row_1_max + $row_2_max );
@@ -479,6 +646,21 @@ final class APD_Formats {
 				$max_chars      = self::int_in_range( $posted_max, 1, APD_Security::ABSOLUTE_MAX_CHARS, self::holder_text_limit() );
 				$holder_max_set = true;
 			}
+		} elseif ( self::is_french( $type ) ) {
+			$fr_1 = self::int_in_range( isset( $raw['fr_max_1'] ) ? $raw['fr_max_1'] : self::FR_GROUP_1_MAX, 1, APD_Security::ABSOLUTE_MAX_CHARS, self::FR_GROUP_1_MAX );
+			$fr_2 = self::int_in_range( isset( $raw['fr_max_2'] ) ? $raw['fr_max_2'] : self::FR_GROUP_2_MAX, 1, APD_Security::ABSOLUTE_MAX_CHARS, self::FR_GROUP_2_MAX );
+			$fr_3 = self::int_in_range( isset( $raw['fr_max_3'] ) ? $raw['fr_max_3'] : self::FR_GROUP_3_MAX, 1, APD_Security::ABSOLUTE_MAX_CHARS, self::FR_GROUP_3_MAX );
+			if ( self::is_french_temporary( $type ) ) {
+				$max_chars = strlen( self::FR_WW_MARK ) + 1 + $fr_2 + 1 + $fr_3;
+			} else {
+				$max_chars = $fr_1 + 1 + $fr_2 + 1 + $fr_3;
+			}
+		} elseif ( self::is_austria( $type ) ) {
+			$at_1      = self::int_in_range( isset( $raw['at_max_1'] ) ? $raw['at_max_1'] : self::AT_LEFT_MAX, 1, APD_Security::ABSOLUTE_MAX_CHARS, self::AT_LEFT_MAX );
+			$at_2      = self::int_in_range( isset( $raw['at_max_2'] ) ? $raw['at_max_2'] : self::AT_RIGHT_MAX, 1, APD_Security::ABSOLUTE_MAX_CHARS, self::AT_RIGHT_MAX );
+			$max_chars = $at_1 + 1 + $at_2;
+		} elseif ( self::is_english( $type ) ) {
+			$slogan_max = self::int_in_range( isset( $raw['slogan_max'] ) ? $raw['slogan_max'] : self::UK_SLOGAN_MAX, 1, APD_Security::ABSOLUTE_MAX_CHARS, self::UK_SLOGAN_MAX );
 		}
 		$font_ids_all = ! empty( $raw['font_ids_all'] );
 		$font_ids     = $font_ids_all
@@ -494,6 +676,10 @@ final class APD_Formats {
 			'band_side'    => $band_side,
 			'band_box'     => $band_box,
 		);
+
+		if ( self::is_atypical_300( $type ) ) {
+			$normalized['text_rows'] = $text_rows;
+		}
 		$text_raw = isset( $raw['text_box'] ) && is_array( $raw['text_box'] ) ? $raw['text_box'] : array();
 
 		if ( self::is_holder( $type ) && isset( $raw['text_box_metric'] ) && 'strip' === sanitize_key( (string) $raw['text_box_metric'] ) ) {
@@ -524,6 +710,75 @@ final class APD_Formats {
 			'wrap_text'        => self::is_street_plate( $type ) && ! empty( $raw['wrap_text'] ),
 			'price_adjustment' => round( $price, 2 ),
 		);
+
+		if ( self::is_atypical_300( $type ) ) {
+			$row['text_rows'] = $text_rows;
+		}
+
+		if ( self::is_french( $type ) ) {
+			$row['fr_max_1'] = $fr_1;
+			$row['fr_max_2'] = $fr_2;
+			$row['fr_max_3'] = $fr_3;
+		}
+
+		if ( self::is_austria( $type ) ) {
+			$row['at_max_1'] = $at_1;
+			$row['at_max_2'] = $at_2;
+		}
+
+		if ( self::is_english( $type ) ) {
+			$row['slogan_max'] = $slogan_max;
+			$row['slogan_box'] = self::sanitize_slogan_box( isset( $raw['slogan_box'] ) ? $raw['slogan_box'] : array(), $normalized );
+		}
+
+		if ( self::is_french( $type ) || self::is_austria( $type ) ) {
+			$group_defaults = self::default_group_boxes( $type, $normalized );
+			$group_keys     = self::is_french( $type ) ? array( 'text_box', 'text_box_2', 'text_box_3' ) : array( 'text_box', 'text_box_2' );
+			$group_index    = 0;
+
+			foreach ( $group_keys as $group_key ) {
+				$posted = ( 'text_box' === $group_key ) ? $text_raw : ( isset( $raw[ $group_key ] ) ? $raw[ $group_key ] : array() );
+				$box    = self::sanitize_group_box(
+					$posted,
+					isset( $group_defaults[ $group_index ] ) ? $group_defaults[ $group_index ] : array(),
+					$type,
+					$normalized
+				);
+				$row[ $group_key ] = $box;
+				++$group_index;
+			}
+		}
+
+		if ( self::is_austria( $type ) ) {
+			$row['at_region'] = self::sanitize_region_box( isset( $raw['at_region'] ) ? $raw['at_region'] : array() );
+		}
+
+		if ( self::is_french_region( $type ) ) {
+			$row['fr_region_box'] = self::default_french_region_box( $normalized );
+		}
+
+		if ( self::offers_country_choice( $type ) && isset( $raw['preset_mode'] ) && 'selected' === sanitize_key( (string) $raw['preset_mode'] ) ) {
+			$picked = self::chosen_preset_ids( isset( $raw['preset_ids'] ) ? $raw['preset_ids'] : array() );
+
+			if ( ! empty( $picked ) ) {
+				$default_preset = isset( $raw['default_preset_id'] ) ? sanitize_text_field( (string) $raw['default_preset_id'] ) : '';
+
+				if ( ! in_array( $default_preset, $picked, true ) ) {
+					$default_preset = $picked[0];
+				}
+
+				$row['preset_mode']        = 'selected';
+				$row['preset_ids']         = $picked;
+				$row['default_preset_id']  = $default_preset;
+			}
+		}
+
+		if ( self::is_french_temporary( $type ) ) {
+			$date_defaults       = self::default_date_boxes( $normalized );
+			$row['fr_month']     = self::sanitize_date_box( isset( $raw['fr_month'] ) ? $raw['fr_month'] : array(), $date_defaults['month'] );
+			$row['fr_year']      = self::sanitize_date_box( isset( $raw['fr_year'] ) ? $raw['fr_year'] : array(), $date_defaults['year'] );
+			$row['fr_date_custom'] = self::date_boxes_differ( $row['fr_month'], $date_defaults['month'] ) || self::date_boxes_differ( $row['fr_year'], $date_defaults['year'] );
+		}
 
 		if ( 'us' === $type && ! empty( $raw['split_text'] ) ) {
 			$right_raw = isset( $raw['text_box_right'] ) && is_array( $raw['text_box_right'] ) ? $raw['text_box_right'] : array();
@@ -565,7 +820,7 @@ final class APD_Formats {
 	 * @return bool
 	 */
 	public static function uses_palette_slots( $type ) {
-		return in_array( (string) $type, array( 'color', 'custom', 'eu_plain', 'moto_plain', 'moto_plain_240', 'suv', 'us' ), true );
+		return in_array( (string) $type, array( 'color', 'custom', 'eu_plain', 'moto_plain', 'moto_plain_240', 'suv', 'suv_340', 'atyp_300', 'us', 'uk', 'uk_plain' ), true );
 	}
 
 	/**
@@ -579,6 +834,10 @@ final class APD_Formats {
 	public static function palette_slot_keys_for( $type ) {
 		if ( 'us' === (string) $type ) {
 			return array( 'text' );
+		}
+
+		if ( self::is_english( $type ) ) {
+			return array( 'text', 'background', 'border', 'slogan' );
 		}
 
 		return self::palette_slot_keys();
@@ -632,9 +891,13 @@ final class APD_Formats {
 			$colors  = is_array( $palette ) && isset( $palette['color_ids'] ) && is_array( $palette['color_ids'] ) ? $palette['color_ids'] : array();
 
 			if ( ! is_array( $palette ) || empty( $palette['active'] ) || empty( $colors ) ) {
-				$message = 'us' === (string) $type
-					? __( 'Choose a palette for the text.', 'auto-plate-designer' )
-					: __( 'Choose a palette for the text, the plate, and the frame.', 'auto-plate-designer' );
+			if ( 'us' === (string) $type ) {
+				$message = __( 'Choose a palette for the text.', 'auto-plate-designer' );
+			} elseif ( self::is_english( $type ) ) {
+				$message = __( 'Choose a palette for the text, the plate, the frame, and the slogan.', 'auto-plate-designer' );
+			} else {
+				$message = __( 'Choose a palette for the text, the plate, and the frame.', 'auto-plate-designer' );
+			}
 
 				return new WP_Error( 'apd_format_palette_slot', $message );
 			}
@@ -659,6 +922,7 @@ final class APD_Formats {
 			'text'       => '',
 			'background' => '',
 			'border'     => '',
+			'slogan'     => '',
 		);
 
 		if ( is_array( $format ) && isset( $format['palette_slots'] ) && is_array( $format['palette_slots'] ) ) {
@@ -783,6 +1047,10 @@ final class APD_Formats {
 			case 'moto':
 			case 'moto_240':
 			case 'suv_eu':
+			case 'suv_eu_340':
+			case 'eu_300':
+			case 'uk':
+			case 'mini':
 				$caps = array(
 					'painted'       => true,
 					'country_band'  => true,
@@ -790,12 +1058,28 @@ final class APD_Formats {
 					'plate_designs' => false,
 				);
 				break;
+			case 'fr':
+			case 'fr_ww':
+			case 'fr_region':
+			case 'austria':
+				$caps = array(
+					'painted'        => true,
+					'country_band'   => true,
+					'country_locked' => true,
+					'base_image'     => false,
+					'plate_designs'  => false,
+				);
+				break;
 			case 'moto_plain':
 			case 'moto_plain_240':
 			case 'eu_plain':
 			case 'suv':
+			case 'suv_340':
+			case 'atyp_300':
 			case 'custom':
 			case 'color':
+			case 'uk_plain':
+			case 'mini_plain':
 				$caps = array(
 					'painted'       => true,
 					'country_band'  => false,
@@ -846,11 +1130,12 @@ final class APD_Formats {
 		$caps = self::type_capabilities( $type );
 
 		return array(
-			'painted'      => ! empty( $caps['painted'] ),
-			'countryBand'  => ! empty( $caps['country_band'] ),
-			'baseImage'    => ! empty( $caps['base_image'] ),
-			'plateDesigns' => ! empty( $caps['plate_designs'] ),
-			'twoRow'       => ! empty( $caps['two_row'] ),
+			'painted'       => ! empty( $caps['painted'] ),
+			'countryBand'   => ! empty( $caps['country_band'] ),
+			'countryChoice' => self::offers_country_choice( $type ),
+			'baseImage'     => ! empty( $caps['base_image'] ),
+			'plateDesigns'  => ! empty( $caps['plate_designs'] ),
+			'twoRow'        => ! empty( $caps['two_row'] ),
 		);
 	}
 
@@ -869,6 +1154,8 @@ final class APD_Formats {
 			case 'eu_plain':
 				return 'eu';
 			case 'suv_eu':
+			case 'suv_eu_340':
+			case 'suv_340':
 				return 'suv';
 			case 'holder_moto':
 			case 'holder_d':
@@ -909,13 +1196,23 @@ final class APD_Formats {
 	}
 
 	/**
-	 * SUV family covers the EU SUV plate and the SUV plate without a preset.
+	 * SUV family covers both widths, with and without a country preset.
 	 *
 	 * @param string $type Format type.
 	 * @return bool
 	 */
 	public static function is_suv_kind( $type ) {
 		return 'suv' === self::catalog_kind( $type );
+	}
+
+	/**
+	 * EU SUV plates keep the country band on the first row only.
+	 *
+	 * @param string $type Format type.
+	 * @return bool
+	 */
+	public static function is_suv_euro( $type ) {
+		return in_array( (string) $type, array( 'suv_eu', 'suv_eu_340' ), true );
 	}
 
 	/**
@@ -927,7 +1224,7 @@ final class APD_Formats {
 	 * @return array{0: int, 1: int}
 	 */
 	public static function suv_row_limits( $format ) {
-		if ( ! is_array( $format ) || ! self::uses_two_rows( isset( $format['type'] ) ? (string) $format['type'] : '' ) ) {
+		if ( ! is_array( $format ) || ! self::format_uses_two_rows( $format ) ) {
 			return array( 0, 0 );
 		}
 
@@ -1093,7 +1390,7 @@ final class APD_Formats {
 			return (string) (int) $format['max_chars'];
 		}
 
-		if ( self::uses_two_rows( isset( $format['type'] ) ? (string) $format['type'] : '' ) ) {
+		if ( self::format_uses_two_rows( $format ) ) {
 			$limits = self::suv_row_limits( $format );
 
 			return $limits[0] . ' / ' . $limits[1];
@@ -1103,6 +1400,24 @@ final class APD_Formats {
 			$sides = self::us_side_limits( $format );
 
 			return $sides[0] . ' + ' . $sides[1];
+		}
+
+		$format_type = isset( $format['type'] ) ? (string) $format['type'] : '';
+
+		if ( self::is_french( $format_type ) ) {
+			$groups = self::french_group_limits( $format );
+
+			if ( self::is_french_temporary( $format_type ) ) {
+				return $groups[1] . ' / ' . $groups[2];
+			}
+
+			return $groups[0] . '-' . $groups[1] . '-' . $groups[2];
+		}
+
+		if ( self::is_austria( $format_type ) ) {
+			$sides = self::austria_limits( $format );
+
+			return $sides[0] . ' / ' . $sides[1];
 		}
 
 		$chars = isset( $format['max_chars'] ) ? (int) $format['max_chars'] : self::default_max_chars( isset( $format['type'] ) ? (string) $format['type'] : '' );
@@ -1270,8 +1585,20 @@ final class APD_Formats {
 			'moto_240'        => __( 'EU motorcycle plate 240×130', 'auto-plate-designer' ),
 			'moto_plain'      => __( 'Motorcycle plate without country band 199×154', 'auto-plate-designer' ),
 			'moto_plain_240'  => __( 'Motorcycle plate without country band 240×130', 'auto-plate-designer' ),
-			'suv_eu'     => __( 'EU SUV plate', 'auto-plate-designer' ),
-			'suv'        => __( 'SUV plate without preset', 'auto-plate-designer' ),
+			'suv_eu'          => __( 'EU SUV plate 280x200', 'auto-plate-designer' ),
+			'suv_eu_340'      => __( 'EU SUV plate 340x200', 'auto-plate-designer' ),
+			'suv'             => __( 'SUV plate without preset 280x200', 'auto-plate-designer' ),
+			'suv_340'         => __( 'SUV plate without preset 340x200', 'auto-plate-designer' ),
+			'eu_300'          => __( 'EU plate 300x150 mm', 'auto-plate-designer' ),
+			'atyp_300'        => __( 'Atypical plate 300x150 mm', 'auto-plate-designer' ),
+			'fr'              => __( 'French plate', 'auto-plate-designer' ),
+			'fr_ww'           => __( 'French temporary plate', 'auto-plate-designer' ),
+			'fr_region'       => __( 'French plate with region', 'auto-plate-designer' ),
+			'austria'         => __( 'Austrian plate', 'auto-plate-designer' ),
+			'uk'              => __( 'Standard English plate with country preset', 'auto-plate-designer' ),
+			'uk_plain'        => __( 'Standard English plate without country preset', 'auto-plate-designer' ),
+			'mini'            => __( 'Mini plate 340×90 mm with country preset', 'auto-plate-designer' ),
+			'mini_plain'      => __( 'Mini plate 340×90 mm without country preset', 'auto-plate-designer' ),
 			'custom'     => __( 'Street plate', 'auto-plate-designer' ),
 			'color'      => __( 'Color plate', 'auto-plate-designer' ),
 			'holder'      => __( 'Car plate holders', 'auto-plate-designer' ),
@@ -1313,7 +1640,568 @@ final class APD_Formats {
 	 * @return bool
 	 */
 	public static function uses_two_rows( $type ) {
-		return in_array( (string) $type, array( 'moto', 'moto_240', 'moto_plain', 'moto_plain_240', 'suv', 'suv_eu' ), true );
+		return in_array( (string) $type, array( 'moto', 'moto_240', 'moto_plain', 'moto_plain_240', 'suv', 'suv_340', 'suv_eu', 'suv_eu_340', 'eu_300' ), true );
+	}
+
+	/**
+	 * Atypical 300×150 plate. The saved format chooses one text row or two.
+	 *
+	 * @param string $type Format type.
+	 * @return bool
+	 */
+	public static function is_atypical_300( $type ) {
+		return 'atyp_300' === (string) $type;
+	}
+
+	/**
+	 * French standard or temporary plate.
+	 *
+	 * @param string $type Format type.
+	 * @return bool
+	 */
+	public static function is_french( $type ) {
+		return in_array( (string) $type, array( 'fr', 'fr_ww', 'fr_region' ), true );
+	}
+
+	/**
+	 * French plate with a mirrored country band and a two-digit region.
+	 *
+	 * @param string $type Format type.
+	 * @return bool
+	 */
+	public static function is_french_region( $type ) {
+		return 'fr_region' === (string) $type;
+	}
+
+	/**
+	 * French temporary plate. WW and the date are part of the plate.
+	 *
+	 * @param string $type Format type.
+	 * @return bool
+	 */
+	public static function is_french_temporary( $type ) {
+		return 'fr_ww' === (string) $type;
+	}
+
+	/**
+	 * Austrian car plate. The country band stays A and the region box stays gray.
+	 *
+	 * @param string $type Format type.
+	 * @return bool
+	 */
+	public static function is_austria( $type ) {
+		return 'austria' === (string) $type;
+	}
+
+	/**
+	 * English replica with the inner frame and one slogan.
+	 *
+	 * @param string $type Format type.
+	 * @return bool
+	 */
+	public static function is_english( $type ) {
+		return in_array( (string) $type, array( 'uk', 'uk_plain' ), true );
+	}
+
+	/**
+	 * Mini plate, 340×90 mm, one line, no slogan frame.
+	 *
+	 * @param string $type Format type.
+	 * @return bool
+	 */
+	public static function is_mini( $type ) {
+		return in_array( (string) $type, array( 'mini', 'mini_plain' ), true );
+	}
+
+	/**
+	 * Saved slogan character cap for an English format.
+	 *
+	 * @param array<string, mixed> $format Format row.
+	 * @return int
+	 */
+	public static function slogan_limit( $format ) {
+		if ( ! is_array( $format ) || ! self::is_english( isset( $format['type'] ) ? (string) $format['type'] : '' ) ) {
+			return 0;
+		}
+
+		$max = isset( $format['slogan_max'] ) ? (int) $format['slogan_max'] : self::UK_SLOGAN_MAX;
+
+		if ( $max < 1 ) {
+			return self::UK_SLOGAN_MAX;
+		}
+
+		return min( APD_Security::ABSOLUTE_MAX_CHARS, $max );
+	}
+
+	/**
+	 * Default slogan strip: centered on the thin inset line at the bottom.
+	 *
+	 * @param array<string, mixed> $format Format row.
+	 * @return array{x: float, y: float, width: float, height: float, align: string, valign: string}
+	 */
+	public static function default_slogan_box( $format ) {
+		$format = is_array( $format ) ? $format : array();
+		$width  = isset( $format['width'] ) ? max( 1, (int) $format['width'] ) : 520;
+		$height = isset( $format['height'] ) ? max( 1, (int) $format['height'] ) : 110;
+		$margin = self::UK_INSET_MARGIN_MM;
+		$left   = (float) $margin + 4;
+		$type   = isset( $format['type'] ) ? (string) $format['type'] : 'uk';
+
+		if ( self::uses_country_band( $type ) ) {
+			$band = isset( $format['band_box'] ) && is_array( $format['band_box'] ) ? $format['band_box'] : self::default_band_box( $width, $height, 'left', $type );
+			if ( ! empty( $band['width'] ) ) {
+				$band_right = ( (float) $band['x'] + (float) $band['width'] ) / 100 * $width;
+				$left       = max( $left, $band_right + 4 );
+			}
+		}
+
+		$right   = $width - $margin - 4;
+		$box_h   = 12.0;
+		$line_y  = $height - $margin - ( self::UK_INSET_LINE_MM / 2 );
+		$y_mm    = $line_y - ( $box_h / 2 );
+
+		return array(
+			'x'      => round( ( $left / $width ) * 100, 2 ),
+			'y'      => round( max( 0, $y_mm ) / $height * 100, 2 ),
+			'width'  => round( max( 8, ( ( $right - $left ) / $width ) * 100 ), 2 ),
+			'height' => round( ( $box_h / $height ) * 100, 2 ),
+			'align'  => 'center',
+			'valign' => 'middle',
+		);
+	}
+
+	/**
+	 * Clamp a slogan box. Values are percents of the plate.
+	 *
+	 * @param mixed                $raw    Raw values.
+	 * @param array<string, mixed> $format Format row used for the default.
+	 * @return array{x: float, y: float, width: float, height: float, align: string, valign: string}
+	 */
+	public static function sanitize_slogan_box( $raw, $format ) {
+		$defaults = self::default_slogan_box( $format );
+		$raw      = is_array( $raw ) ? $raw : array();
+		$x        = self::clamp_percent( isset( $raw['x'] ) ? $raw['x'] : $defaults['x'], 0, 92 );
+		$y        = self::clamp_percent( isset( $raw['y'] ) ? $raw['y'] : $defaults['y'], 0, 96 );
+		$width    = self::clamp_percent( isset( $raw['width'] ) ? $raw['width'] : $defaults['width'], 8, 100 );
+		$height   = self::clamp_percent( isset( $raw['height'] ) ? $raw['height'] : $defaults['height'], 4, 40 );
+
+		if ( $x + $width > 100 ) {
+			$width = round( 100 - $x, 1 );
+		}
+
+		if ( $y + $height > 100 ) {
+			$height = round( 100 - $y, 1 );
+		}
+
+		$align  = isset( $raw['align'] ) ? sanitize_key( (string) $raw['align'] ) : 'center';
+		$valign = isset( $raw['valign'] ) ? sanitize_key( (string) $raw['valign'] ) : 'middle';
+
+		if ( ! in_array( $align, array( 'left', 'center', 'right' ), true ) ) {
+			$align = 'center';
+		}
+
+		if ( ! in_array( $valign, array( 'top', 'middle', 'bottom' ), true ) ) {
+			$valign = 'middle';
+		}
+
+		return array(
+			'x'      => $x,
+			'y'      => $y,
+			'width'  => $width,
+			'height' => $height,
+			'align'  => $align,
+			'valign' => $valign,
+		);
+	}
+
+	/**
+	 * French or Austrian plate: fixed colors, no shop frame, locked country.
+	 *
+	 * @param string $type Format type.
+	 * @return bool
+	 */
+	public static function is_fixed_euro( $type ) {
+		return self::is_french( $type ) || self::is_austria( $type );
+	}
+
+	/**
+	 * Shoppers can pick a country preset on this type.
+	 *
+	 * French and Austrian plates keep one country.
+	 *
+	 * @param string $type Format type.
+	 * @return bool
+	 */
+	public static function offers_country_choice( $type ) {
+		return self::uses_country_band( $type ) && '' === self::locked_country_code( $type );
+	}
+
+	/**
+	 * Country code painted when the shopper cannot change the band.
+	 *
+	 * @param string $type Format type.
+	 * @return string
+	 */
+	public static function locked_country_code( $type ) {
+		if ( self::is_french( $type ) ) {
+			return 'F';
+		}
+
+		if ( self::is_austria( $type ) ) {
+			return 'A';
+		}
+
+		return '';
+	}
+
+	/**
+	 * Whether a preset image belongs on a locked plate.
+	 *
+	 * @param string $code   Preset country code.
+	 * @param string $locked F or A.
+	 * @return bool
+	 */
+	public static function preset_matches_country( $code, $locked ) {
+		$code   = strtoupper( trim( (string) $code ) );
+		$locked = strtoupper( trim( (string) $locked ) );
+
+		if ( 'F' === $locked ) {
+			return in_array( $code, array( 'F', 'FR' ), true );
+		}
+
+		if ( 'A' === $locked ) {
+			return in_array( $code, array( 'A', 'AT' ), true );
+		}
+
+		return false;
+	}
+
+	/**
+	 * Preset IDs that exist in the catalog.
+	 *
+	 * @param mixed $raw Posted IDs.
+	 * @return array<int, string>
+	 */
+	private static function chosen_preset_ids( $raw ) {
+		$known = array();
+
+		foreach ( APD_Presets::all() as $preset ) {
+			if ( isset( $preset['id'] ) && '' !== (string) $preset['id'] ) {
+				$known[ (string) $preset['id'] ] = true;
+			}
+		}
+
+		$ids = array();
+
+		foreach ( (array) $raw as $id ) {
+			$id = sanitize_text_field( (string) $id );
+
+			if ( isset( $known[ $id ] ) ) {
+				$ids[] = $id;
+			}
+		}
+
+		return array_values( array_unique( $ids ) );
+	}
+
+	/**
+	 * Character caps for the three French groups.
+	 *
+	 * @param array<string, mixed> $format Format row.
+	 * @return array{0: int, 1: int, 2: int}
+	 */
+	public static function french_group_limits( $format ) {
+		$format = is_array( $format ) ? $format : array();
+
+		return array(
+			self::int_in_range( isset( $format['fr_max_1'] ) ? $format['fr_max_1'] : self::FR_GROUP_1_MAX, 1, APD_Security::ABSOLUTE_MAX_CHARS, self::FR_GROUP_1_MAX ),
+			self::int_in_range( isset( $format['fr_max_2'] ) ? $format['fr_max_2'] : self::FR_GROUP_2_MAX, 1, APD_Security::ABSOLUTE_MAX_CHARS, self::FR_GROUP_2_MAX ),
+			self::int_in_range( isset( $format['fr_max_3'] ) ? $format['fr_max_3'] : self::FR_GROUP_3_MAX, 1, APD_Security::ABSOLUTE_MAX_CHARS, self::FR_GROUP_3_MAX ),
+		);
+	}
+
+	/**
+	 * Starting letters for the shop fields. Dashes are not part of a field.
+	 *
+	 * @param string $type Format type.
+	 * @param string $text Stored plate text, with hyphens between groups.
+	 * @return array<int, string>
+	 */
+	public static function french_field_values( $type, $text ) {
+		$parts   = explode( '-', (string) $text );
+		$letters = static function ( $value ) {
+			$value = APD_Security::uppercase_plate_text( (string) $value );
+			$value = preg_replace( '/[^A-Z]/', '', $value );
+
+			return is_string( $value ) ? $value : '';
+		};
+		$digits  = static function ( $value ) {
+			$value = preg_replace( '/[^0-9]/', '', (string) $value );
+
+			return is_string( $value ) ? $value : '';
+		};
+
+		if ( self::is_french_temporary( $type ) ) {
+			if ( isset( $parts[0] ) && self::FR_WW_MARK === $letters( $parts[0] ) ) {
+				array_shift( $parts );
+			}
+
+			$number = isset( $parts[0] ) ? $digits( $parts[0] ) : '';
+			$end    = isset( $parts[1] ) ? $letters( $parts[1] ) : '';
+
+			if ( '' === $number && '' === $end ) {
+				return array( '000', 'AA' );
+			}
+
+			return array( $number, $end );
+		}
+
+		$first  = isset( $parts[0] ) ? $letters( $parts[0] ) : '';
+		$number = isset( $parts[1] ) ? $digits( $parts[1] ) : '';
+		$end    = isset( $parts[2] ) ? $letters( $parts[2] ) : '';
+
+		if ( '' === $first && '' === $number && '' === $end ) {
+			return array( 'AA', '000', 'AA' );
+		}
+
+		return array( $first, $number, $end );
+	}
+
+	/**
+	 * Build the stored plate from the shop fields. A letter in a digit field is rejected.
+	 *
+	 * @param array<string, mixed> $format Format row.
+	 * @param array<int, string>   $groups Variable groups, in shop order.
+	 * @param array<string, string> $date  Month and year for the temporary plate.
+	 * @return array{text: string, fr_month: string, fr_year: string}|WP_Error
+	 */
+	public static function french_posted_text( $format, $groups, $date = array() ) {
+		$type   = isset( $format['type'] ) ? (string) $format['type'] : '';
+		$limits = self::french_group_limits( $format );
+		$groups = is_array( $groups ) ? array_values( $groups ) : array();
+		$date   = is_array( $date ) ? $date : array();
+		$specs  = self::is_french_temporary( $type )
+			? array(
+				array( isset( $groups[0] ) ? $groups[0] : '', 'digits', $limits[1] ),
+				array( isset( $groups[1] ) ? $groups[1] : '', 'letters', $limits[2] ),
+			)
+			: array(
+				array( isset( $groups[0] ) ? $groups[0] : '', 'letters', $limits[0] ),
+				array( isset( $groups[1] ) ? $groups[1] : '', 'digits', $limits[1] ),
+				array( isset( $groups[2] ) ? $groups[2] : '', 'letters', $limits[2] ),
+			);
+		$clean  = array();
+
+		foreach ( $specs as $spec ) {
+			$part = self::french_part( $spec[0], $spec[1], (int) $spec[2] );
+
+			if ( is_wp_error( $part ) ) {
+				return $part;
+			}
+
+			$clean[] = $part;
+		}
+
+		if ( self::is_french_temporary( $type ) ) {
+			array_unshift( $clean, self::FR_WW_MARK );
+		}
+
+		$month = '';
+		$year  = '';
+
+		if ( self::is_french_temporary( $type ) ) {
+			$month = self::french_date_part( isset( $date['month'] ) ? $date['month'] : '' );
+			$year  = self::french_date_part( isset( $date['year'] ) ? $date['year'] : '' );
+
+			if ( is_wp_error( $month ) ) {
+				return $month;
+			}
+
+			if ( is_wp_error( $year ) ) {
+				return $year;
+			}
+		}
+
+		return array(
+			'text'     => implode( '-', $clean ),
+			'fr_month' => $month,
+			'fr_year'  => $year,
+		);
+	}
+
+	/**
+	 * One French group. Letters and digits are not rewritten into each other.
+	 *
+	 * @param string $raw  Posted field.
+	 * @param string $kind letters|digits.
+	 * @param int    $max  Maximum length.
+	 * @return string|WP_Error
+	 */
+	private static function french_part( $raw, $kind, $max ) {
+		$value = APD_Security::uppercase_plate_text( (string) $raw );
+		$ok    = 'digits' === $kind ? (bool) preg_match( '/^[0-9]*$/', $value ) : (bool) preg_match( '/^[A-Z]*$/', $value );
+		$length = function_exists( 'mb_strlen' ) ? mb_strlen( $value, 'UTF-8' ) : strlen( $value );
+
+		if ( ! $ok || $length > $max ) {
+			return new WP_Error(
+				'apd_plate_text',
+				__( 'Use letters in the letter fields and digits in the number fields.', 'auto-plate-designer' )
+			);
+		}
+
+		return $value;
+	}
+
+	/**
+	 * Month or year. Two digits, or empty.
+	 *
+	 * @param string $raw Posted date field.
+	 * @return string|WP_Error
+	 */
+	private static function french_date_part( $raw ) {
+		$value = (string) $raw;
+
+		if ( 1 !== preg_match( '/^[0-9]{0,2}$/', $value ) ) {
+			return new WP_Error(
+				'apd_plate_text',
+				__( 'Month and year use two digits.', 'auto-plate-designer' )
+			);
+		}
+
+		return $value;
+	}
+
+	/**
+	 * Character caps for the Austrian district and the registration.
+	 *
+	 * @param array<string, mixed> $format Format row.
+	 * @return array{0: int, 1: int}
+	 */
+	public static function austria_limits( $format ) {
+		$format = is_array( $format ) ? $format : array();
+
+		return array(
+			self::int_in_range( isset( $format['at_max_1'] ) ? $format['at_max_1'] : self::AT_LEFT_MAX, 1, APD_Security::ABSOLUTE_MAX_CHARS, self::AT_LEFT_MAX ),
+			self::int_in_range( isset( $format['at_max_2'] ) ? $format['at_max_2'] : self::AT_RIGHT_MAX, 1, APD_Security::ABSOLUTE_MAX_CHARS, self::AT_RIGHT_MAX ),
+		);
+	}
+
+	/**
+	 * Starting values for the two Austrian fields.
+	 *
+	 * @param string $text Stored plate text. A newline separates the district from the registration.
+	 * @return array{0: string, 1: string}
+	 */
+	public static function austria_field_values( $text ) {
+		$parts = explode( "\n", str_replace( array( "\r\n", "\r" ), "\n", (string) $text ), 2 );
+		$left  = self::austria_part( isset( $parts[0] ) ? $parts[0] : '', 'letters', APD_Security::ABSOLUTE_MAX_CHARS );
+		$right = self::austria_part( isset( $parts[1] ) ? $parts[1] : '', 'mixed', APD_Security::ABSOLUTE_MAX_CHARS );
+
+		if ( is_wp_error( $left ) || is_wp_error( $right ) || ( '' === $left && '' === $right ) ) {
+			return array( 'WE', '000 CF' );
+		}
+
+		return array( $left, $right );
+	}
+
+	/**
+	 * Build the stored Austrian plate from the two shop fields.
+	 *
+	 * @param array<string, mixed> $format Format row.
+	 * @param string               $left   District letters.
+	 * @param string               $right  Registration.
+	 * @return array{text: string}|WP_Error
+	 */
+	public static function austria_posted_text( $format, $left, $right ) {
+		$limits = self::austria_limits( $format );
+		$left   = self::austria_part( $left, 'letters', $limits[0] );
+		$right  = self::austria_part( $right, 'mixed', $limits[1] );
+
+		if ( is_wp_error( $left ) ) {
+			return $left;
+		}
+
+		if ( is_wp_error( $right ) ) {
+			return $right;
+		}
+
+		return array(
+			'text' => $left . "\n" . $right,
+		);
+	}
+
+	/**
+	 * One Austrian field. The district is letters. The registration may include digits and spaces.
+	 *
+	 * @param string $raw  Posted field.
+	 * @param string $kind letters|mixed.
+	 * @param int    $max  Maximum length. ABSOLUTE_MAX_CHARS skips the length check used while reading stored text.
+	 * @return string|WP_Error
+	 */
+	private static function austria_part( $raw, $kind, $max ) {
+		$value  = APD_Security::uppercase_plate_text( (string) $raw );
+		$ok     = 'mixed' === $kind ? (bool) preg_match( '/^[A-Z0-9 ]*$/', $value ) : (bool) preg_match( '/^[A-Z]*$/', $value );
+		$length = function_exists( 'mb_strlen' ) ? mb_strlen( $value, 'UTF-8' ) : strlen( $value );
+
+		if ( ! $ok || $length > $max ) {
+			return new WP_Error(
+				'apd_plate_text',
+				__( 'Use letters in the district field. The registration uses letters, digits, and spaces.', 'auto-plate-designer' )
+			);
+		}
+
+		return $value;
+	}
+
+	/**
+	 * Saved row count for an atypical 300×150 format. Other types return 0.
+	 *
+	 * @param array<string, mixed> $format Format row.
+	 * @return int
+	 */
+	public static function format_text_rows( $format ) {
+		if ( ! is_array( $format ) || ! self::is_atypical_300( isset( $format['type'] ) ? (string) $format['type'] : '' ) ) {
+			return 0;
+		}
+
+		return ( isset( $format['text_rows'] ) && 2 === (int) $format['text_rows'] ) ? 2 : 1;
+	}
+
+	/**
+	 * Whether this saved format paints two text rows.
+	 *
+	 * Existing types follow the type. Only the atypical 300×150 plate reads text_rows.
+	 *
+	 * @param array<string, mixed> $format Format row.
+	 * @return bool
+	 */
+	public static function format_uses_two_rows( $format ) {
+		if ( ! is_array( $format ) ) {
+			return false;
+		}
+
+		$type = isset( $format['type'] ) ? (string) $format['type'] : '';
+
+		if ( self::is_atypical_300( $type ) ) {
+			return 2 === self::format_text_rows( $format );
+		}
+
+		return self::uses_two_rows( $type );
+	}
+
+	/**
+	 * Whether the text box stores a separate alignment for each row.
+	 *
+	 * @param string               $type   Format type.
+	 * @param array<string, mixed> $format Format row.
+	 * @return bool
+	 */
+	private static function box_has_two_rows( $type, $format ) {
+		if ( self::uses_two_rows( $type ) ) {
+			return true;
+		}
+
+		return is_array( $format ) && self::format_uses_two_rows( $format );
 	}
 
 	/**
@@ -1323,12 +2211,32 @@ final class APD_Formats {
 	 * @return string
 	 */
 	public static function sample_plate_text( $type ) {
+		if ( self::is_french_temporary( $type ) ) {
+			return self::FR_WW_MARK . '-000-AA';
+		}
+
+		if ( self::is_french( $type ) ) {
+			return 'AA-000-AA';
+		}
+
+		if ( self::is_austria( $type ) ) {
+			return "WE\n000 CF";
+		}
+
 		if ( self::is_suv_kind( $type ) ) {
 			return "CA AA\n4935";
 		}
 
 		if ( self::uses_two_rows( $type ) ) {
 			return "CA\n1234";
+		}
+
+		if ( self::is_english( $type ) ) {
+			return 'LKOO FDN';
+		}
+
+		if ( self::is_mini( $type ) ) {
+			return 'GUNTHER';
 		}
 
 		if ( self::uses_painted_plate( $type ) ) {
@@ -1345,8 +2253,24 @@ final class APD_Formats {
 	 * @return string
 	 */
 	public static function admin_sample_plate_text( $type ) {
+		if ( self::is_austria( $type ) ) {
+			return 'WE 000 CF';
+		}
+
+		if ( self::is_french( $type ) ) {
+			return self::sample_plate_text( $type );
+		}
+
 		if ( self::is_suv_kind( $type ) ) {
 			return self::ADMIN_SAMPLE_SUV;
+		}
+
+		if ( self::is_english( $type ) ) {
+			return 'LKOO FDN';
+		}
+
+		if ( self::is_mini( $type ) ) {
+			return 'GUNTHER';
 		}
 
 		if ( self::uses_painted_plate( $type ) || self::uses_two_rows( $type ) ) {
@@ -1372,7 +2296,7 @@ final class APD_Formats {
 	 * Default millimetre canvas for a type.
 	 *
 	 * Bulgarian plates follow BDS 15980: car 520×110, motorcycle 199×154 or 240×130,
-	 * two-line 280×200. USA plates stay 12×6 in (305×152).
+	 * two-line SUV 280×200 or 340×200. USA plates stay 12×6 in (305×152).
 	 * The car holder stays 520×260. The motorcycle holder is square and uses
 	 * the motorcycle plate width (199×199). Type D uses the two-line width;
 	 * 159 mm is that width at the product photo's proportion (1400×795).
@@ -1404,6 +2328,34 @@ final class APD_Formats {
 				return array(
 					'width'  => 280,
 					'height' => 200,
+				);
+			case 'suv_340':
+			case 'suv_eu_340':
+				return array(
+					'width'  => 340,
+					'height' => 200,
+				);
+			case 'eu_300':
+			case 'atyp_300':
+				return array(
+					'width'  => 300,
+					'height' => 150,
+				);
+			case 'fr':
+			case 'fr_ww':
+			case 'fr_region':
+			case 'austria':
+			case 'uk':
+			case 'uk_plain':
+				return array(
+					'width'  => 520,
+					'height' => 110,
+				);
+			case 'mini':
+			case 'mini_plain':
+				return array(
+					'width'  => 340,
+					'height' => 90,
 				);
 			case 'holder':
 				return array(
@@ -1511,7 +2463,7 @@ final class APD_Formats {
 	 * @return array{x: float, y: float, width: float, height: float}
 	 */
 	public static function default_band_box( $width = 520, $height = 110, $side = 'left', $type = '' ) {
-		if ( 'suv_eu' === (string) $type ) {
+		if ( self::is_suv_euro( $type ) ) {
 			return self::suv_band_box( $width, $height, $side );
 		}
 
@@ -1663,6 +2615,15 @@ final class APD_Formats {
 			$clear = $bw > 0 ? $bw + self::TEXT_FRAME_GAP_MM : 0;
 			$inset_x = ( $clear / $width ) * 100;
 			$inset_y = ( $clear / $height ) * 100;
+			$region  = array(
+				'x'      => round( $inset_x, 2 ),
+				'y'      => round( $inset_y, 2 ),
+				'width'  => round( 100 - ( $inset_x * 2 ), 2 ),
+				'height' => round( 100 - ( $inset_y * 2 ), 2 ),
+			);
+		} elseif ( self::is_french( $type ) || self::is_austria( $type ) ) {
+			$inset_x = ( self::TEXT_FRAME_GAP_MM / $width ) * 100;
+			$inset_y = ( self::TEXT_FRAME_GAP_MM / $height ) * 100;
 			$region  = array(
 				'x'      => round( $inset_x, 2 ),
 				'y'      => round( $inset_y, 2 ),
@@ -1822,6 +2783,12 @@ final class APD_Formats {
 				return array( 'holder_text', 'holder_strip' );
 			case 'color':
 				return array( 'text', 'border', 'background', 'color_text', 'color_border', 'color_background' );
+			case 'uk':
+			case 'uk_plain':
+				return array( 'text', 'border', 'background', 'slogan' );
+			case 'mini':
+			case 'mini_plain':
+				return array();
 			case 'eu':
 			case 'moto':
 			case 'moto_240':
@@ -1829,7 +2796,11 @@ final class APD_Formats {
 			case 'moto_plain_240':
 			case 'eu_plain':
 			case 'suv':
+			case 'suv_340':
 			case 'suv_eu':
+			case 'suv_eu_340':
+			case 'eu_300':
+			case 'atyp_300':
 			case 'custom':
 				return array( 'text', 'border', 'background' );
 			default:
@@ -1849,6 +2820,10 @@ final class APD_Formats {
 	 * @return array<int, array<string, mixed>>
 	 */
 	public static function shop_swatch_colors( $type, $slot, $color_fields, $palettes ) {
+		if ( self::is_french( $type ) || self::is_austria( $type ) ) {
+			return array();
+		}
+
 		$keys  = array( $slot );
 		$merge = false;
 
@@ -1933,6 +2908,9 @@ final class APD_Formats {
 			case 'color':
 			case 'eu_plain':
 				return array( 'text', 'border', 'background' );
+			case 'uk':
+			case 'uk_plain':
+				return array( 'text', 'border', 'background', 'slogan' );
 			case 'us':
 				return array( 'text' );
 			case 'holder':
@@ -1946,7 +2924,11 @@ final class APD_Formats {
 			case 'moto_plain':
 			case 'moto_plain_240':
 			case 'suv':
+			case 'suv_340':
 			case 'suv_eu':
+			case 'suv_eu_340':
+			case 'eu_300':
+			case 'atyp_300':
 				return array( 'text', 'border' );
 			default:
 				return array();
@@ -2077,7 +3059,7 @@ final class APD_Formats {
 	public static function default_text_box( $type = 'eu', $format = array() ) {
 		$box = self::layout_text_box( $type, $format );
 
-		if ( self::uses_two_rows( $type ) ) {
+		if ( self::box_has_two_rows( $type, $format ) ) {
 			$box['letter_align'] = 'justify';
 			$box['number_align'] = 'justify';
 		}
@@ -2106,6 +3088,7 @@ final class APD_Formats {
 					'valign' => 'middle',
 				);
 			case 'suv':
+			case 'suv_340':
 				return array(
 					'x'      => 8.0,
 					'y'      => 8.0,
@@ -2115,6 +3098,7 @@ final class APD_Formats {
 					'valign' => 'middle',
 				);
 			case 'suv_eu':
+			case 'suv_eu_340':
 				return array(
 					'x'      => 4.0,
 					'y'      => 6.0,
@@ -2145,10 +3129,47 @@ final class APD_Formats {
 					'align'  => 'center',
 					'valign' => 'middle',
 				);
+			case 'uk':
+				return array(
+					'x'      => 16.0,
+					'y'      => 14.0,
+					'width'  => 76.0,
+					'height' => 62.0,
+					'align'  => 'center',
+					'valign' => 'middle',
+				);
+			case 'uk_plain':
+				return array(
+					'x'      => 6.0,
+					'y'      => 14.0,
+					'width'  => 88.0,
+					'height' => 62.0,
+					'align'  => 'center',
+					'valign' => 'middle',
+				);
+			case 'mini':
+				return array(
+					'x'      => 18.0,
+					'y'      => 12.0,
+					'width'  => 76.0,
+					'height' => 76.0,
+					'align'  => 'center',
+					'valign' => 'middle',
+				);
+			case 'mini_plain':
+				return array(
+					'x'      => 6.0,
+					'y'      => 12.0,
+					'width'  => 88.0,
+					'height' => 76.0,
+					'align'  => 'center',
+					'valign' => 'middle',
+				);
 			case 'color':
 			case 'eu_plain':
 			case 'moto_plain':
 			case 'moto_plain_240':
+			case 'atyp_300':
 				return array(
 					'x'      => 6.0,
 					'y'      => 12.0,
@@ -2201,6 +3222,317 @@ final class APD_Formats {
 					'valign' => 'middle',
 				);
 		}
+	}
+
+	/**
+	 * One text box for a French group or an Austrian side.
+	 *
+	 * French temporary keeps the current letter block and leaves the right column for the date.
+	 * The other new plates keep 8 mm clear of the plate edge and of the country band.
+	 *
+	 * @param string               $type   Format type.
+	 * @param array<string, mixed> $format Format row.
+	 * @return array<int, array{x: float, y: float, width: float, height: float, align: string, valign: string}>
+	 */
+	public static function default_group_boxes( $type, $format = array() ) {
+		$format = is_array( $format ) ? $format : array();
+		$width  = isset( $format['width'] ) ? max( 1, (int) $format['width'] ) : 520;
+		$height = isset( $format['height'] ) ? max( 1, (int) $format['height'] ) : 110;
+		$edge_x = round( ( self::TEXT_FRAME_GAP_MM / $width ) * 100, 2 );
+		$edge_y = round( ( self::TEXT_FRAME_GAP_MM / $height ) * 100, 2 );
+		$band   = self::default_band_box( $width, $height, 'left', $type );
+		if ( isset( $format['band_box']['width'] ) ) {
+			$band = self::sanitize_band_box( $format['band_box'], $width, $height, 'left', $type );
+		}
+		$band_right = round( (float) $band['x'] + (float) $band['width'], 2 );
+		$left       = round( $band_right + $edge_x, 2 );
+
+		if ( self::is_austria( $type ) ) {
+			$region  = self::default_region_box( $format );
+			$left_w  = round( max( 8.0, (float) $region['x'] - $left - $edge_x ), 2 );
+			$right_x = round( (float) $region['x'] + (float) $region['width'] + $edge_x, 2 );
+			$right_w = round( max( 8.0, 100 - $edge_x - $right_x ), 2 );
+
+			return array(
+				self::group_box( $left, $edge_y, $left_w, round( 100 - ( $edge_y * 2 ), 2 ), 'center' ),
+				self::group_box( $right_x, $edge_y, $right_w, round( 100 - ( $edge_y * 2 ), 2 ), 'left' ),
+			);
+		}
+
+		$right_pad = $edge_x;
+		$box_y     = $edge_y;
+		$box_h     = round( 100 - ( $edge_y * 2 ), 2 );
+
+		if ( self::is_french_temporary( $type ) ) {
+			$date_mm   = max( 22.0, $height * 0.22 );
+			$right_pad = round( ( $date_mm / $width ) * 100, 2 );
+			$box_h     = 72.0;
+			$box_y     = round( ( 100 - $box_h ) / 2, 2 );
+		} elseif ( self::is_french_region( $type ) ) {
+			$right_pad = round( (float) $band['width'] + $edge_x, 2 );
+		}
+
+		$span = round( max( 24.0, 100 - $right_pad - $left ), 2 );
+		$dash = 3.2;
+		$inner = max( 18.0, $span - ( $dash * 2 ) );
+		$w1    = round( $inner * 2 / 7, 2 );
+		$w2    = round( $inner * 3 / 7, 2 );
+		$w3    = round( $inner - $w1 - $w2, 2 );
+		$cluster = $w1 + $dash + $w2 + $dash + $w3;
+		$start   = round( $left + ( ( $span - $cluster ) / 2 ), 2 );
+
+		return array(
+			self::group_box( $start, $box_y, $w1, $box_h, 'center' ),
+			self::group_box( round( $start + $w1 + $dash, 2 ), $box_y, $w2, $box_h, 'center' ),
+			self::group_box( round( $start + $w1 + $dash + $w2 + $dash, 2 ), $box_y, $w3, $box_h, 'center' ),
+		);
+	}
+
+	/**
+	 * Saved group boxes, or the defaults when an older row has only one text box.
+	 *
+	 * @param array<string, mixed> $format Format row.
+	 * @param int                  $count  2 or 3.
+	 * @return array<int, array<string, mixed>>
+	 */
+	public static function stored_group_boxes( $format, $count ) {
+		$format = is_array( $format ) ? $format : array();
+		$type   = isset( $format['type'] ) ? (string) $format['type'] : '';
+		$boxes  = self::default_group_boxes( $type, $format );
+		$keys   = array( 'text_box', 'text_box_2', 'text_box_3' );
+
+		if ( ! isset( $format['text_box_2'] ) || ! is_array( $format['text_box_2'] ) ) {
+			return array_slice( $boxes, 0, $count );
+		}
+
+		$stored = array();
+		for ( $i = 0; $i < $count; $i++ ) {
+			$key      = $keys[ $i ];
+			$stored[] = self::sanitize_group_box(
+				isset( $format[ $key ] ) ? $format[ $key ] : array(),
+				isset( $boxes[ $i ] ) ? $boxes[ $i ] : array(),
+				$type,
+				$format
+			);
+		}
+
+		return $stored;
+	}
+
+	/**
+	 * Two-digit region on the right band of a French region plate.
+	 *
+	 * The box matches the Romanian product photo: the glyphs are 21.9% of
+	 * the plate height and stop 17.7% above the bottom edge.
+	 *
+	 * @param array<string, mixed> $format Format row.
+	 * @return array{x: float, y: float, width: float, height: float, align: string, valign: string}
+	 */
+	public static function default_french_region_box( $format = array() ) {
+		$format = is_array( $format ) ? $format : array();
+		$width  = isset( $format['width'] ) ? max( 1, (int) $format['width'] ) : 520;
+		$height = isset( $format['height'] ) ? max( 1, (int) $format['height'] ) : 110;
+		$band   = self::default_band_box( $width, $height, 'left', 'fr_region' );
+
+		if ( isset( $format['band_box']['width'] ) ) {
+			$band = self::sanitize_band_box( $format['band_box'], $width, $height, 'left', 'fr_region' );
+		}
+
+		$band_w = (float) $band['width'];
+		$x      = round( 100 - (float) $band['x'] - $band_w, 2 );
+		$box_h  = self::FR_REGION_BOX_HEIGHT;
+		$y      = round( 100 - self::FR_REGION_BOTTOM_GAP - $box_h, 2 );
+
+		return self::group_box( $x, $y, $band_w, $box_h, 'center' );
+	}
+
+	/**
+	 * Two digits for the right band. Extra characters are dropped.
+	 *
+	 * @param string $raw Posted value.
+	 * @return string
+	 */
+	public static function french_region_code( $raw ) {
+		$value = preg_replace( '/[^0-9]/', '', (string) $raw );
+		$value = is_string( $value ) ? $value : '';
+
+		if ( strlen( $value ) > self::FR_REGION_MAX ) {
+			$value = substr( $value, 0, self::FR_REGION_MAX );
+		}
+
+		return $value;
+	}
+
+	/**
+	 * Gray Austrian region box. Values are percents of the plate.
+	 *
+	 * @param array<string, mixed> $format Format row.
+	 * @return array{x: float, y: float, width: float, height: float}
+	 */
+	public static function default_region_box( $format = array() ) {
+		$format = is_array( $format ) ? $format : array();
+		$stored = isset( $format['at_region'] ) && is_array( $format['at_region'] ) ? $format['at_region'] : array();
+
+		return self::sanitize_region_box( $stored );
+	}
+
+	/**
+	 * @param float  $x      Left percent.
+	 * @param float  $y      Top percent.
+	 * @param float  $width  Width percent.
+	 * @param float  $height Height percent.
+	 * @param string $align  Horizontal alignment.
+	 * @return array{x: float, y: float, width: float, height: float, align: string, valign: string}
+	 */
+	private static function group_box( $x, $y, $width, $height, $align ) {
+		return array(
+			'x'      => round( (float) $x, 2 ),
+			'y'      => round( (float) $y, 2 ),
+			'width'  => round( (float) $width, 2 ),
+			'height' => round( (float) $height, 2 ),
+			'align'  => $align,
+			'valign' => 'middle',
+		);
+	}
+
+	/**
+	 * Month and year on a temporary French plate.
+	 *
+	 * The month box starts at the top of the main letters. The year box ends at the bottom of those letters.
+	 *
+	 * @param array<string, mixed> $format Format row.
+	 * @return array{month: array<string, mixed>, year: array<string, mixed>}
+	 */
+	public static function default_date_boxes( $format = array() ) {
+		$format = is_array( $format ) ? $format : array();
+		$width  = isset( $format['width'] ) ? max( 1, (int) $format['width'] ) : 520;
+		$right  = round( ( self::TEXT_FRAME_GAP_MM / $width ) * 100, 2 );
+		$text_h = 72.0;
+		$text_y = round( ( 100 - $text_h ) / 2, 2 );
+		$date_h = round( $text_h * 0.22, 2 );
+		$date_w = round( max( 4.5, ( 28 / $width ) * 100 ), 2 );
+		$x      = round( 100 - $right - $date_w, 2 );
+		$month  = self::group_box( $x, $text_y, $date_w, $date_h, 'right' );
+		$year   = self::group_box( $x, round( $text_y + $text_h - $date_h, 2 ), $date_w, $date_h, 'right' );
+		$month['valign'] = 'top';
+		$year['valign']  = 'bottom';
+
+		return array(
+			'month' => $month,
+			'year'  => $year,
+		);
+	}
+
+	/**
+	 * @param mixed                $raw      Posted box.
+	 * @param array<string, mixed> $fallback Default box.
+	 * @return array{x: float, y: float, width: float, height: float, align: string, valign: string}
+	 */
+	private static function sanitize_date_box( $raw, $fallback ) {
+		$raw      = is_array( $raw ) ? $raw : array();
+		$fallback = is_array( $fallback ) ? $fallback : array();
+		$x        = self::clamp_percent( isset( $raw['x'] ) ? $raw['x'] : ( isset( $fallback['x'] ) ? $fallback['x'] : 90 ), 0, 96 );
+		$y        = self::clamp_percent( isset( $raw['y'] ) ? $raw['y'] : ( isset( $fallback['y'] ) ? $fallback['y'] : 14 ), 0, 94 );
+		$width    = self::clamp_percent( isset( $raw['width'] ) ? $raw['width'] : ( isset( $fallback['width'] ) ? $fallback['width'] : 6 ), 3, 24 );
+		$height   = self::clamp_percent( isset( $raw['height'] ) ? $raw['height'] : ( isset( $fallback['height'] ) ? $fallback['height'] : 16 ), 4, 40 );
+
+		if ( $x + $width > 100 ) {
+			$width = round( 100 - $x, 1 );
+		}
+
+		if ( $y + $height > 100 ) {
+			$height = round( 100 - $y, 1 );
+		}
+
+		$align  = isset( $raw['align'] ) ? sanitize_key( (string) $raw['align'] ) : ( isset( $fallback['align'] ) ? (string) $fallback['align'] : 'right' );
+		$valign = isset( $raw['valign'] ) ? sanitize_key( (string) $raw['valign'] ) : ( isset( $fallback['valign'] ) ? (string) $fallback['valign'] : 'top' );
+
+		if ( ! in_array( $align, array( 'left', 'center', 'right' ), true ) ) {
+			$align = 'right';
+		}
+
+		if ( ! in_array( $valign, array( 'top', 'middle', 'bottom' ), true ) ) {
+			$valign = 'top';
+		}
+
+		return array(
+			'x'      => $x,
+			'y'      => $y,
+			'width'  => $width,
+			'height' => $height,
+			'align'  => $align,
+			'valign' => $valign,
+		);
+	}
+
+	/**
+	 * @param array<string, mixed> $box     Saved box.
+	 * @param array<string, mixed> $default Default box.
+	 * @return bool
+	 */
+	private static function date_boxes_differ( $box, $default ) {
+		foreach ( array( 'x', 'y', 'width', 'height' ) as $key ) {
+			$left  = isset( $box[ $key ] ) ? (float) $box[ $key ] : 0.0;
+			$right = isset( $default[ $key ] ) ? (float) $default[ $key ] : 0.0;
+
+			if ( abs( $left - $right ) > 0.25 ) {
+				return true;
+			}
+		}
+
+		return false;
+	}
+
+	/**
+	 * Keep a posted group box on the plate. Missing fields use the supplied fallback.
+	 *
+	 * @param mixed                $raw      Posted box.
+	 * @param array<string, mixed> $fallback Default box.
+	 * @param string               $type     Format type.
+	 * @param array<string, mixed> $format   Format row.
+	 * @return array{x: float, y: float, width: float, height: float, align: string, valign: string}
+	 */
+	public static function sanitize_group_box( $raw, $fallback, $type, $format ) {
+		$raw      = is_array( $raw ) ? $raw : array();
+		$fallback = is_array( $fallback ) ? $fallback : array();
+		$merged   = array(
+			'x'      => isset( $raw['x'] ) ? $raw['x'] : ( isset( $fallback['x'] ) ? $fallback['x'] : 0 ),
+			'y'      => isset( $raw['y'] ) ? $raw['y'] : ( isset( $fallback['y'] ) ? $fallback['y'] : 0 ),
+			'width'  => isset( $raw['width'] ) ? $raw['width'] : ( isset( $fallback['width'] ) ? $fallback['width'] : 10 ),
+			'height' => isset( $raw['height'] ) ? $raw['height'] : ( isset( $fallback['height'] ) ? $fallback['height'] : 10 ),
+			'align'  => isset( $raw['align'] ) ? $raw['align'] : ( isset( $fallback['align'] ) ? $fallback['align'] : 'center' ),
+			'valign' => isset( $raw['valign'] ) ? $raw['valign'] : ( isset( $fallback['valign'] ) ? $fallback['valign'] : 'middle' ),
+		);
+
+		return self::sanitize_text_box( $merged, $type, $format );
+	}
+
+	/**
+	 * @param mixed $raw Posted region.
+	 * @return array{x: float, y: float, width: float, height: float, fill: string}
+	 */
+	public static function sanitize_region_box( $raw ) {
+		$raw    = is_array( $raw ) ? $raw : array();
+		$x      = self::clamp_percent( isset( $raw['x'] ) ? $raw['x'] : self::AT_REGION_X, 0, 90 );
+		$y      = self::clamp_percent( isset( $raw['y'] ) ? $raw['y'] : self::AT_REGION_Y, 0, 90 );
+		$width  = self::clamp_percent( isset( $raw['width'] ) ? $raw['width'] : self::AT_REGION_W, 4, 40 );
+		$height = self::clamp_percent( isset( $raw['height'] ) ? $raw['height'] : self::AT_REGION_H, 20, 100 );
+
+		if ( $x + $width > 100 ) {
+			$width = round( 100 - $x, 2 );
+		}
+
+		if ( $y + $height > 100 ) {
+			$height = round( 100 - $y, 2 );
+		}
+
+		return array(
+			'x'      => $x,
+			'y'      => $y,
+			'width'  => $width,
+			'height' => $height,
+			'fill'   => self::AT_REGION_FILL,
+		);
 	}
 
 	/**
@@ -2262,7 +3594,7 @@ final class APD_Formats {
 			'valign' => $valign,
 		);
 
-		if ( self::uses_two_rows( $type ) ) {
+		if ( self::box_has_two_rows( $type, is_array( $format ) ? $format : array() ) ) {
 			$allowed = array( 'left', 'center', 'right', 'justify' );
 			$letter  = isset( $raw['letter_align'] ) ? sanitize_key( (string) $raw['letter_align'] ) : ( isset( $defaults['letter_align'] ) ? $defaults['letter_align'] : 'justify' );
 			$number  = isset( $raw['number_align'] ) ? sanitize_key( (string) $raw['number_align'] ) : ( isset( $defaults['number_align'] ) ? $defaults['number_align'] : 'justify' );
@@ -2287,7 +3619,7 @@ final class APD_Formats {
 			$plate_w        = isset( $layout['width'] ) ? (int) $layout['width'] : 0;
 			$plate_h        = isset( $layout['height'] ) ? (int) $layout['height'] : 0;
 
-			if ( $plate_w > 0 && $plate_h > 0 && self::uses_frame( $layout ) ) {
+			if ( $plate_w > 0 && $plate_h > 0 && ( self::uses_frame( $layout ) || self::is_french( $type ) || self::is_austria( $type ) ) ) {
 				$box = self::clamp_box_to_region( $box, self::text_area_region( $layout ) );
 			}
 		}
@@ -2542,6 +3874,7 @@ final class APD_Formats {
 
 		$fallback = '';
 		$usa      = '';
+		$french   = '';
 
 		foreach ( $fonts as $font ) {
 			if ( empty( $font['id'] ) ) {
@@ -2558,10 +3891,18 @@ final class APD_Formats {
 			if ( 'us' === (string) $type && '' === $usa && '' !== $family && 0 === stripos( $family, 'USA' ) ) {
 				$usa = $id;
 			}
+
+			if ( self::is_french( $type ) && '' === $french && '' !== $family && ( false !== stripos( $family, 'French' ) || false !== stripos( $family, 'Bebas' ) ) ) {
+				$french = $id;
+			}
 		}
 
 		if ( 'us' === (string) $type && '' !== $usa ) {
 			return $usa;
+		}
+
+		if ( self::is_french( $type ) && '' !== $french ) {
+			return $french;
 		}
 
 		if ( '' !== $fallback ) {
@@ -2633,11 +3974,24 @@ final class APD_Formats {
 		$type      = isset( $format['type'] ) ? (string) $format['type'] : 'eu';
 		$max_chars = isset( $format['max_chars'] ) ? (int) $format['max_chars'] : self::default_max_chars( $type );
 		$row_limits = self::suv_row_limits( $format );
+		$capabilities = self::type_capabilities( $type );
 
-		if ( self::uses_two_rows( $type ) ) {
+		if ( self::is_atypical_300( $type ) ) {
+			$capabilities['two_row'] = self::format_uses_two_rows( $format );
+		}
+
+		if ( self::format_uses_two_rows( $format ) ) {
 			$max_chars = $row_limits[0] + $row_limits[1];
 		} elseif ( self::is_holder( $type ) ) {
 			$max_chars = ! empty( $format['holder_max_set'] ) ? (int) $format['max_chars'] : self::holder_text_limit();
+		} elseif ( self::is_french( $type ) ) {
+			$fr_groups = self::french_group_limits( $format );
+			$max_chars = self::is_french_temporary( $type )
+				? strlen( self::FR_WW_MARK ) + 1 + $fr_groups[1] + 1 + $fr_groups[2]
+				: $fr_groups[0] + 1 + $fr_groups[1] + 1 + $fr_groups[2];
+		} elseif ( self::is_austria( $type ) ) {
+			$at_limits = self::austria_limits( $format );
+			$max_chars = $at_limits[0] + 1 + $at_limits[1];
 		}
 		$image_id  = ( self::uses_base_image( $type ) && isset( $format['base_image_id'] ) ) ? absint( $format['base_image_id'] ) : 0;
 		$image_url = $image_id ? wp_get_attachment_image_url( $image_id, 'full' ) : '';
@@ -2646,10 +4000,17 @@ final class APD_Formats {
 			$image_url = self::bundled_holder_image_url( $type );
 		}
 
-		$presets = array();
+		$presets     = array();
+		$locked_code = self::locked_country_code( $type );
 
 		if ( self::uses_country_band( $type ) ) {
 			foreach ( APD_Presets::active_for_format( $type ) as $preset ) {
+				$code = isset( $preset['country_code'] ) ? (string) $preset['country_code'] : '';
+
+				if ( '' !== $locked_code && ! self::preset_matches_country( $code, $locked_code ) ) {
+					continue;
+				}
+
 				$preset_image = isset( $preset['image_id'] ) ? wp_get_attachment_image_url( absint( $preset['image_id'] ), 'full' ) : '';
 				$presets[]    = array(
 					'id'           => $preset['id'],
@@ -2659,6 +4020,40 @@ final class APD_Formats {
 					'side'         => $preset['side'],
 					'band_ratio'   => (float) $preset['band_ratio'],
 				);
+			}
+
+			if ( self::offers_country_choice( $type ) && isset( $format['preset_mode'] ) && 'selected' === $format['preset_mode'] && ! empty( $format['preset_ids'] ) && is_array( $format['preset_ids'] ) ) {
+				$allowed = array_fill_keys( array_map( 'strval', $format['preset_ids'] ), true );
+				$narrow  = array();
+
+				foreach ( $presets as $preset ) {
+					if ( isset( $allowed[ (string) $preset['id'] ] ) ) {
+						$narrow[] = $preset;
+					}
+				}
+
+				if ( ! empty( $narrow ) ) {
+					$presets = $narrow;
+				}
+			}
+
+			$default_preset = isset( $format['default_preset_id'] ) ? (string) $format['default_preset_id'] : '';
+
+			if ( '' !== $default_preset && count( $presets ) > 1 ) {
+				$lead = array();
+				$tail = array();
+
+				foreach ( $presets as $preset ) {
+					if ( (string) $preset['id'] === $default_preset ) {
+						$lead[] = $preset;
+					} else {
+						$tail[] = $preset;
+					}
+				}
+
+				if ( ! empty( $lead ) ) {
+					$presets = array_merge( $lead, $tail );
+				}
 			}
 		}
 
@@ -2725,7 +4120,7 @@ final class APD_Formats {
 			);
 		}
 
-		return array(
+		$payload = array(
 			'id'               => $format['id'],
 			'name'             => $format['name'],
 			'type'             => $type,
@@ -2752,11 +4147,53 @@ final class APD_Formats {
 			'fonts'            => $fonts,
 			'presets'          => $presets,
 			'designs'          => $designs,
-			'capabilities'     => self::type_capabilities( $type ),
+			'capabilities'     => $capabilities,
 			'allow_empty'      => true,
 			'multiline'        => self::is_street_plate( $type ),
 			'wrap_text'        => self::is_street_plate( $type ) && ! empty( $format['wrap_text'] ),
 			'max_lines'        => self::wrap_line_limit(),
 		);
+
+		if ( self::is_french( $type ) ) {
+			$payload['fr_groups']   = self::french_group_limits( $format );
+			$payload['fr_mark']     = self::is_french_temporary( $type ) ? self::FR_WW_MARK : '';
+			$payload['fr_date_max'] = self::is_french_temporary( $type ) ? self::FR_DATE_MAX : 0;
+			$payload['fr_fill']     = self::is_french_temporary( $type ) ? self::FR_TEMP_FILL : self::FR_FILL;
+			$payload['fr_ink']      = self::FR_TEXT;
+			$payload['text_boxes']  = self::stored_group_boxes( $format, 3 );
+			if ( self::is_french_region( $type ) ) {
+				$payload['fr_region_max']  = self::FR_REGION_MAX;
+				$payload['fr_region_box']  = isset( $format['fr_region_box'] ) && is_array( $format['fr_region_box'] )
+					? $format['fr_region_box']
+					: self::default_french_region_box( $format );
+			}
+			if ( self::is_french_temporary( $type ) ) {
+				$date_boxes = self::default_date_boxes( $format );
+				$payload['fr_date'] = array(
+					'month' => isset( $format['fr_month'] ) && is_array( $format['fr_month'] ) ? $format['fr_month'] : $date_boxes['month'],
+					'year'  => isset( $format['fr_year'] ) && is_array( $format['fr_year'] ) ? $format['fr_year'] : $date_boxes['year'],
+				);
+				$payload['fr_date_custom'] = ! empty( $format['fr_date_custom'] );
+			}
+		}
+
+		if ( self::is_austria( $type ) ) {
+			$payload['at_groups'] = self::austria_limits( $format );
+			$payload['at_mark']   = 'A';
+			$payload['at_fill']   = self::AT_FILL;
+			$payload['at_ink']    = self::AT_TEXT;
+			$payload['at_region'] = self::default_region_box( $format );
+			$payload['at_stripe'] = self::AT_STRIPE;
+			$payload['text_boxes'] = self::stored_group_boxes( $format, 2 );
+		}
+
+		if ( self::is_english( $type ) ) {
+			$payload['slogan_max'] = self::slogan_limit( $format );
+			$payload['slogan_box'] = isset( $format['slogan_box'] ) && is_array( $format['slogan_box'] )
+				? self::sanitize_slogan_box( $format['slogan_box'], $format )
+				: self::default_slogan_box( $format );
+		}
+
+		return $payload;
 	}
 }

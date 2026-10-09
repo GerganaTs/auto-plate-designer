@@ -83,11 +83,12 @@ $apd_design_scope = static function ( $design ) {
 				<th><?php esc_html_e( 'Formats', 'auto-plate-designer' ); ?></th>
 				<th><?php esc_html_e( 'Active', 'auto-plate-designer' ); ?></th>
 				<th><?php esc_html_e( 'Actions', 'auto-plate-designer' ); ?></th>
+				<th><?php esc_html_e( 'Create product', 'auto-plate-designer' ); ?></th>
 			</tr>
 		</thead>
 		<tbody>
 			<?php if ( empty( $designs ) ) : ?>
-				<tr><td colspan="6"><?php esc_html_e( 'No USA designs yet. Add Arizona, California, Oklahoma, and the rest here.', 'auto-plate-designer' ); ?></td></tr>
+				<tr><td colspan="7"><?php esc_html_e( 'No USA designs yet. Add Arizona, California, Oklahoma, and the rest here.', 'auto-plate-designer' ); ?></td></tr>
 			<?php else : ?>
 				<?php foreach ( $designs as $design ) : ?>
 					<?php
@@ -110,25 +111,29 @@ $apd_design_scope = static function ( $design ) {
 							<a href="<?php echo esc_url( add_query_arg( 'edit', $design['id'], $apd_admin->tab_url( 'designs' ) ) ); ?>"><?php esc_html_e( 'Edit', 'auto-plate-designer' ); ?></a>
 							|
 							<a class="apd-js-confirm" href="<?php echo esc_url( $apd_admin->delete_url( 'designs', $design['id'] ) ); ?>"><?php esc_html_e( 'Delete', 'auto-plate-designer' ); ?></a>
+						</td>
+						<td>
 							<?php
 							$row_formats     = APD_Designs::formats_for( $design );
 							$new_product_url = admin_url( 'post-new.php?post_type=product' );
 							?>
 							<?php if ( 1 === count( $row_formats ) ) : ?>
-								|
 								<a href="<?php echo esc_url( add_query_arg( array( 'apd_format' => $row_formats[0]['id'], 'apd_design' => $design['id'] ), $new_product_url ) ); ?>"><?php esc_html_e( 'Create product', 'auto-plate-designer' ); ?></a>
 							<?php elseif ( count( $row_formats ) > 1 ) : ?>
 								<form method="get" action="<?php echo esc_url( admin_url( 'post-new.php' ) ); ?>" class="apd-create-design-product">
 									<input type="hidden" name="post_type" value="product">
 									<input type="hidden" name="apd_design" value="<?php echo esc_attr( $design['id'] ); ?>">
 									<label class="screen-reader-text" for="apd-design-format-<?php echo esc_attr( $design['id'] ); ?>"><?php esc_html_e( 'Format', 'auto-plate-designer' ); ?></label>
-									<select name="apd_format" id="apd-design-format-<?php echo esc_attr( $design['id'] ); ?>">
+									<select name="apd_format" id="apd-design-format-<?php echo esc_attr( $design['id'] ); ?>" required>
+										<option value=""><?php esc_html_e( 'Choose a format', 'auto-plate-designer' ); ?></option>
 										<?php foreach ( $row_formats as $row_format ) : ?>
-											<option value="<?php echo esc_attr( $row_format['id'] ); ?>"><?php echo esc_html( $row_format['name'] ); ?></option>
+											<option value="<?php echo esc_attr( $row_format['id'] ); ?>"><?php echo esc_html( $row_format['name'] . ' (' . APD_Formats::format_size_label( $row_format ) . ')' ); ?></option>
 										<?php endforeach; ?>
 									</select>
 									<button type="submit" class="button-link"><?php esc_html_e( 'Create product', 'auto-plate-designer' ); ?></button>
 								</form>
+							<?php else : ?>
+								<span class="description">—</span>
 							<?php endif; ?>
 						</td>
 					</tr>

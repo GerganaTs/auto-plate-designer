@@ -414,12 +414,12 @@ if ( ! isset( $payload['text_box']['x'], $payload['text_box']['height'] ) ) {
 	exit( 1 );
 }
 
-if ( APD_Formats::uses_country_band( 'us' ) || APD_Formats::uses_country_band( 'holder' ) || APD_Formats::uses_country_band( 'custom' ) || APD_Formats::uses_country_band( 'color' ) || APD_Formats::uses_country_band( 'suv' ) ) {
+if ( APD_Formats::uses_country_band( 'us' ) || APD_Formats::uses_country_band( 'holder' ) || APD_Formats::uses_country_band( 'custom' ) || APD_Formats::uses_country_band( 'color' ) || APD_Formats::uses_country_band( 'suv' ) || APD_Formats::uses_country_band( 'suv_340' ) ) {
 	fwrite( STDERR, "COUNTRY_BAND_NON_EU_FAIL\n" );
 	exit( 1 );
 }
 
-if ( ! APD_Formats::uses_country_band( 'eu' ) || ! APD_Formats::uses_country_band( 'moto' ) || ! APD_Formats::uses_country_band( 'suv_eu' ) ) {
+if ( ! APD_Formats::uses_country_band( 'eu' ) || ! APD_Formats::uses_country_band( 'moto' ) || ! APD_Formats::uses_country_band( 'suv_eu' ) || ! APD_Formats::uses_country_band( 'suv_eu_340' ) ) {
 	fwrite( STDERR, "COUNTRY_BAND_EU_FAIL\n" );
 	exit( 1 );
 }
@@ -716,9 +716,8 @@ if ( ! is_wp_error( $split_format ) && ! is_wp_error( $plain_format ) ) {
 		$_POST['apd_design_id']           = 'd-split-fields';
 		$_POST['apd_default_text_left']   = 'NYX';
 		$_POST['apd_default_text_right']  = '12345';
-		$_POST['apd_layouts']             = array( 'text_only' );
 		APD_Admin_Settings::instance()->save_product_meta( $side_post );
-		unset( $_POST['apd_product_nonce'], $_POST['apd_enabled'], $_POST['apd_format_id'], $_POST['apd_design_id'], $_POST['apd_default_text_left'], $_POST['apd_default_text_right'], $_POST['apd_layouts'] );
+		unset( $_POST['apd_product_nonce'], $_POST['apd_enabled'], $_POST['apd_format_id'], $_POST['apd_design_id'], $_POST['apd_default_text_left'], $_POST['apd_default_text_right'] );
 	}
 }
 
@@ -764,6 +763,58 @@ if (
 }
 
 echo 'PRODUCT_SIDE_FIELDS_OK' . PHP_EOL;
+
+$slogan_format = APD_Formats::save(
+	array(
+		'name' => 'English slogan fields',
+		'type' => 'uk',
+	)
+);
+$slogan_post = 0;
+if ( ! is_wp_error( $slogan_format ) ) {
+	$slogan_post = wp_insert_post(
+		array(
+			'post_type'   => 'product',
+			'post_status' => 'draft',
+			'post_title'  => 'APD slogan fields',
+		)
+	);
+	update_post_meta( $slogan_post, APD_Admin_Settings::META_ENABLED, 'yes' );
+	update_post_meta( $slogan_post, APD_Admin_Settings::META_FORMAT, $slogan_format['id'] );
+	update_post_meta( $slogan_post, APD_Admin_Settings::META_DEFAULT_SLOGAN, 'Park here' );
+	ob_start();
+	APD_Admin_Settings::instance()->render_product_meta_box( get_post( $slogan_post ) );
+	$slogan_html = ob_get_clean();
+	$slogan_admins = get_users(
+		array(
+			'role'   => 'administrator',
+			'number' => 1,
+		)
+	);
+	if ( ! empty( $slogan_admins ) ) {
+		wp_set_current_user( (int) $slogan_admins[0]->ID );
+		$_POST['apd_product_nonce']  = wp_create_nonce( APD_Admin_Settings::PRODUCT_NONCE_ACTION );
+		$_POST['apd_enabled']        = '1';
+		$_POST['apd_format_id']      = $slogan_format['id'];
+		$_POST['apd_default_text']   = 'AB12 CDE';
+		$_POST['apd_default_slogan'] = 'Hello plate';
+		APD_Admin_Settings::instance()->save_product_meta( $slogan_post );
+	}
+	$stored_slogan = (string) get_post_meta( $slogan_post, APD_Admin_Settings::META_DEFAULT_SLOGAN, true );
+	if (
+		false !== strpos( $slogan_html, 'data-apd-default-slogan hidden' )
+		|| false === strpos( $slogan_html, 'name="apd_default_slogan"' )
+		|| false === strpos( $slogan_html, 'value="Park here"' )
+		|| 'Hello plate' !== $stored_slogan
+		|| 'Hello plate' !== APD_Admin_Settings::product_initial_slogan( $slogan_post, $slogan_format )
+	) {
+		fwrite( STDERR, 'PRODUCT_SLOGAN_FAIL stored=' . wp_json_encode( $stored_slogan ) . PHP_EOL );
+		exit( 1 );
+	}
+	wp_delete_post( $slogan_post, true );
+	APD_Formats::delete( $slogan_format['id'] );
+	echo 'PRODUCT_SLOGAN_OK' . PHP_EOL;
+}
 
 if ( true !== APD_Security::validate_format_type( 'color' ) ) {
 	fwrite( STDERR, "COLOR_TYPE_VALIDATE_FAIL\n" );
@@ -850,7 +901,7 @@ if ( $holder_only !== $holder_caps || $holder_caps !== $holder_def ) {
 	exit( 1 );
 }
 
-foreach ( array( 'eu', 'eu_plain', 'moto', 'moto_240', 'moto_plain', 'moto_plain_240', 'suv', 'suv_eu', 'custom' ) as $plate_type ) {
+foreach ( array( 'eu', 'eu_plain', 'moto', 'moto_240', 'moto_plain', 'moto_plain_240', 'suv', 'suv_340', 'suv_eu', 'suv_eu_340', 'eu_300', 'atyp_300', 'custom' ) as $plate_type ) {
 	if ( $plate_caps !== APD_Formats::color_field_capabilities( $plate_type ) ) {
 		fwrite( STDERR, "PLATE_COLOR_CAPS_FAIL {$plate_type}\n" );
 		exit( 1 );

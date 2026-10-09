@@ -23,7 +23,9 @@ final class APD_Admin_Settings {
 	const META_HIDE_IMAGE   = '_apd_hide_image';
 	const META_COLOR_FIELDS = '_apd_color_fields';
 	const META_PALETTE_IDS  = '_apd_palette_ids';
-	const META_DEFAULT_TEXT = '_apd_default_text';
+	const META_DEFAULT_TEXT   = '_apd_default_text';
+	const META_DEFAULT_SLOGAN = '_apd_default_slogan';
+	const META_FR_REGION   = '_apd_fr_region';
 
 	const PRODUCT_NONCE_ACTION = 'apd_product_meta';
 
@@ -170,14 +172,16 @@ final class APD_Admin_Settings {
 			$size               = APD_Formats::default_size( $type );
 			$sizes[ $type ]     = array( $size['width'], $size['height'] );
 			$type_caps[ $type ] = APD_Formats::js_capabilities( $type );
-			$text_boxes[ $type ] = APD_Formats::default_text_box(
-				$type,
-				array(
-					'width'     => $size['width'],
-					'height'    => $size['height'],
-					'band_side' => 'left',
-				)
+			$box_format = array(
+				'width'     => $size['width'],
+				'height'    => $size['height'],
+				'band_side' => 'left',
 			);
+			if ( 'atyp_300' === $type ) {
+				$box_format['type']      = 'atyp_300';
+				$box_format['text_rows'] = 2;
+			}
+			$text_boxes[ $type ] = APD_Formats::default_text_box( $type, $box_format );
 		}
 
 		wp_localize_script(
@@ -194,7 +198,9 @@ final class APD_Admin_Settings {
 				'canvasMaxPx'        => APD_Formats::CANVAS_DISPLAY_MAX_PX,
 				'sampleFontFill'     => APD_Formats::SAMPLE_FONT_FILL,
 				'adminSamplePainted' => APD_Formats::ADMIN_SAMPLE_PAINTED,
-				'adminSampleSuv'    => APD_Formats::ADMIN_SAMPLE_SUV,
+				'adminSampleSuv'     => APD_Formats::ADMIN_SAMPLE_SUV,
+				'adminSampleEnglish' => APD_Formats::admin_sample_plate_text( 'uk' ),
+				'adminSampleMini'    => APD_Formats::admin_sample_plate_text( 'mini' ),
 				'holderImageLabel'  => __( 'Holder photo', 'auto-plate-designer' ),
 				'holderImageHelp'   => __( 'The standard car holder is already shown. Upload a PNG, JPEG, or WebP photo to replace it. An SVG plugin is not needed.', 'auto-plate-designer' ),
 				'holderImageUrl'    => APD_Formats::bundled_holder_image_url(),
@@ -202,7 +208,7 @@ final class APD_Admin_Settings {
 					'holder_moto' => APD_Formats::bundled_holder_image_url( 'holder_moto' ),
 					'holder_d'    => APD_Formats::bundled_holder_image_url( 'holder_d' ),
 				),
-				'paletteSlotTypes'  => array( 'color', 'custom', 'eu_plain', 'moto_plain', 'moto_plain_240', 'suv', 'us' ),
+				'paletteSlotTypes'  => array( 'color', 'custom', 'eu_plain', 'moto_plain', 'moto_plain_240', 'suv', 'suv_340', 'atyp_300', 'us', 'uk', 'uk_plain' ),
 				'holderPlateLabels' => array(
 					'holder'      => APD_Formats::format_size_label( array( 'type' => 'holder' ) ),
 					'holder_moto' => APD_Formats::format_size_label( array( 'type' => 'holder_moto' ) ),
@@ -474,12 +480,10 @@ final class APD_Admin_Settings {
 
 		$enabled      = 'yes' === get_post_meta( $post->ID, self::META_ENABLED, true );
 		$format       = (string) get_post_meta( $post->ID, self::META_FORMAT, true );
-		$layouts      = get_post_meta( $post->ID, self::META_LAYOUTS, true );
 		$hide_image   = 'no' !== get_post_meta( $post->ID, self::META_HIDE_IMAGE, true );
 		$default_text = (string) get_post_meta( $post->ID, self::META_DEFAULT_TEXT, true );
 		$design_id    = (string) get_post_meta( $post->ID, self::META_DESIGN, true );
 		$formats    = APD_Formats::all();
-		$available  = array( 'text_only', 'text_image_text', 'image_text', 'multiline_text' );
 
 		if ( '' === $format && isset( $_GET['apd_format'] ) ) { // phpcs:ignore WordPress.Security.NonceVerification.Recommended
 			$requested = sanitize_text_field( wp_unslash( $_GET['apd_format'] ) ); // phpcs:ignore WordPress.Security.NonceVerification.Recommended
@@ -497,10 +501,6 @@ final class APD_Admin_Settings {
 				$design_id = $requested_design;
 				$enabled   = true;
 			}
-		}
-
-		if ( ! is_array( $layouts ) ) {
-			$layouts = $available;
 		}
 
 		echo '<div class="apd-product-metabox">';
@@ -531,8 +531,14 @@ final class APD_Admin_Settings {
 
 		foreach ( $formats as $item ) {
 			$item_limits = APD_Formats::us_side_limits( $item );
+			$group_limits = array( '', '', '' );
+			if ( APD_Formats::is_french( $item['type'] ) ) {
+				$group_limits = APD_Formats::french_group_limits( $item );
+			} elseif ( APD_Formats::is_austria( $item['type'] ) ) {
+				$group_limits = APD_Formats::austria_limits( $item );
+			}
 			printf(
-				'<option value="%1$s" data-apd-type="%2$s" data-apd-rows="%11$s" data-apd-no-frame="%6$s" data-apd-split="%7$s" data-apd-photo="%8$s" data-apd-left="%9$s" data-apd-right="%10$s" %3$s>%4$s (%5$s)</option>',
+				'<option value="%1$s" data-apd-type="%2$s" data-apd-rows="%11$s" data-apd-no-frame="%6$s" data-apd-split="%7$s" data-apd-photo="%8$s" data-apd-left="%9$s" data-apd-right="%10$s" data-apd-g1="%12$s" data-apd-g2="%13$s" data-apd-g3="%14$s" data-apd-slogan-max="%15$s" %3$s>%4$s (%5$s)</option>',
 				esc_attr( $item['id'] ),
 				esc_attr( $item['type'] ),
 				selected( $format, $item['id'], false ),
@@ -543,7 +549,11 @@ final class APD_Admin_Settings {
 				! empty( $item['base_image_id'] ) ? '1' : '0',
 				esc_attr( (string) $item_limits[0] ),
 				esc_attr( (string) $item_limits[1] ),
-				APD_Formats::uses_two_rows( $item['type'] ) ? '1' : '0'
+				APD_Formats::format_uses_two_rows( $item ) ? '1' : '0',
+				esc_attr( (string) $group_limits[0] ),
+				esc_attr( isset( $group_limits[1] ) ? (string) $group_limits[1] : '' ),
+				esc_attr( isset( $group_limits[2] ) ? (string) $group_limits[2] : '' ),
+				esc_attr( (string) ( APD_Formats::is_english( $item['type'] ) ? APD_Formats::slogan_limit( $item ) : 0 ) )
 			);
 		}
 
@@ -573,7 +583,7 @@ final class APD_Admin_Settings {
 			echo '<p class="description">' . esc_html__( 'Add formats under WooCommerce → Auto Plate Designer first.', 'auto-plate-designer' ) . '</p>';
 		}
 
-		$suv_default     = APD_Formats::uses_two_rows( $selected_type );
+		$suv_default     = is_array( $selected_format ) && APD_Formats::format_uses_two_rows( $selected_format );
 		$suv_rows        = APD_Formats::suv_plate_rows( $default_text );
 		$single_text     = str_replace( array( "\r\n", "\r", "\n" ), ' ', $default_text );
 		$side_limits     = ( is_array( $selected_format ) && 'us' === $selected_type )
@@ -584,10 +594,27 @@ final class APD_Admin_Settings {
 		$side_parts      = false !== strpos( $side_source, "\n" ) ? explode( "\n", $side_source, 2 ) : array( $default_text, '' );
 		$side_left_max   = $sides_default ? (int) $side_limits[0] : APD_Formats::US_SIDE_LEFT_MAX;
 		$side_right_max  = $sides_default ? (int) $side_limits[1] : APD_Formats::US_SIDE_RIGHT_MAX;
-		$single_open     = ! $suv_default && ! $sides_default;
+		$french_default  = is_array( $selected_format ) && APD_Formats::is_french( $selected_type );
+		$austria_default = is_array( $selected_format ) && APD_Formats::is_austria( $selected_type );
+		$french_values   = $french_default ? APD_Formats::french_field_values( $selected_type, $default_text ) : array( '', '', '' );
+		$austria_values  = $austria_default ? APD_Formats::austria_field_values( $default_text ) : array( '', '' );
+		$french_limits   = $french_default ? APD_Formats::french_group_limits( $selected_format ) : array( 2, 3, 2 );
+		$austria_limits  = $austria_default ? APD_Formats::austria_limits( $selected_format ) : array( 2, 6 );
+		$french_temp     = $french_default && APD_Formats::is_french_temporary( $selected_type );
+		$single_open     = ! $suv_default && ! $sides_default && ! $french_default && ! $austria_default;
+		$english_product = is_array( $selected_format ) && APD_Formats::is_english( $selected_type );
+		$slogan_max      = $english_product ? APD_Formats::slogan_limit( $selected_format ) : APD_Formats::UK_SLOGAN_MAX;
+		if ( $slogan_max < 1 ) {
+			$slogan_max = APD_Formats::UK_SLOGAN_MAX;
+		}
+		$default_slogan = (string) get_post_meta( $post->ID, self::META_DEFAULT_SLOGAN, true );
 
 		echo '<p data-apd-default-single' . ( $single_open ? '' : ' hidden' ) . '><label for="apd_default_text">' . esc_html__( 'Initial plate text', 'auto-plate-designer' ) . '</label><br>';
 		echo '<input type="text" class="widefat" id="apd_default_text" name="apd_default_text" value="' . esc_attr( $single_text ) . '" maxlength="32" autocomplete="off"' . ( $single_open ? '' : ' disabled' ) . '>';
+		echo '</p>';
+		echo '<p data-apd-default-slogan' . ( $english_product ? '' : ' hidden' ) . '><label for="apd_default_slogan">' . esc_html__( 'Initial slogan', 'auto-plate-designer' ) . '</label><br>';
+		echo '<input type="text" class="widefat" id="apd_default_slogan" name="apd_default_slogan" value="' . esc_attr( $default_slogan ) . '" maxlength="' . esc_attr( (string) $slogan_max ) . '" autocomplete="off"' . ( $english_product ? '' : ' disabled' ) . '>';
+		echo '<span class="description">' . esc_html__( 'Shown on the product page until the shopper types a slogan. Leave blank for no slogan.', 'auto-plate-designer' ) . '</span>';
 		echo '</p>';
 		echo '<div class="apd-default-sides" data-apd-default-sides' . ( $sides_default ? '' : ' hidden' ) . '>';
 		echo '<p><label for="apd_default_text_left">' . esc_html__( 'Left text', 'auto-plate-designer' ) . '</label><br>';
@@ -605,22 +632,38 @@ final class APD_Admin_Settings {
 		echo '<input type="text" class="widefat" id="apd_default_text_row_2" name="apd_default_text_row_2" value="' . esc_attr( $suv_rows[1] ) . '" maxlength="32" autocomplete="off"' . ( $suv_default ? '' : ' disabled' ) . '>';
 		echo '</p>';
 		echo '</div>';
+		echo '<div class="apd-default-french" data-apd-default-french' . ( $french_default ? '' : ' hidden' ) . '>';
+		echo '<p data-apd-fr-field="1"' . ( $french_temp ? ' hidden' : '' ) . '><label for="apd_default_fr_1">' . esc_html__( 'Letters', 'auto-plate-designer' ) . '</label><br>';
+		echo '<input type="text" class="widefat" id="apd_default_fr_1" name="apd_default_fr_1" value="' . esc_attr( $french_temp ? '' : (string) $french_values[0] ) . '" maxlength="' . esc_attr( (string) $french_limits[0] ) . '" autocomplete="off"' . ( ( $french_default && ! $french_temp ) ? '' : ' disabled' ) . '>';
+		echo '</p>';
+		echo '<p data-apd-fr-fixed' . ( $french_temp ? '' : ' hidden' ) . '><label>' . esc_html__( 'Letters', 'auto-plate-designer' ) . '</label><br>';
+		echo '<input type="text" class="widefat" value="' . esc_attr( APD_Formats::FR_WW_MARK ) . '" readonly>';
+		echo '</p>';
+		echo '<p><label for="apd_default_fr_2">' . esc_html__( 'Numbers', 'auto-plate-designer' ) . '</label><br>';
+		echo '<input type="text" class="widefat" id="apd_default_fr_2" name="apd_default_fr_2" value="' . esc_attr( (string) ( $french_temp ? $french_values[0] : ( isset( $french_values[1] ) ? $french_values[1] : '' ) ) ) . '" maxlength="' . esc_attr( (string) $french_limits[1] ) . '" autocomplete="off"' . ( $french_default ? '' : ' disabled' ) . '>';
+		echo '</p>';
+		echo '<p><label for="apd_default_fr_3">' . esc_html__( 'Letters', 'auto-plate-designer' ) . '</label><br>';
+		echo '<input type="text" class="widefat" id="apd_default_fr_3" name="apd_default_fr_3" value="' . esc_attr( (string) ( $french_temp ? ( isset( $french_values[1] ) ? $french_values[1] : '' ) : ( isset( $french_values[2] ) ? $french_values[2] : '' ) ) ) . '" maxlength="' . esc_attr( (string) $french_limits[2] ) . '" autocomplete="off"' . ( $french_default ? '' : ' disabled' ) . '>';
+		echo '</p>';
+		$region_default = APD_Formats::is_french_region( $selected_type );
+		$region_value   = $region_default ? (string) get_post_meta( $post->ID, self::META_FR_REGION, true ) : '';
+		if ( $region_default && '' === $region_value ) {
+			$region_value = APD_Formats::FR_REGION_SAMPLE;
+		}
+		echo '<p data-apd-fr-region' . ( $region_default ? '' : ' hidden' ) . '><label for="apd_default_fr_region">' . esc_html__( 'Region', 'auto-plate-designer' ) . '</label><br>';
+		echo '<input type="text" class="widefat" id="apd_default_fr_region" name="apd_default_fr_region" value="' . esc_attr( $region_value ) . '" maxlength="' . esc_attr( (string) APD_Formats::FR_REGION_MAX ) . '" inputmode="numeric" autocomplete="off"' . ( $region_default ? '' : ' disabled' ) . '>';
+		echo '</p>';
+		echo '</div>';
+		echo '<div class="apd-default-austria" data-apd-default-austria' . ( $austria_default ? '' : ' hidden' ) . '>';
+		echo '<p><label for="apd_default_at_1">' . esc_html__( 'Letters', 'auto-plate-designer' ) . '</label><br>';
+		echo '<input type="text" class="widefat" id="apd_default_at_1" name="apd_default_at_1" value="' . esc_attr( (string) $austria_values[0] ) . '" maxlength="' . esc_attr( (string) $austria_limits[0] ) . '" autocomplete="off"' . ( $austria_default ? '' : ' disabled' ) . '>';
+		echo '</p>';
+		echo '<p><label for="apd_default_at_2">' . esc_html__( 'Registration', 'auto-plate-designer' ) . '</label><br>';
+		echo '<input type="text" class="widefat" id="apd_default_at_2" name="apd_default_at_2" value="' . esc_attr( isset( $austria_values[1] ) ? (string) $austria_values[1] : '' ) . '" maxlength="' . esc_attr( (string) $austria_limits[1] ) . '" autocomplete="off"' . ( $austria_default ? '' : ' disabled' ) . '>';
+		echo '</p>';
+		echo '</div>';
 		echo '<p class="description">' . esc_html__( 'Shown on the product page until the shopper types their own plate. Leave blank to use the format sample.', 'auto-plate-designer' ) . '</p>';
 		echo '<p class="description">' . esc_html__( 'Colors come from the palettes chosen on this format.', 'auto-plate-designer' ) . '</p>';
-
-		echo '<p>' . esc_html__( 'Allowed layouts', 'auto-plate-designer' ) . '</p>';
-		echo '<div class="apd-choice-list">';
-
-		foreach ( $available as $layout ) {
-			printf(
-				'<label class="apd-choice"><input type="checkbox" name="apd_layouts[]" value="%1$s" %2$s> %3$s</label>',
-				esc_attr( $layout ),
-				checked( in_array( $layout, $layouts, true ), true, false ),
-				esc_html( str_replace( '_', ' ', $layout ) )
-			);
-		}
-
-		echo '</div>';
 
 		echo '</div>';
 		echo '</div>';
@@ -687,22 +730,6 @@ final class APD_Admin_Settings {
 			update_post_meta( $product_id, self::META_DESIGN, $design_id );
 		}
 
-		$layouts = array();
-
-		if ( isset( $_POST['apd_layouts'] ) && is_array( $_POST['apd_layouts'] ) ) {
-			foreach ( wp_unslash( $_POST['apd_layouts'] ) as $layout ) { // phpcs:ignore WordPress.Security.ValidatedSanitizedInput.InputNotSanitized
-				$layout = sanitize_key( $layout );
-
-				if ( ! is_wp_error( APD_Security::validate_layout( $layout ) ) ) {
-					$layouts[] = $layout;
-				}
-			}
-		}
-
-		$layouts = array_values( array_unique( $layouts ) );
-
-		update_post_meta( $product_id, self::META_LAYOUTS, $layouts );
-
 		$multiline   = is_array( $format_row ) && ! empty( $format_row['multiline'] );
 		$max_chars   = APD_Formats::is_holder( $format_type )
 			? APD_Formats::holder_text_limit()
@@ -713,13 +740,51 @@ final class APD_Admin_Settings {
 			? APD_Formats::active_us_side_limits( APD_Formats::frontend_payload( $format_row ), $design_id )
 			: null;
 
-		if ( APD_Formats::uses_two_rows( $format_type ) ) {
+		if ( is_array( $format_row ) && APD_Formats::format_uses_two_rows( $format_row ) ) {
 			$row_limits = APD_Formats::suv_row_limits( is_array( $format_row ) ? $format_row : array( 'type' => $format_type ) );
 			$row1       = isset( $_POST['apd_default_text_row_1'] ) ? (string) wp_unslash( $_POST['apd_default_text_row_1'] ) : ''; // phpcs:ignore WordPress.Security.ValidatedSanitizedInput.InputNotSanitized
 			$row2       = isset( $_POST['apd_default_text_row_2'] ) ? (string) wp_unslash( $_POST['apd_default_text_row_2'] ) : ''; // phpcs:ignore WordPress.Security.ValidatedSanitizedInput.InputNotSanitized
 			$clean_text = APD_Formats::limit_suv_rows( $row1, $row2, $row_limits[0], $row_limits[1] );
 			$multiline  = true;
 			$text_limit = $row_limits[0] + $row_limits[1] + ( false !== strpos( $clean_text, "\n" ) ? 1 : 0 );
+		} elseif ( is_array( $format_row ) && APD_Formats::is_french( $format_type ) ) {
+			$fr_groups = APD_Formats::is_french_temporary( $format_type )
+				? array(
+					isset( $_POST['apd_default_fr_2'] ) ? (string) wp_unslash( $_POST['apd_default_fr_2'] ) : '', // phpcs:ignore WordPress.Security.ValidatedSanitizedInput.InputNotSanitized
+					isset( $_POST['apd_default_fr_3'] ) ? (string) wp_unslash( $_POST['apd_default_fr_3'] ) : '', // phpcs:ignore WordPress.Security.ValidatedSanitizedInput.InputNotSanitized
+				)
+				: array(
+					isset( $_POST['apd_default_fr_1'] ) ? (string) wp_unslash( $_POST['apd_default_fr_1'] ) : '', // phpcs:ignore WordPress.Security.ValidatedSanitizedInput.InputNotSanitized
+					isset( $_POST['apd_default_fr_2'] ) ? (string) wp_unslash( $_POST['apd_default_fr_2'] ) : '', // phpcs:ignore WordPress.Security.ValidatedSanitizedInput.InputNotSanitized
+					isset( $_POST['apd_default_fr_3'] ) ? (string) wp_unslash( $_POST['apd_default_fr_3'] ) : '', // phpcs:ignore WordPress.Security.ValidatedSanitizedInput.InputNotSanitized
+				);
+			$fr_built = APD_Formats::french_posted_text(
+				$format_row,
+				$fr_groups,
+				array(
+					'month' => '05',
+					'year'  => '26',
+				)
+			);
+			$clean_text = is_wp_error( $fr_built ) ? '' : $fr_built['text'];
+			$multiline  = false;
+			$text_limit = isset( $format_row['max_chars'] ) ? (int) $format_row['max_chars'] : 12;
+			if ( APD_Formats::is_french_region( $format_type ) ) {
+				$region_code = APD_Formats::french_region_code( isset( $_POST['apd_default_fr_region'] ) ? (string) wp_unslash( $_POST['apd_default_fr_region'] ) : '' ); // phpcs:ignore WordPress.Security.ValidatedSanitizedInput.InputNotSanitized
+				update_post_meta( $product_id, self::META_FR_REGION, $region_code );
+			} else {
+				delete_post_meta( $product_id, self::META_FR_REGION );
+			}
+		} elseif ( is_array( $format_row ) && APD_Formats::is_austria( $format_type ) ) {
+			$at_left  = isset( $_POST['apd_default_at_1'] ) ? (string) wp_unslash( $_POST['apd_default_at_1'] ) : ''; // phpcs:ignore WordPress.Security.ValidatedSanitizedInput.InputNotSanitized
+			$at_right = isset( $_POST['apd_default_at_2'] ) ? (string) wp_unslash( $_POST['apd_default_at_2'] ) : ''; // phpcs:ignore WordPress.Security.ValidatedSanitizedInput.InputNotSanitized
+			$at_built = APD_Formats::austria_posted_text( $format_row, $at_left, $at_right );
+			$clean_text = is_wp_error( $at_built ) ? '' : $at_built['text'];
+			$multiline  = true;
+			$text_limit = function_exists( 'mb_strlen' ) ? mb_strlen( $clean_text, 'UTF-8' ) : strlen( $clean_text );
+			if ( $text_limit < 1 ) {
+				$text_limit = 1;
+			}
 		} elseif ( is_array( $side_limits ) ) {
 			$side_left  = isset( $_POST['apd_default_text_left'] ) ? (string) wp_unslash( $_POST['apd_default_text_left'] ) : ''; // phpcs:ignore WordPress.Security.ValidatedSanitizedInput.InputNotSanitized
 			$side_right = isset( $_POST['apd_default_text_right'] ) ? (string) wp_unslash( $_POST['apd_default_text_right'] ) : ''; // phpcs:ignore WordPress.Security.ValidatedSanitizedInput.InputNotSanitized
@@ -747,6 +812,45 @@ final class APD_Admin_Settings {
 		);
 		update_post_meta( $product_id, self::META_DEFAULT_TEXT, is_wp_error( $text_ok ) ? '' : $clean_text );
 
+		if ( APD_Formats::is_english( $format_type ) && is_array( $format_row ) ) {
+			$posted_slogan = isset( $_POST['apd_default_slogan'] ) ? (string) wp_unslash( $_POST['apd_default_slogan'] ) : ''; // phpcs:ignore WordPress.Security.ValidatedSanitizedInput.InputNotSanitized
+			$slogan_clean  = APD_Security::sanitize_plate_text( $posted_slogan, false );
+			$slogan_max    = APD_Formats::slogan_limit( $format_row );
+			if ( $slogan_max > 0 ) {
+				$slogan_length = function_exists( 'mb_strlen' ) ? mb_strlen( $slogan_clean, 'UTF-8' ) : strlen( $slogan_clean );
+				if ( $slogan_length > $slogan_max ) {
+					$slogan_clean = function_exists( 'mb_substr' ) ? mb_substr( $slogan_clean, 0, $slogan_max, 'UTF-8' ) : substr( $slogan_clean, 0, $slogan_max );
+				}
+			}
+			$slogan_ok = APD_Security::validate_plate_text(
+				$slogan_clean,
+				array(
+					'max_length'  => $slogan_max > 0 ? $slogan_max : APD_Formats::UK_SLOGAN_MAX,
+					'multiline'   => false,
+					'allow_empty' => true,
+				)
+			);
+			update_post_meta( $product_id, self::META_DEFAULT_SLOGAN, is_wp_error( $slogan_ok ) ? '' : $slogan_clean );
+		} else {
+			delete_post_meta( $product_id, self::META_DEFAULT_SLOGAN );
+		}
+
+		if ( ! APD_Formats::is_french( $format_type ) ) {
+			delete_post_meta( $product_id, self::META_FR_REGION );
+		}
+	}
+
+	/**
+	 * Two-digit region stored on a French region product.
+	 *
+	 * @param int $product_id Product ID.
+	 * @return string
+	 */
+	public static function product_region_text( $product_id ) {
+		$product_id = absint( $product_id );
+		$stored     = $product_id ? (string) get_post_meta( $product_id, self::META_FR_REGION, true ) : '';
+
+		return APD_Formats::french_region_code( $stored );
 	}
 
 	/**
@@ -772,6 +876,43 @@ final class APD_Admin_Settings {
 		$type = is_array( $format ) && isset( $format['type'] ) ? (string) $format['type'] : 'eu';
 
 		return APD_Formats::sample_plate_text( $type );
+	}
+
+	/**
+	 * Slogan shown on an English product until the shopper edits it.
+	 *
+	 * @param int                        $product_id Product ID.
+	 * @param array<string, mixed>|null  $format     Format row.
+	 * @return string
+	 */
+	public static function product_initial_slogan( $product_id, $format = null ) {
+		$product_id = absint( $product_id );
+
+		if ( ! is_array( $format ) && $product_id ) {
+			$format_id = (string) get_post_meta( $product_id, self::META_FORMAT, true );
+			$format    = '' !== $format_id ? APD_Formats::get( $format_id ) : null;
+		}
+
+		$type = is_array( $format ) && isset( $format['type'] ) ? (string) $format['type'] : '';
+
+		if ( ! APD_Formats::is_english( $type ) || ! $product_id ) {
+			return '';
+		}
+
+		$stored = trim( (string) get_post_meta( $product_id, self::META_DEFAULT_SLOGAN, true ) );
+		$max    = APD_Formats::slogan_limit( is_array( $format ) ? $format : array() );
+
+		if ( '' === $stored || $max < 1 ) {
+			return $max < 1 ? '' : $stored;
+		}
+
+		$length = function_exists( 'mb_strlen' ) ? mb_strlen( $stored, 'UTF-8' ) : strlen( $stored );
+
+		if ( $length > $max ) {
+			$stored = function_exists( 'mb_substr' ) ? mb_substr( $stored, 0, $max, 'UTF-8' ) : substr( $stored, 0, $max );
+		}
+
+		return $stored;
 	}
 
 	/**
@@ -870,7 +1011,7 @@ final class APD_Admin_Settings {
 		if ( is_array( $format ) && APD_Formats::uses_palette_slots( $type ) && isset( $format['palette_slots'] ) && is_array( $format['palette_slots'] ) ) {
 			$ids = array();
 
-			foreach ( APD_Formats::palette_slot_keys() as $slot ) {
+			foreach ( APD_Formats::palette_slot_keys_for( $type ) as $slot ) {
 				$id = isset( $format['palette_slots'][ $slot ] ) ? sanitize_text_field( (string) $format['palette_slots'][ $slot ] ) : '';
 
 				if ( '' !== $id ) {
@@ -927,7 +1068,7 @@ final class APD_Admin_Settings {
 		}
 
 		if ( is_array( $format ) && APD_Formats::uses_palette_slots( $type ) && isset( $format['palette_slots'] ) && is_array( $format['palette_slots'] ) ) {
-			foreach ( APD_Formats::palette_slot_keys() as $slot ) {
+			foreach ( APD_Formats::palette_slot_keys_for( $type ) as $slot ) {
 				$id      = isset( $format['palette_slots'][ $slot ] ) ? sanitize_text_field( (string) $format['palette_slots'][ $slot ] ) : '';
 				$palette = '' !== $id ? APD_Color_Palettes::get( $id ) : null;
 
@@ -980,7 +1121,7 @@ final class APD_Admin_Settings {
 		$fields = array();
 
 		if ( is_array( $format ) && APD_Formats::uses_palette_slots( $type ) && isset( $format['palette_slots'] ) && is_array( $format['palette_slots'] ) ) {
-			foreach ( APD_Formats::palette_slot_keys() as $slot ) {
+			foreach ( APD_Formats::palette_slot_keys_for( $type ) as $slot ) {
 				if ( ! empty( $format['palette_slots'][ $slot ] ) ) {
 					$fields[] = $slot;
 				}

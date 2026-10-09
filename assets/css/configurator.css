@@ -11,6 +11,45 @@ form.cart {
 	align-items: center;
 }
 
+body.apd-configurator-product form.cart table.variations {
+	display: block;
+	width: 100%;
+	flex: 1 0 100%;
+	margin: 0 0 0.85rem;
+	border: 0;
+}
+
+body.apd-configurator-product form.cart table.variations tbody,
+body.apd-configurator-product form.cart table.variations tr {
+	display: block;
+	width: 100%;
+}
+
+body.apd-configurator-product form.cart table.variations tr + tr {
+	margin-top: 0.85rem;
+}
+
+body.apd-configurator-product form.cart table.variations th,
+body.apd-configurator-product form.cart table.variations td {
+	display: block;
+	width: 100%;
+	max-width: 100%;
+	padding: 0;
+	text-align: start;
+}
+
+body.apd-configurator-product form.cart table.variations label {
+	display: block;
+	font-weight: 700;
+	padding-bottom: 5px;
+}
+
+body.apd-configurator-product form.cart table.variations select {
+	box-sizing: border-box;
+	width: 100%;
+	max-width: 100%;
+}
+
 .apd-cart-notice {
 	margin: 0 0 1rem;
 }
@@ -192,6 +231,15 @@ body.apd-configurator-product:not(:has(.apd-product-layout)) :is(
 	aspect-ratio: var(--apd-ratio, 520 / 110);
 	line-height: 0;
 	background: #fff;
+}
+
+.apd-canvas-frame.apd-round-plate {
+	overflow: hidden;
+	border-radius: var(--apd-plate-rx, 1.923%) / var(--apd-plate-ry, 9.091%);
+}
+
+.apd-canvas-frame.apd-english-plate {
+	filter: drop-shadow(0 3px 5px rgba(0, 0, 0, 0.28));
 }
 
 .apd-band-layer {
@@ -602,4 +650,14 @@ body.apd-hide-product-image .wp-block-columns:has(.wp-block-woocommerce-product-
 body.apd-hide-product-image div.product div.summary {
 	float: none;
 	width: 100%;
+}
+
+.apd-fr-date {
+	display: flex;
+	gap: 0.75rem;
+}
+
+.apd-fr-date .apd-field {
+	flex: 1 1 0;
+	min-width: 0;
 }

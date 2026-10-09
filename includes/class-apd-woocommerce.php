@@ -1074,6 +1074,38 @@ final class APD_WooCommerce {
 			$fingerprint['text_box']       = isset( $payload['text_box'] ) && is_array( $payload['text_box'] ) ? $payload['text_box'] : $fingerprint['text_box'];
 		}
 
+		if ( isset( $format['type'] ) && APD_Formats::is_french( (string) $format['type'] ) ) {
+			$fingerprint['fr_groups']  = isset( $payload['fr_groups'] ) && is_array( $payload['fr_groups'] ) ? $payload['fr_groups'] : APD_Formats::french_group_limits( $format );
+			$fingerprint['text_boxes'] = isset( $payload['text_boxes'] ) && is_array( $payload['text_boxes'] ) ? $payload['text_boxes'] : APD_Formats::stored_group_boxes( $format, 3 );
+			if ( APD_Formats::is_french_temporary( (string) $format['type'] ) && ! empty( $format['fr_date_custom'] ) ) {
+				$fingerprint['fr_month'] = isset( $format['fr_month'] ) ? $format['fr_month'] : array();
+				$fingerprint['fr_year']  = isset( $format['fr_year'] ) ? $format['fr_year'] : array();
+			}
+			if ( APD_Formats::is_french_region( (string) $format['type'] ) ) {
+				$fingerprint['fr_region_box'] = isset( $payload['fr_region_box'] ) && is_array( $payload['fr_region_box'] )
+					? $payload['fr_region_box']
+					: APD_Formats::default_french_region_box( $format );
+			}
+		}
+
+		if ( isset( $format['type'] ) && APD_Formats::offers_country_choice( (string) $format['type'] ) && isset( $format['preset_mode'] ) && 'selected' === $format['preset_mode'] ) {
+			$fingerprint['preset_ids']        = isset( $format['preset_ids'] ) && is_array( $format['preset_ids'] ) ? array_values( $format['preset_ids'] ) : array();
+			$fingerprint['default_preset_id'] = isset( $format['default_preset_id'] ) ? (string) $format['default_preset_id'] : '';
+		}
+
+		if ( isset( $format['type'] ) && APD_Formats::is_english( (string) $format['type'] ) ) {
+			$fingerprint['slogan_max'] = APD_Formats::slogan_limit( $format );
+			$fingerprint['slogan_box'] = isset( $payload['slogan_box'] ) && is_array( $payload['slogan_box'] )
+				? $payload['slogan_box']
+				: APD_Formats::default_slogan_box( $format );
+		}
+
+		if ( isset( $format['type'] ) && APD_Formats::is_austria( (string) $format['type'] ) ) {
+			$fingerprint['at_groups']  = isset( $payload['at_groups'] ) && is_array( $payload['at_groups'] ) ? $payload['at_groups'] : APD_Formats::austria_limits( $format );
+			$fingerprint['at_region']  = isset( $payload['at_region'] ) && is_array( $payload['at_region'] ) ? $payload['at_region'] : APD_Formats::default_region_box( $format );
+			$fingerprint['text_boxes'] = isset( $payload['text_boxes'] ) && is_array( $payload['text_boxes'] ) ? $payload['text_boxes'] : APD_Formats::stored_group_boxes( $format, 2 );
+		}
+
 		return $fingerprint;
 	}
 
@@ -1190,7 +1222,9 @@ final class APD_WooCommerce {
 			'layouts'      => $layouts,
 			'color_fields' => APD_Admin_Settings::product_color_fields( $product_id ),
 			'palettes'     => APD_Admin_Settings::product_offered_colors( $product_id ),
-			'default_text' => APD_Admin_Settings::product_initial_text( $product_id, $format ),
+			'default_text'   => APD_Admin_Settings::product_initial_text( $product_id, $format ),
+			'default_slogan' => APD_Admin_Settings::product_initial_slogan( $product_id, $format ),
+			'region_text'  => APD_Admin_Settings::product_region_text( $product_id ),
 			'cart_restore' => array(),
 			'rules'    => APD_Security::frontend_text_rules(),
 			'minFont'  => $min,
@@ -1205,6 +1239,8 @@ final class APD_WooCommerce {
 				'textColor'     => __( 'Text color', 'auto-plate-designer' ),
 				'borderColor'   => __( 'Border color', 'auto-plate-designer' ),
 				'plateColor'    => __( 'Plate color', 'auto-plate-designer' ),
+				'sloganColor'   => __( 'Slogan color', 'auto-plate-designer' ),
+				'sloganLabel'   => __( 'Slogan', 'auto-plate-designer' ),
 				'stripColor'    => __( 'Strip color', 'auto-plate-designer' ),
 				'holderColor'   => __( 'Holder color', 'auto-plate-designer' ),
 				'frameLabel'    => __( 'Add frame', 'auto-plate-designer' ),
@@ -1243,7 +1279,7 @@ final class APD_WooCommerce {
 		$text        = isset( $_POST['apd_text'] ) ? APD_Security::uppercase_plate_text( (string) wp_unslash( $_POST['apd_text'] ) ) : ''; // phpcs:ignore WordPress.Security.ValidatedSanitizedInput.InputNotSanitized
 		$length_limit = $max_chars;
 
-		if ( APD_Formats::uses_two_rows( $format_type ) && ( isset( $_POST['apd_text_row_1'] ) || isset( $_POST['apd_text_row_2'] ) ) ) {
+		if ( APD_Formats::format_uses_two_rows( $format ) && ( isset( $_POST['apd_text_row_1'] ) || isset( $_POST['apd_text_row_2'] ) ) ) {
 			$row_limits = APD_Formats::suv_row_limits( $format );
 			$row1       = isset( $_POST['apd_text_row_1'] ) ? APD_Security::uppercase_plate_text( (string) wp_unslash( $_POST['apd_text_row_1'] ) ) : ''; // phpcs:ignore WordPress.Security.ValidatedSanitizedInput.InputNotSanitized
 			$row2       = isset( $_POST['apd_text_row_2'] ) ? APD_Security::uppercase_plate_text( (string) wp_unslash( $_POST['apd_text_row_2'] ) ) : ''; // phpcs:ignore WordPress.Security.ValidatedSanitizedInput.InputNotSanitized
@@ -1300,6 +1336,90 @@ final class APD_WooCommerce {
 			$multiline    = true;
 			$length_limit = $side_limits[0] + $side_limits[1] + ( false !== strpos( $text, "\n" ) ? 1 : 0 );
 			$max_chars    = $side_limits[0] + $side_limits[1];
+		}
+
+		$fr_month  = '';
+		$fr_year   = '';
+		$fr_region = '';
+		$slogan    = '';
+
+		if ( APD_Formats::is_french( $format_type ) ) {
+			$fr_groups = array();
+
+			if ( APD_Formats::is_french_temporary( $format_type ) ) {
+				$fr_groups[] = isset( $_POST['apd_fr_b'] ) ? (string) wp_unslash( $_POST['apd_fr_b'] ) : ''; // phpcs:ignore WordPress.Security.ValidatedSanitizedInput.InputNotSanitized
+				$fr_groups[] = isset( $_POST['apd_fr_c'] ) ? (string) wp_unslash( $_POST['apd_fr_c'] ) : ''; // phpcs:ignore WordPress.Security.ValidatedSanitizedInput.InputNotSanitized
+			} else {
+				$fr_groups[] = isset( $_POST['apd_fr_a'] ) ? (string) wp_unslash( $_POST['apd_fr_a'] ) : ''; // phpcs:ignore WordPress.Security.ValidatedSanitizedInput.InputNotSanitized
+				$fr_groups[] = isset( $_POST['apd_fr_b'] ) ? (string) wp_unslash( $_POST['apd_fr_b'] ) : ''; // phpcs:ignore WordPress.Security.ValidatedSanitizedInput.InputNotSanitized
+				$fr_groups[] = isset( $_POST['apd_fr_c'] ) ? (string) wp_unslash( $_POST['apd_fr_c'] ) : ''; // phpcs:ignore WordPress.Security.ValidatedSanitizedInput.InputNotSanitized
+			}
+
+			$built = APD_Formats::french_posted_text(
+				$format,
+				$fr_groups,
+				array(
+					'month' => isset( $_POST['apd_fr_month'] ) ? (string) wp_unslash( $_POST['apd_fr_month'] ) : '', // phpcs:ignore WordPress.Security.ValidatedSanitizedInput.InputNotSanitized
+					'year'  => isset( $_POST['apd_fr_year'] ) ? (string) wp_unslash( $_POST['apd_fr_year'] ) : '', // phpcs:ignore WordPress.Security.ValidatedSanitizedInput.InputNotSanitized
+				)
+			);
+
+			if ( is_wp_error( $built ) ) {
+				return $built;
+			}
+
+			$text      = $built['text'];
+			$fr_month  = $built['fr_month'];
+			$fr_year   = $built['fr_year'];
+			if ( APD_Formats::is_french_region( $format_type ) ) {
+				$fr_region = APD_Formats::french_region_code( isset( $_POST['apd_fr_region'] ) ? (string) wp_unslash( $_POST['apd_fr_region'] ) : '' ); // phpcs:ignore WordPress.Security.ValidatedSanitizedInput.InputNotSanitized
+			}
+			$multiline = false;
+			$length_limit = function_exists( 'mb_strlen' ) ? mb_strlen( $text, 'UTF-8' ) : strlen( $text );
+
+			if ( $length_limit < 1 ) {
+				$length_limit = 1;
+			}
+		}
+
+		if ( APD_Formats::is_austria( $format_type ) ) {
+			$built = APD_Formats::austria_posted_text(
+				$format,
+				isset( $_POST['apd_at_left'] ) ? (string) wp_unslash( $_POST['apd_at_left'] ) : '', // phpcs:ignore WordPress.Security.ValidatedSanitizedInput.InputNotSanitized
+				isset( $_POST['apd_at_right'] ) ? (string) wp_unslash( $_POST['apd_at_right'] ) : '' // phpcs:ignore WordPress.Security.ValidatedSanitizedInput.InputNotSanitized
+			);
+
+			if ( is_wp_error( $built ) ) {
+				return $built;
+			}
+
+			$text         = $built['text'];
+			$multiline    = true;
+			$length_limit = function_exists( 'mb_strlen' ) ? mb_strlen( $text, 'UTF-8' ) : strlen( $text );
+
+			if ( $length_limit < 1 ) {
+				$length_limit = 1;
+			}
+		}
+
+		if ( APD_Formats::is_english( $format_type ) ) {
+			$slogan_raw   = isset( $_POST['apd_slogan'] ) ? (string) wp_unslash( $_POST['apd_slogan'] ) : ''; // phpcs:ignore WordPress.Security.ValidatedSanitizedInput.InputNotSanitized
+			$slogan_clean = APD_Security::sanitize_plate_text( $slogan_raw, false );
+			$slogan_max   = APD_Formats::slogan_limit( $format );
+			$slogan_len   = function_exists( 'mb_strlen' ) ? mb_strlen( $slogan_clean, 'UTF-8' ) : strlen( $slogan_clean );
+
+			if ( $slogan_len > $slogan_max ) {
+				return APD_Security::validate_plate_text(
+					$slogan_clean,
+					array(
+						'max_length'  => $slogan_max,
+						'multiline'   => false,
+						'allow_empty' => true,
+					)
+				);
+			}
+
+			$slogan = $slogan_clean;
 		}
 
 		$unstyled = APD_Formats::is_holder( $format_type ) && isset( $_POST['apd_plain'] ) && '1' === sanitize_text_field( wp_unslash( $_POST['apd_plain'] ) );
@@ -1398,12 +1518,14 @@ final class APD_WooCommerce {
 
 		$color_fields  = APD_Admin_Settings::product_color_fields( $product_id );
 		$frame_chosen  = APD_Formats::offers_frame_choice( $type ) && isset( $_POST['apd_frame'] ) && '1' === sanitize_text_field( wp_unslash( $_POST['apd_frame'] ) );
+		$english_frame = APD_Formats::is_english( $type );
 		$admin_border  = isset( $format['border_width'] ) ? (int) $format['border_width'] : 0;
 		$offered       = APD_Admin_Settings::product_offered_colors( $product_id );
 		$text_color    = $this->snapshot_palette_color( 'apd_text_color', APD_Formats::shop_swatch_colors( $type, 'text', $color_fields, $offered ) );
-		$border_color  = $this->snapshot_palette_color( 'apd_border_color', $frame_chosen ? APD_Formats::shop_swatch_colors( $type, 'border', $color_fields, $offered ) : array() );
+		$border_color  = $this->snapshot_palette_color( 'apd_border_color', ( $frame_chosen || $english_frame ) ? APD_Formats::shop_swatch_colors( $type, 'border', $color_fields, $offered ) : array() );
 		$fill_color    = $this->snapshot_palette_color( 'apd_background_color', APD_Formats::shop_swatch_colors( $type, 'background', $color_fields, $offered ) );
 		$holder_color  = $this->snapshot_palette_color( 'apd_holder_color', APD_Formats::shop_swatch_colors( $type, 'holder', $color_fields, $offered ) );
+		$slogan_color  = $this->snapshot_palette_color( 'apd_slogan_color', $english_frame ? APD_Formats::shop_swatch_colors( $type, 'slogan', $color_fields, $offered ) : array() );
 
 		if ( $frame_chosen && '' === $border_color['hex'] && isset( $format['border_color'] ) ) {
 			$border_color['hex'] = (string) $format['border_color'];
@@ -1447,6 +1569,12 @@ final class APD_WooCommerce {
 			'unstyled'               => $unstyled,
 			'price_adjustment'       => (float) $format['price_adjustment'],
 			'offer_fingerprint'      => self::offer_fingerprint( $product_id ),
+			'fr_month'               => $fr_month,
+			'fr_year'                => $fr_year,
+			'fr_region'              => $fr_region,
+			'slogan'                 => $slogan,
+			'slogan_color'           => $slogan_color['hex'],
+			'slogan_color_label'     => $slogan_color['label'],
 		);
 	}
 
@@ -1484,7 +1612,9 @@ final class APD_WooCommerce {
 		if ( ! empty( $config['text'] ) ) {
 			$text_value = (string) $config['text'];
 
-			if ( false !== strpos( $text_value, "\n" ) ) {
+			if ( APD_Formats::is_austria( $type ) ) {
+				$text_value = str_replace( array( "\r\n", "\r", "\n" ), ' ', $text_value );
+			} elseif ( false !== strpos( $text_value, "\n" ) ) {
 				$text_parts = explode( "\n", $text_value, 2 );
 				$text_value = $text_parts[0];
 
@@ -1493,9 +1623,37 @@ final class APD_WooCommerce {
 				}
 			}
 
+			if ( APD_Formats::is_french_temporary( $type ) ) {
+				$fr_month = isset( $config['fr_month'] ) ? (string) $config['fr_month'] : '';
+				$fr_year  = isset( $config['fr_year'] ) ? (string) $config['fr_year'] : '';
+
+				if ( '' !== $fr_month || '' !== $fr_year ) {
+					$text_value .= ' ' . $fr_month . '/' . $fr_year;
+				}
+			} elseif ( APD_Formats::is_french_region( $type ) && ! empty( $config['fr_region'] ) ) {
+				$text_value .= ' ' . (string) $config['fr_region'];
+			}
+
 			$rows[] = array(
 				'key'   => __( 'Text', 'auto-plate-designer' ),
 				'value' => $text_value,
+			);
+		}
+
+		if ( APD_Formats::is_english( $type ) && ! empty( $config['slogan'] ) ) {
+			$rows[] = array(
+				'key'   => __( 'Slogan', 'auto-plate-designer' ),
+				'value' => (string) $config['slogan'],
+			);
+		}
+
+		if ( APD_Formats::is_english( $type ) && self::config_includes_color( $config, 'slogan' ) && ! empty( $config['slogan'] ) && ! empty( $config['slogan_color'] ) ) {
+			$rows[] = array(
+				'key'   => __( 'Slogan color', 'auto-plate-designer' ),
+				'value' => self::format_color_display(
+					(string) $config['slogan_color'],
+					isset( $config['slogan_color_label'] ) ? (string) $config['slogan_color_label'] : ''
+				),
 			);
 		}
 
@@ -1538,7 +1696,9 @@ final class APD_WooCommerce {
 			);
 		}
 
-		if ( ( self::config_includes_color( $config, 'border' ) || self::config_includes_color( $config, 'color_border' ) ) && empty( $config['no_frame'] ) && ! empty( $config['border_color'] ) ) {
+		$border_visible = APD_Formats::is_english( $type ) || empty( $config['no_frame'] );
+
+		if ( ( self::config_includes_color( $config, 'border' ) || self::config_includes_color( $config, 'color_border' ) ) && $border_visible && ! empty( $config['border_color'] ) ) {
 			$rows[] = array(
 				'key'   => __( 'Border color', 'auto-plate-designer' ),
 				'value' => self::format_color_display(

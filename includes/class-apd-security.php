@@ -552,7 +552,7 @@ final class APD_Security {
 	 * @return array<int, string>
 	 */
 	public static function allowed_format_types() {
-		$known = array( 'eu', 'eu_plain', 'us', 'moto', 'moto_240', 'moto_plain', 'moto_plain_240', 'suv_eu', 'suv', 'custom', 'color', 'holder', 'holder_moto', 'holder_d' );
+		$known = array( 'eu', 'eu_plain', 'us', 'moto', 'moto_240', 'moto_plain', 'moto_plain_240', 'suv_eu', 'suv_eu_340', 'suv', 'suv_340', 'eu_300', 'atyp_300', 'fr', 'fr_ww', 'fr_region', 'austria', 'uk', 'uk_plain', 'mini', 'mini_plain', 'custom', 'color', 'holder', 'holder_moto', 'holder_d' );
 
 		/**
 		 * Filter the format types offered in admin and accepted on save.

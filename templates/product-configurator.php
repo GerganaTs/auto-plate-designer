@@ -14,20 +14,23 @@ $frame_w        = APD_Formats::preview_frame_width( isset( $format['type'] ) ? (
 $palettes       = $apd_payload['palettes'];
 $i18n           = $apd_payload['i18n'];
 $type           = $format['type'];
+$two_row_fields = isset( $format['capabilities']['two_row'] )
+	? ! empty( $format['capabilities']['two_row'] )
+	: APD_Formats::uses_two_rows( $type );
 $fonts          = $format['fonts'];
 $presets        = $format['presets'];
 $designs        = isset( $format['designs'] ) && is_array( $format['designs'] ) ? $format['designs'] : array();
 $max            = (int) $format['max_chars'];
 $multiline      = ! empty( $format['multiline'] );
 $show_eu        = APD_Formats::uses_painted_plate( $type );
-$show_country   = APD_Formats::uses_country_band( $type );
+$show_country   = APD_Formats::uses_country_band( $type ) && empty( $format['capabilities']['country_locked'] );
 $show_designs   = APD_Formats::uses_plate_designs( $type ) && ! empty( $designs );
 $show_strip     = APD_Formats::is_holder( $type );
 $color_fields   = isset( $apd_payload['color_fields'] ) && is_array( $apd_payload['color_fields'] ) ? $apd_payload['color_fields'] : array();
 $swatch_ui      = APD_Color_Palettes::swatch_display();
 $default_text   = isset( $apd_payload['default_text'] ) && '' !== (string) $apd_payload['default_text']
 	? (string) $apd_payload['default_text']
-	: APD_Formats::sample_plate_text( $type );
+	: ( APD_Formats::is_atypical_300( $type ) && $two_row_fields ? "CA\n1234" : APD_Formats::sample_plate_text( $type ) );
 $restore        = isset( $apd_payload['cart_restore'] ) && is_array( $apd_payload['cart_restore'] ) ? $apd_payload['cart_restore'] : array();
 if ( isset( $restore['text'] ) && '' !== (string) $restore['text'] ) {
 	$default_text = (string) $restore['text'];
@@ -62,6 +65,11 @@ if ( APD_Formats::is_photo_holder( $type ) ) {
 	}
 }
 $border_hex     = ! empty( $restore['border_color'] ) ? (string) $restore['border_color'] : APD_Plugin::palette_preferred_hex( 'border', array( '#000000', isset( $format['border_color'] ) ? (string) $format['border_color'] : '#000000' ) );
+$slogan_hex     = ! empty( $restore['slogan_color'] ) ? (string) $restore['slogan_color'] : '#000000';
+$apd_round      = APD_Formats::is_french( $type ) || APD_Formats::is_austria( $type ) || APD_Formats::is_english( $type ) || APD_Formats::is_mini( $type );
+$apd_english    = APD_Formats::is_english( $type );
+$apd_plate_rx   = $apd_round ? round( 10 / max( 1, (int) $format['width'] ) * 100, 3 ) : 0;
+$apd_plate_ry   = $apd_round ? round( 10 / max( 1, (int) $format['height'] ) * 100, 3 ) : 0;
 $canvas_label   = $show_country && ! empty( $presets )
 	? ( isset( $i18n['bandHint'] ) ? $i18n['bandHint'] : __( 'Click the country band to change country', 'auto-plate-designer' ) )
 	: __( 'Plate preview', 'auto-plate-designer' );
@@ -103,7 +111,7 @@ $apd_swatches = static function ( $label, $name, $colors, $current ) {
 	<?php wp_nonce_field( 'apd_configure', 'apd_nonce' ); ?>
 
 	<div class="apd-preview" style="--apd-ratio: <?php echo esc_attr( (string) ( (int) $format['width'] ) ); ?> / <?php echo esc_attr( (string) ( (int) $format['height'] ) ); ?>; --apd-canvas-max: <?php echo esc_attr( (string) (int) APD_Formats::CANVAS_DISPLAY_MAX_PX ); ?>px; --apd-frame-w: <?php echo esc_attr( (string) (int) $frame_w ); ?>px;">
-		<div class="apd-canvas-frame">
+		<div class="apd-canvas-frame<?php echo $apd_round ? ' apd-round-plate' : ''; ?><?php echo $apd_english ? ' apd-english-plate' : ''; ?>" style="aspect-ratio: <?php echo esc_attr( (string) (int) $format['width'] ); ?> / <?php echo esc_attr( (string) (int) $format['height'] ); ?>;<?php echo $apd_round ? ' --apd-plate-rx: ' . esc_attr( (string) $apd_plate_rx ) . '%; --apd-plate-ry: ' . esc_attr( (string) $apd_plate_ry ) . '%;' : ''; ?>">
 			<canvas
 				class="apd-canvas"
 				width="<?php echo esc_attr( (string) $format['width'] ); ?>"
@@ -123,7 +131,7 @@ $apd_swatches = static function ( $label, $name, $colors, $current ) {
 			</p>
 		<?php endif; ?>
 		<div data-apd-personal>
-		<?php if ( APD_Formats::uses_two_rows( $type ) ) : ?>
+		<?php if ( $two_row_fields ) : ?>
 			<?php
 			$suv_rows = APD_Formats::suv_plate_rows( $default_text );
 			$row_max  = isset( $format['row_max_chars'] ) && is_array( $format['row_max_chars'] ) ? $format['row_max_chars'] : array( $max, $max );
@@ -181,6 +189,96 @@ $apd_swatches = static function ( $label, $name, $colors, $current ) {
 				</p>
 			</div>
 			<input type="hidden" id="apd_text" name="apd_text" value="<?php echo esc_attr( $side_left . "\n" . $side_right ); ?>">
+		<?php elseif ( APD_Formats::is_french( $type ) ) : ?>
+			<?php
+			$fr_limits = isset( $format['fr_groups'] ) && is_array( $format['fr_groups'] ) ? $format['fr_groups'] : array( APD_Formats::FR_GROUP_1_MAX, APD_Formats::FR_GROUP_2_MAX, APD_Formats::FR_GROUP_3_MAX );
+			$fr_values = APD_Formats::french_field_values( $type, $default_text );
+			$fr_temp   = APD_Formats::is_french_temporary( $type );
+			$fr_month  = '05';
+			$fr_year   = '26';
+			if ( isset( $restore['fr_month'] ) ) {
+				$fr_month = (string) $restore['fr_month'];
+			}
+			if ( isset( $restore['fr_year'] ) ) {
+				$fr_year = (string) $restore['fr_year'];
+			}
+			$fr_letter_max = isset( $fr_limits[0] ) ? (int) $fr_limits[0] : APD_Formats::FR_GROUP_1_MAX;
+			$fr_number_max = isset( $fr_limits[1] ) ? (int) $fr_limits[1] : APD_Formats::FR_GROUP_2_MAX;
+			$fr_end_max    = isset( $fr_limits[2] ) ? (int) $fr_limits[2] : APD_Formats::FR_GROUP_3_MAX;
+			$fr_text       = $fr_temp
+				? APD_Formats::FR_WW_MARK . '-' . $fr_values[0] . '-' . $fr_values[1]
+				: $fr_values[0] . '-' . $fr_values[1] . '-' . $fr_values[2];
+			?>
+			<p class="apd-font-hint"><?php esc_html_e( 'The dashes are printed on the plate.', 'auto-plate-designer' ); ?></p>
+			<?php if ( $fr_temp ) : ?>
+				<p class="apd-font-hint"><?php esc_html_e( 'WW stays on the plate.', 'auto-plate-designer' ); ?></p>
+			<?php else : ?>
+				<p class="form-row form-row-wide apd-field">
+					<label for="apd_fr_a"><?php esc_html_e( 'Letters', 'auto-plate-designer' ); ?></label>
+					<input type="text" class="input-text" id="apd_fr_a" name="apd_fr_a" data-apd-fr="letters" data-apd-fr-group value="<?php echo esc_attr( $fr_values[0] ); ?>" maxlength="<?php echo esc_attr( (string) $fr_letter_max ); ?>" autocomplete="off" inputmode="text">
+					<span class="apd-count" data-apd-count></span>
+				</p>
+			<?php endif; ?>
+			<p class="form-row form-row-wide apd-field">
+				<label for="apd_fr_b"><?php esc_html_e( 'Numbers', 'auto-plate-designer' ); ?></label>
+				<input type="text" class="input-text" id="apd_fr_b" name="apd_fr_b" data-apd-fr="digits" data-apd-fr-group value="<?php echo esc_attr( $fr_temp ? $fr_values[0] : $fr_values[1] ); ?>" maxlength="<?php echo esc_attr( (string) $fr_number_max ); ?>" autocomplete="off" inputmode="numeric">
+				<span class="apd-count" data-apd-count></span>
+			</p>
+			<p class="form-row form-row-wide apd-field">
+				<label for="apd_fr_c"><?php esc_html_e( 'Letters', 'auto-plate-designer' ); ?></label>
+				<input type="text" class="input-text" id="apd_fr_c" name="apd_fr_c" data-apd-fr="letters" data-apd-fr-group value="<?php echo esc_attr( $fr_temp ? $fr_values[1] : $fr_values[2] ); ?>" maxlength="<?php echo esc_attr( (string) $fr_end_max ); ?>" autocomplete="off" inputmode="text">
+				<span class="apd-count" data-apd-count></span>
+			</p>
+			<?php if ( APD_Formats::is_french_region( $type ) ) : ?>
+				<?php
+				$fr_region = isset( $apd_payload['region_text'] ) ? APD_Formats::french_region_code( (string) $apd_payload['region_text'] ) : '';
+				if ( '' === $fr_region ) {
+					$fr_region = APD_Formats::FR_REGION_SAMPLE;
+				}
+				if ( isset( $restore['fr_region'] ) ) {
+					$fr_region = APD_Formats::french_region_code( (string) $restore['fr_region'] );
+				}
+				?>
+				<p class="form-row form-row-wide apd-field">
+					<label for="apd_fr_region"><?php esc_html_e( 'Region', 'auto-plate-designer' ); ?></label>
+					<input type="text" class="input-text" id="apd_fr_region" name="apd_fr_region" data-apd-fr="digits" value="<?php echo esc_attr( $fr_region ); ?>" maxlength="<?php echo esc_attr( (string) APD_Formats::FR_REGION_MAX ); ?>" autocomplete="off" inputmode="numeric">
+					<span class="apd-count" data-apd-count></span>
+				</p>
+			<?php endif; ?>
+			<?php if ( $fr_temp ) : ?>
+				<div class="apd-fr-date">
+					<p class="form-row form-row-wide apd-field">
+						<label for="apd_fr_month"><?php esc_html_e( 'Month', 'auto-plate-designer' ); ?></label>
+						<input type="text" class="input-text" id="apd_fr_month" name="apd_fr_month" data-apd-fr="digits" value="<?php echo esc_attr( $fr_month ); ?>" maxlength="<?php echo esc_attr( (string) APD_Formats::FR_DATE_MAX ); ?>" autocomplete="off" inputmode="numeric">
+						<span class="apd-count" data-apd-count></span>
+					</p>
+					<p class="form-row form-row-wide apd-field">
+						<label for="apd_fr_year"><?php esc_html_e( 'Year', 'auto-plate-designer' ); ?></label>
+						<input type="text" class="input-text" id="apd_fr_year" name="apd_fr_year" data-apd-fr="digits" value="<?php echo esc_attr( $fr_year ); ?>" maxlength="<?php echo esc_attr( (string) APD_Formats::FR_DATE_MAX ); ?>" autocomplete="off" inputmode="numeric">
+						<span class="apd-count" data-apd-count></span>
+					</p>
+				</div>
+			<?php endif; ?>
+			<input type="hidden" id="apd_text" name="apd_text" value="<?php echo esc_attr( $fr_text ); ?>">
+		<?php elseif ( APD_Formats::is_austria( $type ) ) : ?>
+			<?php
+			$at_limits = isset( $format['at_groups'] ) && is_array( $format['at_groups'] ) ? $format['at_groups'] : APD_Formats::austria_limits( array() );
+			$at_values = APD_Formats::austria_field_values( $default_text );
+			$at_left_max  = isset( $at_limits[0] ) ? (int) $at_limits[0] : APD_Formats::AT_LEFT_MAX;
+			$at_right_max = isset( $at_limits[1] ) ? (int) $at_limits[1] : APD_Formats::AT_RIGHT_MAX;
+			?>
+			<p class="apd-font-hint"><?php esc_html_e( 'The gray rectangle will be replaced with the region image.', 'auto-plate-designer' ); ?></p>
+			<p class="form-row form-row-wide apd-field">
+				<label for="apd_at_left"><?php esc_html_e( 'Letters', 'auto-plate-designer' ); ?></label>
+				<input type="text" class="input-text" id="apd_at_left" name="apd_at_left" data-apd-at="letters" value="<?php echo esc_attr( $at_values[0] ); ?>" maxlength="<?php echo esc_attr( (string) $at_left_max ); ?>" autocomplete="off" inputmode="text">
+				<span class="apd-count" data-apd-count></span>
+			</p>
+			<p class="form-row form-row-wide apd-field">
+				<label for="apd_at_right"><?php esc_html_e( 'Registration', 'auto-plate-designer' ); ?></label>
+				<input type="text" class="input-text" id="apd_at_right" name="apd_at_right" data-apd-at="mixed" value="<?php echo esc_attr( $at_values[1] ); ?>" maxlength="<?php echo esc_attr( (string) $at_right_max ); ?>" autocomplete="off" inputmode="text">
+				<span class="apd-count" data-apd-count></span>
+			</p>
+			<input type="hidden" id="apd_text" name="apd_text" value="<?php echo esc_attr( $at_values[0] . "\n" . $at_values[1] ); ?>">
 		<?php else : ?>
 			<p class="form-row form-row-wide apd-field">
 				<label for="apd_text"><?php echo esc_html( $i18n['textLabel'] ); ?></label>
@@ -191,6 +289,21 @@ $apd_swatches = static function ( $label, $name, $colors, $current ) {
 					<input type="text" class="input-text" id="apd_text" name="apd_text" value="<?php echo esc_attr( $default_text ); ?>" maxlength="<?php echo esc_attr( (string) $max ); ?>" autocomplete="off">
 				<?php endif; ?>
 				<span class="apd-count" data-apd-count></span>
+			</p>
+		<?php endif; ?>
+
+		<?php if ( APD_Formats::is_english( $type ) ) : ?>
+			<?php
+			$slogan_max   = isset( $format['slogan_max'] ) ? (int) $format['slogan_max'] : APD_Formats::UK_SLOGAN_MAX;
+			$slogan_value = isset( $restore['slogan'] ) ? (string) $restore['slogan'] : ( isset( $apd_payload['default_slogan'] ) ? (string) $apd_payload['default_slogan'] : '' );
+			if ( $slogan_max < 1 ) {
+				$slogan_max = APD_Formats::UK_SLOGAN_MAX;
+			}
+			?>
+			<p class="form-row form-row-wide apd-field">
+				<label for="apd_slogan"><?php echo esc_html( isset( $i18n['sloganLabel'] ) ? $i18n['sloganLabel'] : __( 'Slogan', 'auto-plate-designer' ) ); ?></label>
+				<input type="text" class="input-text" id="apd_slogan" name="apd_slogan" value="<?php echo esc_attr( $slogan_value ); ?>" maxlength="<?php echo esc_attr( (string) $slogan_max ); ?>" autocomplete="off">
+				<span class="apd-count" data-apd-slogan-count></span>
 			</p>
 		<?php endif; ?>
 
@@ -307,6 +420,14 @@ $apd_swatches = static function ( $label, $name, $colors, $current ) {
 			echo '<div data-apd-frame-colors' . ( $frame_on ? '' : ' hidden' ) . '>';
 			$apd_swatches( $i18n['borderColor'], 'apd_border_color', $apd_frame_colors, $border_hex );
 			echo '</div>';
+		} elseif ( ! empty( $apd_frame_colors ) && APD_Formats::is_english( $type ) ) {
+			$apd_swatches( $i18n['borderColor'], 'apd_border_color', $apd_frame_colors, $border_hex );
+		}
+
+		$apd_slogan_colors = APD_Formats::shop_swatch_colors( $type, 'slogan', $color_fields, $palettes );
+		if ( ! empty( $apd_slogan_colors ) ) {
+			$slogan_color_label = isset( $i18n['sloganColor'] ) ? $i18n['sloganColor'] : __( 'Slogan color', 'auto-plate-designer' );
+			$apd_swatches( $slogan_color_label, 'apd_slogan_color', $apd_slogan_colors, $slogan_hex );
 		}
 
 		if ( $show_strip ) {

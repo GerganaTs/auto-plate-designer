@@ -11,6 +11,7 @@
 	}
 
 	var bandHit = null;
+	var imageCache = {};
 	var previewChromeTop = null;
 
 	function ready(fn) {
@@ -47,7 +48,7 @@
 		if (caps) {
 			return !!caps.country_band;
 		}
-		return type === 'eu' || type === 'moto' || type === 'moto_240' || type === 'suv_eu';
+		return type === 'eu' || type === 'moto' || type === 'moto_240' || type === 'suv_eu' || type === 'suv_eu_340';
 	}
 
 	function usesPaintedPlate(type) {
@@ -56,7 +57,7 @@
 		if (caps) {
 			return !!caps.painted;
 		}
-		return type === 'eu' || type === 'eu_plain' || type === 'moto' || type === 'moto_240' || type === 'moto_plain' || type === 'moto_plain_240' || type === 'suv_eu' || type === 'custom' || type === 'color';
+		return type === 'eu' || type === 'eu_plain' || type === 'moto' || type === 'moto_240' || type === 'moto_plain' || type === 'moto_plain_240' || type === 'suv' || type === 'suv_340' || type === 'suv_eu' || type === 'suv_eu_340' || type === 'custom' || type === 'color';
 	}
 
 	function usesBaseImage(type) {
@@ -65,7 +66,7 @@
 		if (caps) {
 			return !!caps.base_image;
 		}
-		return type === 'holder' || type === 'holder_moto' || type === 'holder_d' || type === 'suv';
+		return type === 'holder' || type === 'holder_moto' || type === 'holder_d';
 	}
 
 	function isHolderFamily(type) {
@@ -79,7 +80,7 @@
 		if (caps) {
 			return !!caps.two_row;
 		}
-		return type === 'moto' || type === 'moto_240' || type === 'moto_plain' || type === 'moto_plain_240' || type === 'suv' || type === 'suv_eu';
+		return type === 'moto' || type === 'moto_240' || type === 'moto_plain' || type === 'moto_plain_240' || type === 'suv' || type === 'suv_340' || type === 'suv_eu' || type === 'suv_eu_340' || type === 'eu_300';
 	}
 
 	function rowsForPlate(text) {
@@ -328,6 +329,7 @@
 	}
 
 	var TEXT_FRAME_GAP_MM = 8;
+	var TWO_ROW_GAP_MM = 8;
 
 	function frameThickness() {
 		if (wantsNoFrame()) {
@@ -944,6 +946,20 @@
 		return box;
 	}
 
+	function justifySpread(chars) {
+		var spaces = 0;
+		var index;
+		for (index = 0; index < chars.length; index += 1) {
+			if (chars[index] === ' ') {
+				spaces += 1;
+			}
+		}
+		if (spaces > 0) {
+			return { spaces: true, count: spaces };
+		}
+		return { spaces: false, count: chars.length > 1 ? chars.length - 1 : 0 };
+	}
+
 	function drawTextInBox(ctx, fitted, box, color) {
 		if (!fitted || !box || box.width <= 0 || box.height <= 0) {
 			return;
@@ -980,16 +996,17 @@
 			lineW = laid.width;
 			var align = box.align === 'left' || box.align === 'right' || box.align === 'justify' ? box.align : 'center';
 			var justifyGap = 0;
+			var spread = null;
 			x = box.x + (box.width - lineW) / 2;
 			if (align === 'left') {
 				x = box.x;
 			} else if (align === 'right') {
 				x = box.x + box.width - lineW;
 			} else if (align === 'justify') {
-				var gaps = chars.length - 1;
-				if (gaps > 0) {
+				spread = justifySpread(chars);
+				if (spread.count > 0) {
 					x = box.x;
-					justifyGap = Math.max(0, (box.width - lineW) / gaps);
+					justifyGap = Math.max(0, (box.width - lineW) / spread.count);
 				}
 			}
 			for (j = 0; j < chars.length; j += 1) {
@@ -1005,7 +1022,15 @@
 				} else {
 					ctx.fillText(ch, x, y);
 				}
-				x += span.width + justifyGap;
+				var extra = 0;
+				if (justifyGap > 0) {
+					if (spread && spread.spaces) {
+						extra = ch === ' ' ? justifyGap : 0;
+					} else if (j + 1 < chars.length) {
+						extra = justifyGap;
+					}
+				}
+				x += span.width + extra;
 			}
 		}
 		ctx.restore();
@@ -1052,9 +1077,19 @@
 		}
 	}
 
-	function lineBlockHeight(face, size, lines) {
-		var count = lines > 0 ? lines : 1;
-		return face.ascent + Math.max(0, count - 1) * size + face.descent;
+	function rowInkHeight(fit) {
+		if (!fit || !fit.ink) {
+			return 0;
+		}
+		return Math.max(0, fit.ink.ascent) + Math.max(0, fit.ink.descent);
+	}
+
+	function lineBlockHeight(fitL, fitN) {
+		var ink = rowInkHeight(fitL) + rowInkHeight(fitN);
+		if (fitL && fitN) {
+			return ink + TWO_ROW_GAP_MM;
+		}
+		return ink;
 	}
 
 	function drawConfiguredText(ctx, text, font, box, color, minSize, band) {
@@ -1084,52 +1119,60 @@
 			letterX = inset.x;
 			letterWidth = inset.width;
 		}
-		var size = Math.floor(box.height);
+		var probe = 100;
+		var probeL = parts.letters ? fittedAtSize(ctx, parts.letters, font.family, font.weight, font.style, probe) : null;
+		var probeN = parts.numbers ? fittedAtSize(ctx, parts.numbers, font.family, font.weight, font.style, probe) : null;
+		var ratio = (rowInkHeight(probeL) + rowInkHeight(probeN)) / probe;
+		var gap = (probeL && probeN) ? TWO_ROW_GAP_MM : 0;
+		var size = ratio > 0 ? Math.floor((box.height - gap) / ratio) : minSize;
+		if (size < minSize) {
+			size = minSize;
+		}
 		var fitL = null;
 		var fitN = null;
-		var face = null;
-		while (size >= minSize) {
+		var guard = 0;
+		while (size >= minSize && guard < 800) {
+			guard += 1;
 			fitL = parts.letters ? fittedAtSize(ctx, parts.letters, font.family, font.weight, font.style, size) : null;
 			fitN = parts.numbers ? fittedAtSize(ctx, parts.numbers, font.family, font.weight, font.style, size) : null;
-			face = (fitL || fitN).face;
 			var widthOk = (!fitL || fitL.ink.width <= letterWidth) && (!fitN || fitN.ink.width <= box.width);
-			if (widthOk && lineBlockHeight(face, size, lines) <= box.height) {
+			if (widthOk && lineBlockHeight(fitL, fitN) <= box.height + 0.5) {
 				break;
 			}
 			size -= 1;
 		}
-		if (!face) {
-			size = minSize;
-			fitL = parts.letters ? fittedAtSize(ctx, parts.letters, font.family, font.weight, font.style, size) : null;
-			fitN = parts.numbers ? fittedAtSize(ctx, parts.numbers, font.family, font.weight, font.style, size) : null;
-			face = (fitL || fitN) ? (fitL || fitN).face : null;
-		}
-		if (!face) {
+		if (!fitL && !fitN) {
 			return;
 		}
-		var blockH = lineBlockHeight(face, size, lines);
+		var blockH = lineBlockHeight(fitL, fitN);
 		var top = box.y + (box.height - blockH) / 2;
 		if (box.valign === 'top') {
 			top = box.y;
 		} else if (box.valign === 'bottom') {
 			top = box.y + box.height - blockH;
 		}
+		var cursor = top;
 		if (fitL) {
+			var letterInk = rowInkHeight(fitL);
 			drawTextInBox(ctx, fitL, {
 				x: letterX,
-				y: top + (face.ascent - fitL.ink.ascent),
+				y: cursor,
 				width: letterWidth,
-				height: fitL.ink.ascent + fitL.ink.descent,
+				height: Math.max(letterInk, 1),
 				align: letterAlign,
 				valign: 'top'
 			}, color);
+			cursor += letterInk;
+			if (fitN) {
+				cursor += TWO_ROW_GAP_MM;
+			}
 		}
 		if (fitN) {
 			drawTextInBox(ctx, fitN, {
 				x: box.x,
-				y: top + (fitL ? size : 0) + (face.ascent - fitN.ink.ascent),
+				y: cursor,
 				width: box.width,
-				height: fitN.ink.ascent + fitN.ink.descent,
+				height: Math.max(rowInkHeight(fitN), 1),
 				align: numberAlign,
 				valign: 'top'
 			}, color);
@@ -1431,7 +1474,982 @@
 		}
 	}
 
+	function frenchFont(style, weight, size, family) {
+		return style + ' ' + weight + ' ' + size + 'px "' + family + '", sans-serif';
+	}
+
+	function lockedBand(format, w, h) {
+		var preset = currentPreset();
+		return placeBandInsideFrame(resolveBand(format, preset, w, h), w, h);
+	}
+
+	function paintLockedBand(ctx, canvas, band, w, h, code) {
+		var preset = currentPreset();
+		var url = preset && preset.image_url ? preset.image_url : '';
+		var img = url && imageCache[url] && imageCache[url].naturalWidth ? imageCache[url] : null;
+		var radius = Math.min(10, h * 0.12);
+		bandHit = null;
+		if (band && (img || !url)) {
+			ctx.save();
+			roundRect(ctx, 0, 0, w, h, radius);
+			ctx.clip();
+			ctx.fillStyle = '#003399';
+			ctx.fillRect(band.x, band.y, band.width, band.height);
+			if (img) {
+				drawImageCover(ctx, img, band.x, band.y, band.width, band.height);
+			} else {
+				ctx.fillStyle = '#ffffff';
+				ctx.textAlign = 'center';
+				ctx.textBaseline = 'middle';
+				ctx.font = '700 ' + Math.max(10, Math.round(band.height * 0.22)) + 'px sans-serif';
+				ctx.fillText(code || '', band.x + band.width / 2, band.y + band.height * 0.72);
+				ctx.textAlign = 'left';
+				ctx.textBaseline = 'alphabetic';
+			}
+			ctx.restore();
+			placeBandLayer(canvas, null, '', w, h);
+			return;
+		}
+		placeBandLayer(canvas, band, url, w, h);
+	}
+
+	function paintFlippedRegionBand(ctx, leftBand, w, h) {
+		var band = {
+			x: w - leftBand.x - leftBand.width,
+			y: leftBand.y,
+			width: leftBand.width,
+			height: leftBand.height
+		};
+		var radius = Math.min(10, h * 0.12);
+		ctx.save();
+		roundRect(ctx, 0, 0, w, h, radius);
+		ctx.clip();
+		ctx.fillStyle = '#003399';
+		ctx.fillRect(band.x, band.y, band.width, band.height);
+		ctx.restore();
+	}
+
+	function drawRegionDigits(ctx, root, w, h, font) {
+		var input = root.querySelector('[name="apd_fr_region"]');
+		var text = input ? String(input.value || '').replace(/\D/g, '').slice(0, 2) : '';
+		if (!text) {
+			return;
+		}
+		var format = cfg.format || {};
+		var saved = format.fr_region_box || { x: 92.3, y: 60.4, width: 7.7, height: 21.9, align: 'center', valign: 'middle' };
+		var box = percentBoxes([saved], w, h)[0];
+		var family = font && font.family ? font.family : 'sans-serif';
+		var weight = font && font.weight ? font.weight : 400;
+		var style = font && font.style ? font.style : 'normal';
+		var size = Math.floor(box.height * 0.92);
+		var minSize = 8;
+		ctx.save();
+		ctx.fillStyle = '#003399';
+		ctx.fillRect(box.x, box.y, box.width, box.height);
+		while (size > minSize) {
+			ctx.font = frenchFont(style, weight, size, family);
+			var ink = measureInk(ctx, '0', size);
+			if (ink.ascent + ink.descent <= box.height && ctx.measureText(text).width <= box.width * 0.9) {
+				break;
+			}
+			size -= 1;
+		}
+		ctx.font = frenchFont(style, weight, size, family);
+		var face = measureInk(ctx, '0', size);
+		ctx.fillStyle = '#ffffff';
+		ctx.textAlign = 'center';
+		ctx.textBaseline = 'alphabetic';
+		ctx.fillText(text, box.x + box.width / 2, box.y + (box.height - (face.ascent + face.descent)) / 2 + face.ascent);
+		ctx.restore();
+	}
+
+	function frenchDrawGroups(root) {
+		var mark = cfg.format && cfg.format.fr_mark ? String(cfg.format.fr_mark) : '';
+		var nodes = root.querySelectorAll('[data-apd-fr-group]');
+		var groups = [];
+		var i;
+		if (mark) {
+			groups.push(mark);
+		}
+		for (i = 0; i < nodes.length; i += 1) {
+			groups.push(String(nodes[i].value || ''));
+		}
+		return groups;
+	}
+
+	function measureFrenchRun(ctx, groups, size, family, weight, style) {
+		ctx.font = frenchFont(style, weight, size, family);
+		var dashNatural = ctx.measureText('-').width;
+		var dashW = size * 0.19;
+		var dashScale = dashNatural > 0 ? dashW / dashNatural : 1;
+		var gap = size * 0.06;
+		var slot = Math.max(ctx.measureText('A').width, ctx.measureText('0').width);
+		var labels = [];
+		var width = 0;
+		var i;
+		for (i = 0; i < groups.length; i += 1) {
+			var label = groups[i] ? plateGlyphs(ctx, groups[i], family, weight, style) : '';
+			labels.push(label);
+			width += label ? ctx.measureText(label).width : slot;
+			if (i + 1 < groups.length) {
+				width += gap + dashW + gap;
+			}
+		}
+		var ink = measureInk(ctx, 'H', size);
+		return {
+			width: width,
+			dashW: dashW,
+			dashScale: dashScale,
+			gap: gap,
+			slot: slot,
+			labels: labels,
+			height: ink.ascent + ink.descent,
+			ascent: ink.ascent,
+			descent: ink.descent,
+			font: ctx.font,
+			size: size,
+			family: family,
+			weight: weight,
+			style: style
+		};
+	}
+
+	function fitFrenchGroups(ctx, groups, font, maxWidth, maxHeight, minSize) {
+		resetCanvasSpacing(ctx);
+		var family = font && font.family ? font.family : 'sans-serif';
+		var weight = font && font.weight ? font.weight : 400;
+		var style = font && font.style ? font.style : 'normal';
+		var size = Math.floor(maxHeight * 1.35);
+		var laid;
+		while (size >= minSize) {
+			laid = measureFrenchRun(ctx, groups, size, family, weight, style);
+			if (laid.width <= maxWidth && laid.height <= maxHeight) {
+				return laid;
+			}
+			size -= 1;
+		}
+		return measureFrenchRun(ctx, groups, minSize, family, weight, style);
+	}
+
+	function drawFrenchGroups(ctx, fitted, areaLeft, areaW, h, ink) {
+		ctx.font = fitted.font;
+		ctx.fillStyle = ink;
+		ctx.textAlign = 'left';
+		ctx.textBaseline = 'alphabetic';
+		var baseline = (h - (fitted.ascent + fitted.descent)) / 2 + fitted.ascent;
+		var x = areaLeft + Math.max(0, (areaW - fitted.width) / 2);
+		var i;
+		for (i = 0; i < fitted.labels.length; i += 1) {
+			var label = fitted.labels[i];
+			var piece = label ? ctx.measureText(label).width : fitted.slot;
+			if (label) {
+				ctx.fillText(label, x, baseline);
+			}
+			x += piece;
+			if (i + 1 < fitted.labels.length) {
+				x += fitted.gap;
+				ctx.save();
+				ctx.translate(x, baseline);
+				ctx.scale(fitted.dashScale, 1);
+				ctx.fillText('-', 0, 0);
+				ctx.restore();
+				x += fitted.dashW + fitted.gap;
+			}
+		}
+	}
+
+	function drawFrenchDate(ctx, root, fitted, w, h, ink) {
+		var monthInput = root.querySelector('[name="apd_fr_month"]');
+		var yearInput = root.querySelector('[name="apd_fr_year"]');
+		var month = monthInput ? String(monthInput.value || '') : '';
+		var year = yearInput ? String(yearInput.value || '') : '';
+		if (!month && !year) {
+			return;
+		}
+		var size = Math.max(8, Math.round(fitted.size * 0.22));
+		var inset = 8;
+		var format = cfg.format || {};
+		var baseline = (h - (fitted.ascent + fitted.descent)) / 2 + fitted.ascent;
+		var anchorTop = baseline - fitted.ascent;
+		var anchorBottom = baseline + fitted.descent;
+		var monthRight = w - inset;
+		var yearRight = w - inset;
+		var saved = format.fr_date;
+		if (format.fr_date_custom && saved && saved.month && saved.year) {
+			var monthBox = percentBoxes([saved.month], w, h)[0];
+			var yearBox = percentBoxes([saved.year], w, h)[0];
+			anchorTop = monthBox.y;
+			anchorBottom = yearBox.y + yearBox.height;
+			monthRight = monthBox.x + monthBox.width;
+			yearRight = yearBox.x + yearBox.width;
+		}
+		ctx.font = frenchFont(fitted.style, fitted.weight, size, fitted.family);
+		ctx.fillStyle = ink;
+		ctx.textAlign = 'right';
+		ctx.textBaseline = 'alphabetic';
+		var face = measureInk(ctx, '0', size);
+		if (month) {
+			ctx.fillText(month, monthRight, anchorTop + face.ascent);
+		}
+		if (year) {
+			ctx.fillText(year, yearRight, anchorBottom - face.descent);
+		}
+		ctx.textAlign = 'left';
+	}
+
+	function percentBoxes(list, w, h) {
+		if (!list || !list.length) {
+			return [];
+		}
+		return list.map(function (box) {
+			return {
+				x: w * Number(box.x) / 100,
+				y: h * Number(box.y) / 100,
+				width: w * Number(box.width) / 100,
+				height: h * Number(box.height) / 100,
+				align: box.align || 'center',
+				valign: box.valign || 'middle'
+			};
+		});
+	}
+
+	function fitFrenchBoxes(ctx, groups, font, boxes, minSize) {
+		resetCanvasSpacing(ctx);
+		var family = font && font.family ? font.family : 'sans-serif';
+		var weight = font && font.weight ? font.weight : 400;
+		var style = font && font.style ? font.style : 'normal';
+		var maxHeight = boxes.reduce(function (min, box) {
+			return Math.min(min, box.height);
+		}, boxes[0].height);
+		var size = Math.floor(maxHeight * 1.2);
+		var measure = function (next) {
+			ctx.font = frenchFont(style, weight, next, family);
+			var ink = measureInk(ctx, 'H', next);
+			var labels = [];
+			var widths = [];
+			var i;
+			for (i = 0; i < groups.length; i += 1) {
+				var label = groups[i] ? plateGlyphs(ctx, groups[i], family, weight, style) : '';
+				labels.push(label);
+				widths.push(label ? ctx.measureText(label).width : Math.max(ctx.measureText('A').width, ctx.measureText('0').width));
+			}
+			return {
+				size: next,
+				font: ctx.font,
+				family: family,
+				weight: weight,
+				style: style,
+				ascent: ink.ascent,
+				descent: ink.descent,
+				height: ink.ascent + ink.descent,
+				labels: labels,
+				widths: widths,
+				dashW: next * 0.19,
+				dashScale: (function () {
+					var natural = ctx.measureText('-').width;
+					return natural > 0 ? (next * 0.19) / natural : 1;
+				}())
+			};
+		};
+		var laid;
+		while (size >= minSize) {
+			laid = measure(size);
+			var fits = laid.height <= maxHeight;
+			var n;
+			for (n = 0; fits && n < boxes.length && n < laid.widths.length; n += 1) {
+				if (laid.widths[n] > boxes[n].width) {
+					fits = false;
+				}
+			}
+			if (fits) {
+				return laid;
+			}
+			size -= 1;
+		}
+		return measure(minSize);
+	}
+
+	function drawBoxedFrenchGroups(ctx, fitted, groups, boxes, ink) {
+		ctx.font = fitted.font;
+		ctx.fillStyle = ink;
+		ctx.textBaseline = 'alphabetic';
+		var i;
+		for (i = 0; i < boxes.length && i < fitted.labels.length; i += 1) {
+			var box = boxes[i];
+			var label = fitted.labels[i];
+			var baseline = box.y + (box.height - fitted.height) / 2 + fitted.ascent;
+			if (box.valign === 'top') {
+				baseline = box.y + fitted.ascent;
+			} else if (box.valign === 'bottom') {
+				baseline = box.y + box.height - fitted.descent;
+			}
+			var x = box.x + box.width / 2;
+			ctx.textAlign = 'center';
+			if (box.align === 'left') {
+				ctx.textAlign = 'left';
+				x = box.x;
+			} else if (box.align === 'right') {
+				ctx.textAlign = 'right';
+				x = box.x + box.width;
+			}
+			if (label) {
+				// fr keeps the natural width. fr_region shares one horizontal
+				// squeeze so a narrower field does not shrink the font size.
+				if (fitted.scaleX && fitted.scaleX < 0.999) {
+					ctx.save();
+					ctx.translate(x, baseline);
+					ctx.scale(fitted.scaleX, 1);
+					ctx.fillText(label, 0, 0);
+					ctx.restore();
+				} else {
+					ctx.fillText(label, x, baseline);
+				}
+			}
+			if (i + 1 < boxes.length) {
+				var next = boxes[i + 1];
+				var dashX = box.x + box.width + Math.max(0, next.x - (box.x + box.width)) / 2;
+				ctx.save();
+				ctx.translate(dashX, baseline);
+				ctx.scale(fitted.dashScale, 1);
+				ctx.textAlign = 'center';
+				ctx.fillText('-', 0, 0);
+				ctx.restore();
+			}
+		}
+		ctx.textAlign = 'left';
+	}
+
+	function standardFrenchGroupBoxes(w, h, band) {
+		var edge = 8;
+		var left = (band ? band.x + band.width : 0) + edge;
+		var span = Math.max(24, w - edge - left);
+		var dash = w * 0.032;
+		var inner = Math.max(18, span - dash * 2);
+		var w1 = inner * 2 / 7;
+		var w2 = inner * 3 / 7;
+		var w3 = inner - w1 - w2;
+		var cluster = w1 + dash + w2 + dash + w3;
+		var start = left + (span - cluster) / 2;
+		var y = edge;
+		var boxH = Math.max(8, h - edge * 2);
+		return [
+			{ x: start, y: y, width: w1, height: boxH },
+			{ x: start + w1 + dash, y: y, width: w2, height: boxH },
+			{ x: start + w1 + dash + w2 + dash, y: y, width: w3, height: boxH }
+		];
+	}
+
+	function frenchGroupSqueeze(fitted, boxes) {
+		var scale = 1;
+		var n;
+		if (!fitted || !fitted.widths || !boxes) {
+			return 1;
+		}
+		for (n = 0; n < boxes.length && n < fitted.widths.length; n += 1) {
+			if (fitted.widths[n] > boxes[n].width && fitted.widths[n] > 0) {
+				scale = Math.min(scale, boxes[n].width / fitted.widths[n]);
+			}
+		}
+		return scale;
+	}
+
+	function drawFrenchPlate(ctx, canvas, root, w, h, font, minSize) {
+		var format = cfg.format || {};
+		var temporary = format.type === 'fr_ww';
+		var fill = format.fr_fill || (temporary ? '#F19DC4' : '#FFFFFF');
+		var ink = format.fr_ink || '#000000';
+		var radius = Math.min(10, h * 0.12);
+		var band = lockedBand(format, w, h);
+		ctx.save();
+		roundRect(ctx, 0, 0, w, h, radius);
+		ctx.clip();
+		ctx.fillStyle = fill;
+		ctx.fillRect(0, 0, w, h);
+		var groups = frenchDrawGroups(root);
+		var boxes = percentBoxes(format.text_boxes, w, h);
+		var fitted;
+		// Temporary plates keep the existing centered inscription. Only the date moves.
+		// The region plate uses the standard French box for the font size, then one
+		// shared squeeze if a group is wider than the narrower region field.
+		if (format.type === 'fr_region' && boxes.length >= groups.length && boxes.length > 0) {
+			fitted = fitFrenchBoxes(ctx, groups, font, standardFrenchGroupBoxes(w, h, band), minSize);
+			fitted.scaleX = frenchGroupSqueeze(fitted, boxes);
+			drawBoxedFrenchGroups(ctx, fitted, groups, boxes, ink);
+		} else if (!temporary && boxes.length >= groups.length && boxes.length > 0) {
+			fitted = fitFrenchBoxes(ctx, groups, font, boxes, minSize);
+			drawBoxedFrenchGroups(ctx, fitted, groups, boxes, ink);
+		} else {
+			var dateCol = temporary ? Math.max(22, h * 0.22) : 0;
+			var areaLeft = (band ? band.x + band.width : 0) + 6;
+			var areaRight = w - (temporary ? dateCol : 6);
+			fitted = fitFrenchGroups(ctx, groups, font, Math.max(20, areaRight - areaLeft), h * 0.72, minSize);
+			drawFrenchGroups(ctx, fitted, areaLeft, Math.max(20, areaRight - areaLeft), h, ink);
+		}
+		if (temporary) {
+			drawFrenchDate(ctx, root, fitted, w, h, ink);
+		}
+		ctx.restore();
+		paintLockedBand(ctx, canvas, band, w, h, 'F');
+		if (format.type === 'fr_region' && band) {
+			paintFlippedRegionBand(ctx, band, w, h);
+			drawRegionDigits(ctx, root, w, h, font);
+		}
+		ctx.save();
+		ctx.strokeStyle = '#111111';
+		ctx.lineWidth = 1.4;
+		roundRect(ctx, 0.7, 0.7, Math.max(1, w - 1.4), Math.max(1, h - 1.4), radius);
+		ctx.stroke();
+		ctx.restore();
+	}
+
+	function austriaFields(root) {
+		var leftInput = root.querySelector('[name="apd_at_left"]');
+		var rightInput = root.querySelector('[name="apd_at_right"]');
+		return {
+			left: leftInput ? String(leftInput.value || '') : 'WE',
+			right: rightInput ? String(rightInput.value || '') : '000 CF'
+		};
+	}
+
+	function drawAustriaStripes(ctx, w, h, color) {
+		var outer = 3.2;
+		var gap = 1.8;
+		var inner = 2.8;
+		ctx.fillStyle = color || '#C7282D';
+		ctx.fillRect(0, 0, w, outer);
+		ctx.fillRect(0, h - outer, w, outer);
+		ctx.fillRect(0, outer + gap, w, inner);
+		ctx.fillRect(0, h - outer - gap - inner, w, inner);
+	}
+
+	function fitAustriaPair(ctx, left, right, font, leftW, rightW, maxHeight, minSize) {
+		resetCanvasSpacing(ctx);
+		var family = font && font.family ? font.family : 'sans-serif';
+		var weight = font && font.weight ? font.weight : 400;
+		var style = font && font.style ? font.style : 'normal';
+		var size = Math.floor(maxHeight * 1.2);
+		var laid;
+		var measure = function (next) {
+			ctx.font = frenchFont(style, weight, next, family);
+			var ink = measureInk(ctx, 'H', next);
+			return {
+				size: next,
+				font: ctx.font,
+				ascent: ink.ascent,
+				descent: ink.descent,
+				leftW: left ? ctx.measureText(plateGlyphs(ctx, left, family, weight, style)).width : 0,
+				rightW: right ? ctx.measureText(plateGlyphs(ctx, right, family, weight, style)).width : 0,
+				left: left ? plateGlyphs(ctx, left, family, weight, style) : '',
+				right: right ? plateGlyphs(ctx, right, family, weight, style) : ''
+			};
+		};
+		while (size >= minSize) {
+			laid = measure(size);
+			if (laid.leftW <= leftW && laid.rightW <= rightW && (laid.ascent + laid.descent) <= maxHeight) {
+				return laid;
+			}
+			size -= 1;
+		}
+		return measure(minSize);
+	}
+
+	function drawAustriaBoxText(ctx, text, box, font, ink, minSize) {
+		resetCanvasSpacing(ctx);
+		var family = font && font.family ? font.family : 'sans-serif';
+		var weight = font && font.weight ? font.weight : 400;
+		var style = font && font.style ? font.style : 'normal';
+		var size = Math.floor(box.height * 1.15);
+		var laid;
+		var measure = function (next) {
+			ctx.font = frenchFont(style, weight, next, family);
+			var face = measureInk(ctx, 'H', next);
+			var glyphs = text ? plateGlyphs(ctx, text, family, weight, style) : '';
+			return {
+				size: next,
+				font: ctx.font,
+				ascent: face.ascent,
+				descent: face.descent,
+				height: face.ascent + face.descent,
+				width: glyphs ? ctx.measureText(glyphs).width : 0,
+				glyphs: glyphs
+			};
+		};
+		while (size >= minSize) {
+			laid = measure(size);
+			if (laid.height <= box.height && laid.width <= box.width) {
+				break;
+			}
+			size -= 1;
+			laid = null;
+		}
+		if (!laid) {
+			laid = measure(minSize);
+		}
+		if (!laid.glyphs) {
+			return;
+		}
+		var baseline = box.y + (box.height - laid.height) / 2 + laid.ascent;
+		if (box.valign === 'top') {
+			baseline = box.y + laid.ascent;
+		} else if (box.valign === 'bottom') {
+			baseline = box.y + box.height - laid.descent;
+		}
+		var x = box.x + box.width / 2;
+		ctx.font = laid.font;
+		ctx.fillStyle = ink;
+		ctx.textBaseline = 'alphabetic';
+		ctx.textAlign = 'center';
+		if (box.align === 'left') {
+			ctx.textAlign = 'left';
+			x = box.x;
+		} else if (box.align === 'right') {
+			ctx.textAlign = 'right';
+			x = box.x + box.width;
+		}
+		ctx.fillText(laid.glyphs, x, baseline);
+		ctx.textAlign = 'left';
+	}
+
+	function drawAustriaPlate(ctx, canvas, root, w, h, font, minSize) {
+		var format = cfg.format || {};
+		var fill = format.at_fill || '#FFFFFF';
+		var ink = format.at_ink || '#000000';
+		var region = format.at_region || { x: 33.5, y: 8.7, width: 10.9, height: 82.1, fill: '#B0B0B0' };
+		var radius = Math.min(10, h * 0.12);
+		var band = lockedBand(format, w, h);
+		var rx = w * Number(region.x) / 100;
+		var ry = h * Number(region.y) / 100;
+		var rw = w * Number(region.width) / 100;
+		var rh = h * Number(region.height) / 100;
+		var fields = austriaFields(root);
+		var boxes = percentBoxes(format.text_boxes, w, h);
+		ctx.save();
+		roundRect(ctx, 0, 0, w, h, radius);
+		ctx.clip();
+		ctx.fillStyle = fill;
+		ctx.fillRect(0, 0, w, h);
+		drawAustriaStripes(ctx, w, h, format.at_stripe || '#C7282D');
+		ctx.fillStyle = region.fill || '#B0B0B0';
+		ctx.fillRect(rx, ry, rw, rh);
+		if (boxes.length >= 2) {
+			drawAustriaBoxText(ctx, fields.left, boxes[0], font, ink, minSize);
+			drawAustriaBoxText(ctx, fields.right, boxes[1], font, ink, minSize);
+		} else {
+			var gap = 8;
+			var areaLeft = (band ? band.x + band.width : 0) + gap;
+			var leftW = Math.max(8, rx - areaLeft - gap);
+			var rightX = rx + rw + gap;
+			var rightW = Math.max(8, w - rightX - gap);
+			var fitted = fitAustriaPair(ctx, fields.left, fields.right, font, leftW, rightW, Math.max(8, h - 16), minSize);
+			var baseline = (h - (fitted.ascent + fitted.descent)) / 2 + fitted.ascent;
+			ctx.font = fitted.font;
+			ctx.fillStyle = ink;
+			ctx.textBaseline = 'alphabetic';
+			if (fitted.left) {
+				ctx.textAlign = 'center';
+				ctx.fillText(fitted.left, areaLeft + leftW / 2, baseline);
+			}
+			if (fitted.right) {
+				ctx.textAlign = 'left';
+				ctx.fillText(fitted.right, rightX, baseline);
+			}
+			ctx.textAlign = 'left';
+		}
+		ctx.restore();
+		paintLockedBand(ctx, canvas, band, w, h, format.at_mark || 'A');
+		ctx.save();
+		ctx.strokeStyle = '#111111';
+		ctx.lineWidth = 1.4;
+		roundRect(ctx, 0.7, 0.7, Math.max(1, w - 1.4), Math.max(1, h - 1.4), radius);
+		ctx.stroke();
+		ctx.restore();
+	}
+
+	function paintOpenBand(ctx, canvas, band, w, h) {
+		var preset = currentPreset();
+		var url = preset && preset.image_url ? preset.image_url : '';
+		var img = url && imageCache[url] && imageCache[url].naturalWidth ? imageCache[url] : null;
+		var radius = Math.min(10, h * 0.12);
+		if (!band) {
+			placeBandLayer(canvas, null, '', w, h);
+			return;
+		}
+		ctx.save();
+		roundRect(ctx, 0, 0, w, h, radius);
+		ctx.clip();
+		ctx.fillStyle = '#003399';
+		ctx.fillRect(band.x, band.y, band.width, band.height);
+		if (img) {
+			drawImageCover(ctx, img, band.x, band.y, band.width, band.height);
+		} else if (preset && preset.country_code) {
+			ctx.fillStyle = '#ffffff';
+			ctx.textAlign = 'center';
+			ctx.textBaseline = 'middle';
+			ctx.font = '700 ' + Math.max(10, Math.round(band.height * 0.22)) + 'px sans-serif';
+			ctx.fillText(preset.country_code, band.x + band.width / 2, band.y + band.height * 0.72);
+			ctx.textAlign = 'left';
+			ctx.textBaseline = 'alphabetic';
+		}
+		ctx.restore();
+		placeBandLayer(canvas, null, '', w, h);
+	}
+
+	// Product-page registration. Stretch each glyph into the legal character
+	// cell (The Road Vehicles (Display of Registration Marks) Regulations 2001,
+	// Schedule 3). A short line stays at that cell. The whole line shrinks
+	// only when it does not fit the clearance box. New format drawers must
+	// call this helper instead of fillText or drawConfiguredText.
+	var LEGAL_CAR = { height: 79, width: 50, narrow: 14, gap: 11, group: 50 };
+	var LEGAL_MOTO = { height: 64, width: 44, narrow: 10, gap: 10, group: 44 };
+
+	function legalNarrowGlyph(ch) {
+		return ch === 'I' || ch === 'i' || ch === '1' || ch === '\u0406' || ch === '\u0456';
+	}
+
+	function legalPlateGlyph(ch) {
+		return /[0-9A-Za-z\u0400-\u04FF]/.test(ch);
+	}
+
+	function fontSizeForInk(ctx, font, target) {
+		var family = font && font.family ? font.family : 'sans-serif';
+		var weight = font && font.weight ? font.weight : 400;
+		var style = font && font.style ? font.style : 'normal';
+		var size = Math.max(8, Math.round(target));
+		var step;
+		for (step = 0; step < 6; step += 1) {
+			ctx.font = frenchFont(style, weight, size, family);
+			var ink = measureInk(ctx, 'H', size);
+			var height = ink.ascent + ink.descent;
+			if (!(height > 0)) {
+				return size;
+			}
+			var next = Math.max(8, Math.round(size * target / height));
+			if (Math.abs(next - size) <= 1) {
+				ctx.font = frenchFont(style, weight, next, family);
+				var check = measureInk(ctx, 'H', next);
+				if (check.ascent + check.descent > target + 0.6) {
+					return Math.max(8, next - 1);
+				}
+				return next;
+			}
+			size = next;
+		}
+		return size;
+	}
+
+	function layoutLegalLine(ctx, chars, font, law, target) {
+		var family = font && font.family ? font.family : 'sans-serif';
+		var weight = font && font.weight ? font.weight : 400;
+		var style = font && font.style ? font.style : 'normal';
+		var size = fontSizeForInk(ctx, font, target);
+		ctx.font = frenchFont(style, weight, size, family);
+		var face = measureInk(ctx, 'H', size);
+		var inkH = face.ascent + face.descent;
+		var ratio = law.height > 0 ? inkH / law.height : 1;
+		var full = law.width * ratio;
+		var narrow = law.narrow * ratio;
+		var gap = law.gap * ratio;
+		var group = law.group * ratio;
+		var glyphs = [];
+		var total = 0;
+		var i;
+		for (i = 0; i < chars.length; i += 1) {
+			var ch = chars[i];
+			if (ch === ' ') {
+				glyphs.push({ space: true, adv: group });
+				total += group;
+				continue;
+			}
+			var measured = ctx.measureText(ch);
+			var left = measured.actualBoundingBoxLeft;
+			var right = measured.actualBoundingBoxRight;
+			var ink = (isFinite(left) ? left : 0) + (isFinite(right) ? right : 0);
+			if (!(ink > 0.5)) {
+				ink = measured.width > 0 ? measured.width : 1;
+				left = 0;
+				right = ink;
+			}
+			var cell = ink;
+			if (legalPlateGlyph(ch)) {
+				cell = legalNarrowGlyph(ch) ? narrow : full;
+			}
+			var center = ((isFinite(right) ? right : ink) - (isFinite(left) ? left : 0)) / 2;
+			glyphs.push({
+				ch: ch,
+				sx: ink > 0 ? cell / ink : 1,
+				adv: cell,
+				center: center
+			});
+			total += cell;
+			if (chars[i + 1] && chars[i + 1] !== ' ') {
+				glyphs.push({ gap: true, adv: gap });
+				total += gap;
+			}
+		}
+		return {
+			glyphs: glyphs,
+			total: total,
+			face: face,
+			font: ctx.font
+		};
+	}
+
+	function drawLegalRegistration(ctx, text, font, box, color, law, minSize) {
+		if (!box || box.width <= 0 || box.height <= 0) {
+			return;
+		}
+		var family = font && font.family ? font.family : 'sans-serif';
+		var weight = font && font.weight ? font.weight : 400;
+		var style = font && font.style ? font.style : 'normal';
+		var raw = plateGlyphs(ctx, String(text || ''), family, weight, style);
+		var chars = Array.from(raw).filter(function (ch) {
+			return ch !== '\n' && ch !== '\r';
+		});
+		if (!chars.length) {
+			return;
+		}
+		resetCanvasSpacing(ctx);
+		var target = Math.min(law.height, box.height);
+		if (!(target > 1)) {
+			target = Math.max(minSize || 8, 8);
+		}
+		var laid = layoutLegalLine(ctx, chars, font, law, target);
+		var guard = 0;
+		while (laid.total > box.width + 0.5 && laid.total > 0 && guard < 3) {
+			target = Math.max(1, target * (box.width / laid.total));
+			laid = layoutLegalLine(ctx, chars, font, law, target);
+			guard += 1;
+		}
+		ctx.save();
+		ctx.fillStyle = color;
+		ctx.font = laid.font;
+		ctx.textAlign = 'left';
+		ctx.textBaseline = 'alphabetic';
+		var inkH = laid.face.ascent + laid.face.descent;
+		var baseline = box.y + (box.height - inkH) / 2 + laid.face.ascent;
+		var x = box.x + Math.max(0, (box.width - laid.total) / 2);
+		var g;
+		for (g = 0; g < laid.glyphs.length; g += 1) {
+			var item = laid.glyphs[g];
+			if (item.ch) {
+				ctx.save();
+				ctx.translate(x + item.adv / 2, baseline);
+				ctx.scale(item.sx, 1);
+				ctx.fillText(item.ch, -item.center, 0);
+				ctx.restore();
+			}
+			x += item.adv;
+		}
+		ctx.restore();
+	}
+
+	function strokeEnglishRim(ctx, x, y, w, h, radius, gapLeft, gapRight, color, lineWidth, flatSide) {
+		var right = x + w;
+		var bottom = y + h;
+		var rL = flatSide === 'left' ? 0 : Math.min(radius, w / 2, h / 2);
+		var rR = flatSide === 'right' ? 0 : Math.min(radius, w / 2, h / 2);
+		var open = gapRight > gapLeft + 4;
+		ctx.save();
+		ctx.strokeStyle = color;
+		ctx.lineWidth = lineWidth;
+		ctx.lineJoin = 'miter';
+		ctx.lineCap = 'butt';
+		ctx.beginPath();
+		if (!open) {
+			ctx.moveTo(x + rL, y);
+			ctx.lineTo(right - rR, y);
+			if (rR) {
+				ctx.arcTo(right, y, right, y + rR, rR);
+			} else {
+				ctx.lineTo(right, y);
+			}
+			ctx.lineTo(right, bottom - rR);
+			if (rR) {
+				ctx.arcTo(right, bottom, right - rR, bottom, rR);
+			} else {
+				ctx.lineTo(right, bottom);
+			}
+			ctx.lineTo(x + rL, bottom);
+			if (rL) {
+				ctx.arcTo(x, bottom, x, bottom - rL, rL);
+			} else {
+				ctx.lineTo(x, bottom);
+			}
+			ctx.lineTo(x, y + rL);
+			if (rL) {
+				ctx.arcTo(x, y, x + rL, y, rL);
+			} else {
+				ctx.lineTo(x, y);
+			}
+			ctx.closePath();
+			ctx.stroke();
+			ctx.restore();
+			return;
+		}
+		var openLeft = Math.max(x + rL, gapLeft);
+		var openRight = Math.min(right - rR, gapRight);
+		ctx.moveTo(openLeft, bottom);
+		ctx.lineTo(x + rL, bottom);
+		if (rL) {
+			ctx.arcTo(x, bottom, x, bottom - rL, rL);
+		} else {
+			ctx.lineTo(x, bottom);
+		}
+		ctx.lineTo(x, y + rL);
+		if (rL) {
+			ctx.arcTo(x, y, x + rL, y, rL);
+		} else {
+			ctx.lineTo(x, y);
+		}
+		ctx.lineTo(right - rR, y);
+		if (rR) {
+			ctx.arcTo(right, y, right, y + rR, rR);
+		} else {
+			ctx.lineTo(right, y);
+		}
+		ctx.lineTo(right, bottom - rR);
+		if (rR) {
+			ctx.arcTo(right, bottom, right - rR, bottom, rR);
+		} else {
+			ctx.lineTo(right, bottom);
+		}
+		ctx.lineTo(openRight, bottom);
+		ctx.stroke();
+		ctx.restore();
+	}
+
+	function drawEnglishPlate(ctx, canvas, root, w, h, font, minSize) {
+		var margin = 7;
+		var line = 1.4;
+		var radius = Math.min(10, h * 0.12);
+		var type = cfg.format.type;
+		var preset = type === 'uk' ? currentPreset() : null;
+		var rawBand = type === 'uk' ? resolveBand(cfg.format, preset, w, h) : null;
+		bandHit = rawBand;
+		var plateColor = colorValue('apd_background_color');
+		ctx.save();
+		roundRect(ctx, 0, 0, w, h, radius);
+		ctx.clip();
+		ctx.fillStyle = plateColor;
+		ctx.fillRect(0, 0, w, h);
+		ctx.restore();
+		var inset = margin + line / 2;
+		var placed = (cfg.format && cfg.format.slogan_box && Number(cfg.format.slogan_box.width) > 0)
+			? percentBoxes([cfg.format.slogan_box], w, h)[0]
+			: null;
+		var lineY = h - inset;
+		if (placed && placed.height > 0) {
+			lineY = placed.y + placed.height / 2;
+		}
+		lineY = Math.max(inset + 12, Math.min(h - inset, lineY));
+		var sloganInput = root.querySelector('[name="apd_slogan"]');
+		var slogan = sloganInput ? String(sloganInput.value || '') : '';
+		var bandOnLeft = !!(rawBand && rawBand.width > 0 && rawBand.side !== 'right');
+		var bandOnRight = !!(rawBand && rawBand.width > 0 && rawBand.side === 'right');
+		var left = bandOnLeft ? (rawBand.x + rawBand.width + line / 2) : inset;
+		var right = bandOnRight ? (rawBand.x - line / 2) : (w - inset);
+		var top = inset;
+		var innerW = Math.max(8, right - left);
+		var sloganSize = 11;
+		var sloganWidth = 0;
+		var textX = left;
+		if (slogan) {
+			var span = placed && placed.width > 8 ? Math.max(20, placed.width - 8) : innerW - 16;
+			ctx.font = '400 ' + sloganSize + 'px Arial, "Helvetica Neue", sans-serif';
+			sloganWidth = ctx.measureText(slogan).width;
+			while (sloganSize > 6 && sloganWidth > span) {
+				sloganSize -= 0.5;
+				ctx.font = '400 ' + sloganSize + 'px Arial, "Helvetica Neue", sans-serif';
+				sloganWidth = ctx.measureText(slogan).width;
+			}
+			var slotX = placed && placed.width > 8 ? placed.x : left;
+			var slotW = placed && placed.width > 8 ? placed.width : innerW;
+			textX = slotX + Math.max(0, (slotW - sloganWidth) / 2);
+		}
+		var pad = 3.5;
+		var gapLeft = slogan ? textX - pad : 0;
+		var gapRight = slogan ? textX + sloganWidth + pad : 0;
+		paintOpenBand(ctx, canvas, rawBand, w, h);
+		bandHit = rawBand;
+		strokeEnglishRim(
+			ctx,
+			left,
+			top,
+			innerW,
+			Math.max(8, lineY - top),
+			Math.max(2, radius - margin),
+			gapLeft,
+			gapRight,
+			colorValue('apd_border_color'),
+			line,
+			bandOnLeft ? 'left' : (bandOnRight ? 'right' : '')
+		);
+		var textPad = 2.5;
+		var textLeft = left + line / 2 + textPad;
+		var textRight = right - line / 2 - textPad;
+		var textTop = top + line / 2 + textPad;
+		var sloganClear = slogan ? Math.max(7, sloganSize * 0.8) : textPad;
+		var textBottom = lineY - line / 2 - sloganClear;
+		var textInput = root.querySelector('[name="apd_text"]');
+		var text = textInput ? textInput.value : '';
+		if (text) {
+			drawLegalRegistration(ctx, text, font, {
+				x: textLeft,
+				y: textTop,
+				width: Math.max(8, textRight - textLeft),
+				height: Math.max(8, textBottom - textTop)
+			}, colorValue('apd_text_color'), LEGAL_CAR, minSize);
+		}
+		if (slogan) {
+			ctx.save();
+			ctx.fillStyle = colorValue('apd_slogan_color');
+			ctx.font = '400 ' + sloganSize + 'px Arial, "Helvetica Neue", sans-serif';
+			ctx.textAlign = 'left';
+			ctx.textBaseline = 'alphabetic';
+			ctx.fillText(slogan, textX, lineY + sloganSize * 0.12);
+			ctx.restore();
+		}
+	}
+
+	function drawMiniPlate(ctx, canvas, root, w, h, font, minSize) {
+		var radius = Math.min(10, h * 0.12);
+		var type = cfg.format.type;
+		var preset = type === 'mini' ? currentPreset() : null;
+		var rawBand = type === 'mini' ? resolveBand(cfg.format, preset, w, h) : null;
+		bandHit = rawBand;
+		ctx.save();
+		roundRect(ctx, 0, 0, w, h, radius);
+		ctx.clip();
+		ctx.fillStyle = '#ffffff';
+		ctx.fillRect(0, 0, w, h);
+		ctx.restore();
+		paintOpenBand(ctx, canvas, rawBand, w, h);
+		bandHit = rawBand;
+		ctx.save();
+		ctx.strokeStyle = '#111111';
+		ctx.lineWidth = 1.4;
+		roundRect(ctx, 0.7, 0.7, Math.max(1, w - 1.4), Math.max(1, h - 1.4), radius);
+		ctx.stroke();
+		ctx.restore();
+		var textInput = root.querySelector('[name="apd_text"]');
+		var text = textInput ? textInput.value : '';
+		if (!text) {
+			return;
+		}
+		var left = rawBand ? rawBand.x + rawBand.width + 8 : 8;
+		var right = w - 8;
+		drawLegalRegistration(ctx, text, font, {
+			x: left,
+			y: 8,
+			width: Math.max(8, right - left),
+			height: Math.max(8, h - 16)
+		}, '#000000', LEGAL_MOTO, minSize);
+	}
+
 	function draw(root, cache) {
+		if (cache && cache.images) {
+			imageCache = cache.images;
+		}
 		measurePreviewStage();
 		var canvas = getCanvas();
 		if (!canvas) {
@@ -1455,6 +2473,26 @@
 		ctx.fillStyle = '#ffffff';
 		ctx.fillRect(0, 0, w, h);
 		bandHit = null;
+
+		if (type === 'fr' || type === 'fr_ww' || type === 'fr_region') {
+			drawFrenchPlate(ctx, canvas, root, w, h, font, minSize);
+			return;
+		}
+
+		if (type === 'austria') {
+			drawAustriaPlate(ctx, canvas, root, w, h, font, minSize);
+			return;
+		}
+
+		if (type === 'uk' || type === 'uk_plain') {
+			drawEnglishPlate(ctx, canvas, root, w, h, font, minSize);
+			return;
+		}
+
+		if (type === 'mini' || type === 'mini_plain') {
+			drawMiniPlate(ctx, canvas, root, w, h, font, minSize);
+			return;
+		}
 
 		if (usesPlateDesigns(type) || usesBaseImage(type)) {
 			placeBandLayer(canvas, null, '', w, h);
@@ -1645,7 +2683,34 @@
 		return countChars(inputs[0].value) > sideLimit(0) || countChars(inputs[1].value) > sideLimit(1);
 	}
 
+	function updateSloganCount(root) {
+		var sloganInput = root.querySelector('[name="apd_slogan"]');
+		var sloganCount = root.querySelector('[data-apd-slogan-count]');
+		if (!sloganInput || !sloganCount) {
+			return;
+		}
+		var cap = cfg.format && cfg.format.slogan_max ? cfg.format.slogan_max : parseInt(sloganInput.getAttribute('maxlength'), 10);
+		if (!cap || cap < 1) {
+			cap = 40;
+		}
+		paintCount(sloganCount, countChars(sloganInput.value), cap);
+	}
+
 	function updateCount(root) {
+		updateSloganCount(root);
+		var frenchFields = root.querySelectorAll('[data-apd-fr], [data-apd-at]');
+		if (frenchFields.length) {
+			var frenchCounts = root.querySelectorAll('[data-apd-count]');
+			var n;
+			for (n = 0; n < frenchFields.length && n < frenchCounts.length; n += 1) {
+				var cap = parseInt(frenchFields[n].getAttribute('maxlength'), 10);
+				if (!cap || cap < 1) {
+					cap = 2;
+				}
+				paintCount(frenchCounts[n], countChars(frenchFields[n].value), cap);
+			}
+			return;
+		}
 		var sides = root.querySelectorAll('[data-apd-plate-side]');
 		var counters = root.querySelectorAll('[data-apd-count]');
 		if (sides.length >= 2 && counters.length >= 2) {
@@ -1857,7 +2922,7 @@
 		if (!node || !node.name) {
 			return false;
 		}
-		return node.name === 'apd_text' || node.name === 'apd_text_row_1' || node.name === 'apd_text_row_2' || node.name === 'apd_text_left' || node.name === 'apd_text_right';
+		return node.name === 'apd_text' || node.name === 'apd_text_row_1' || node.name === 'apd_text_row_2' || node.name === 'apd_text_left' || node.name === 'apd_text_right' || node.name === 'apd_fr_a' || node.name === 'apd_fr_b' || node.name === 'apd_fr_c' || node.name === 'apd_fr_month' || node.name === 'apd_fr_year' || node.name === 'apd_fr_region' || node.name === 'apd_at_left' || node.name === 'apd_at_right';
 	}
 
 	function upperPlateControl(input) {
@@ -2054,17 +3119,79 @@
 		}).catch(function () {});
 	}
 
+	function filterFrenchField(input) {
+		if (!input || !input.getAttribute) {
+			return;
+		}
+		var kind = input.getAttribute('data-apd-fr') || input.getAttribute('data-apd-at');
+		if (!kind) {
+			return;
+		}
+		var next = String(input.value || '');
+		if (kind === 'digits') {
+			next = next.replace(/[^0-9]/g, '');
+		} else if (kind === 'mixed') {
+			next = next.toLocaleUpperCase('bg').replace(/[^A-Z0-9 ]/g, '');
+		} else {
+			next = next.toLocaleUpperCase('bg').replace(/[^A-Z]/g, '');
+		}
+		var cap = parseInt(input.getAttribute('maxlength'), 10);
+		if (cap > 0 && next.length > cap) {
+			next = next.slice(0, cap);
+		}
+		if (next === input.value) {
+			return;
+		}
+		input.value = next;
+	}
+
+	function syncFrenchFields(root) {
+		var nodes = root.querySelectorAll('[data-apd-fr-group]');
+		if (!nodes.length) {
+			return;
+		}
+		var hidden = root.querySelector('[name="apd_text"]');
+		if (!hidden) {
+			return;
+		}
+		var mark = cfg.format && cfg.format.fr_mark ? String(cfg.format.fr_mark) : '';
+		var parts = [];
+		var i;
+		if (mark) {
+			parts.push(mark);
+		}
+		for (i = 0; i < nodes.length; i += 1) {
+			parts.push(nodes[i].value);
+		}
+		hidden.value = parts.join('-');
+	}
+
+	function syncAustriaFields(root) {
+		var left = root.querySelector('[name="apd_at_left"]');
+		var right = root.querySelector('[name="apd_at_right"]');
+		var hidden = root.querySelector('[name="apd_text"]');
+		if (!left || !right || !hidden) {
+			return;
+		}
+		hidden.value = left.value + '\n' + right.value;
+	}
+
 	function bind(root, cache) {
 		rememberInitialValues(root);
 		upperPlateFields(root);
 		syncSuvRows(root);
 		syncSideFields(root);
+		syncFrenchFields(root);
+		syncAustriaFields(root);
 		root.addEventListener('input', function (event) {
 			if (plateTextControl(event.target)) {
 				upperPlateControl(event.target);
+				filterFrenchField(event.target);
 			}
 			syncSuvRows(root);
 			syncSideFields(root);
+			syncFrenchFields(root);
+			syncAustriaFields(root);
 			updateCount(root);
 			scheduleDraw(root, cache);
 		});
@@ -2148,6 +3275,9 @@
 		var canvas = getCanvas();
 		if (canvas) {
 			canvas.addEventListener('click', function (event) {
+				if (cfg.format && cfg.format.capabilities && cfg.format.capabilities.country_locked) {
+					return;
+				}
 				var packed = { w: cfg.format.width || 520, h: cfg.format.height || 110 };
 				if (!pointerOnBand(canvas, event, packed.w, packed.h)) {
 					return;
@@ -2169,9 +3299,15 @@
 			form.addEventListener('submit', function (event) {
 				syncSuvRows(root);
 				syncSideFields(root);
+				syncFrenchFields(root);
+				syncAustriaFields(root);
 				var sides = root.querySelectorAll('[data-apd-plate-side]');
 				var rows = root.querySelectorAll('[data-apd-plate-row]');
+				var sloganInput = root.querySelector('[name="apd_slogan"]');
+				var sloganCap = cfg.format && cfg.format.slogan_max ? cfg.format.slogan_max : 40;
+				var sloganOver = sloganInput ? countChars(sloganInput.value) > sloganCap : false;
 				var over = sides.length >= 2 ? sideOverLimit(root) : (rows.length >= 2 ? suvRowsOverLimit(root) : plateCharCount(root) > (cfg.format.max_chars || 12));
+				over = over || sloganOver;
 				var allowEmpty = !!cfg.format.allow_empty;
 				if ((!allowEmpty && plateTextEmpty(root)) || over) {
 					event.preventDefault();

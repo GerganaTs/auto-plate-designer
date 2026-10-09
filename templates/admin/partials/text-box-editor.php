@@ -36,6 +36,8 @@ $apd_text_box_studio      = ! empty( $apd_text_box_studio );
 $apd_text_box_design      = ! empty( $apd_text_box_design );
 $apd_text_box_sample      = isset( $apd_text_box_sample ) && '' !== (string) $apd_text_box_sample ? (string) $apd_text_box_sample : __( 'TEXT', 'auto-plate-designer' );
 $apd_show_frame           = ! empty( $apd_show_frame );
+$apd_fixed_frame_mm       = isset( $apd_fixed_frame_mm ) ? max( 0, (int) $apd_fixed_frame_mm ) : 0;
+$apd_paint_frame          = $apd_show_frame || $apd_fixed_frame_mm > 0;
 $apd_border_width         = isset( $apd_border_width ) ? (int) $apd_border_width : 8;
 $apd_border_color         = isset( $apd_border_color ) ? (string) $apd_border_color : '#000000';
 $apd_plate_width          = isset( $apd_plate_width ) ? max( 1, (int) $apd_plate_width ) : 520;
@@ -116,7 +118,10 @@ $apd_align_css            = static function ( $align ) {
 	}
 	return 'center';
 };
-$apd_glyphs               = static function ( $text ) {
+$apd_row_has_space        = static function ( $align, $text ) {
+	return 'justify' === $align && false !== mb_strpos( (string) $text, ' ' );
+};
+$apd_glyphs               = static function ( $text, $grow_spaces ) {
 	$chars = preg_split( '//u', (string) $text, -1, PREG_SPLIT_NO_EMPTY );
 	$html  = '';
 
@@ -126,7 +131,7 @@ $apd_glyphs               = static function ( $text ) {
 
 	foreach ( $chars as $char ) {
 		if ( ' ' === $char ) {
-			$html .= '<span>&nbsp;</span>';
+			$html .= $grow_spaces ? '<span class="apd-text-gap">&nbsp;</span>' : '<span>&nbsp;</span>';
 			continue;
 		}
 		$html .= '<span>' . esc_html( $char ) . '</span>';
@@ -156,9 +161,19 @@ if ( $apd_text_box_studio ) {
 		</p>
 	<?php endif; ?>
 	<div class="apd-text-box-wrap<?php echo $apd_text_box_studio ? ' apd-text-box-wrap--studio' : ''; ?>" data-apd-text-box-wrap <?php echo $apd_text_box_show_stage ? '' : 'hidden'; ?>>
-		<div class="apd-text-box-stage" data-apd-text-box-stage<?php echo $apd_text_box_design ? ' data-apd-design-stage' : ''; ?> style="aspect-ratio: <?php echo esc_attr( $apd_text_box_ratio ); ?>;">
+		<?php
+		$apd_group_presets = isset( $apd_group_presets ) && is_array( $apd_group_presets ) ? $apd_group_presets : array();
+		$apd_region_preset = isset( $apd_region_preset ) && is_array( $apd_region_preset ) ? $apd_region_preset : array();
+		$apd_group_box_2   = isset( $apd_group_box_2 ) && is_array( $apd_group_box_2 ) ? $apd_group_box_2 : array( 'x' => 40, 'y' => 8, 'width' => 18, 'height' => 84, 'align' => 'center', 'valign' => 'middle' );
+		$apd_group_box_3   = isset( $apd_group_box_3 ) && is_array( $apd_group_box_3 ) ? $apd_group_box_3 : array( 'x' => 62, 'y' => 8, 'width' => 16, 'height' => 84, 'align' => 'center', 'valign' => 'middle' );
+		$apd_region_box    = isset( $apd_region_box ) && is_array( $apd_region_box ) ? $apd_region_box : array( 'x' => 33.5, 'y' => 8.7, 'width' => 10.9, 'height' => 82.1 );
+		$apd_date_month    = isset( $apd_date_month ) && is_array( $apd_date_month ) ? $apd_date_month : array( 'x' => 93, 'y' => 14, 'width' => 5.4, 'height' => 15.8, 'align' => 'right', 'valign' => 'top' );
+		$apd_date_year     = isset( $apd_date_year ) && is_array( $apd_date_year ) ? $apd_date_year : array( 'x' => 93, 'y' => 70.2, 'width' => 5.4, 'height' => 15.8, 'align' => 'right', 'valign' => 'bottom' );
+		$apd_show_groups   = empty( $apd_text_box_design );
+		?>
+		<div class="apd-text-box-stage" data-apd-text-box-stage<?php echo $apd_text_box_design ? ' data-apd-design-stage' : ''; ?> style="aspect-ratio: <?php echo esc_attr( $apd_text_box_ratio ); ?>;"<?php echo $apd_show_groups ? ' data-apd-group-presets="' . esc_attr( wp_json_encode( $apd_group_presets ) ) . '" data-apd-region-preset="' . esc_attr( wp_json_encode( $apd_region_preset ) ) . '"' : ''; ?>>
 			<div class="apd-text-box-schematic" data-apd-text-box-schematic <?php echo $apd_text_box_image ? 'hidden' : ''; ?>>
-				<span class="apd-frame-fill" data-apd-frame-fill <?php echo $apd_show_frame ? '' : 'hidden'; ?>></span>
+				<span class="apd-frame-fill" data-apd-frame-fill <?php echo $apd_paint_frame ? '' : 'hidden'; ?>></span>
 			</div>
 			<img src="<?php echo esc_url( $apd_text_box_image ); ?>" alt="" data-apd-text-box-image <?php echo $apd_text_box_image ? '' : 'hidden'; ?>>
 			<div
@@ -189,14 +204,22 @@ if ( $apd_text_box_studio ) {
 				<span class="apd-text-box-handle" data-apd-band-handle="se"></span>
 			</div>
 			<div
+				class="apd-band-box apd-band-box--mirror"
+				data-apd-band-mirror
+				hidden
+				style="left: <?php echo esc_attr( (string) ( isset( $apd_fr_region_box['x'] ) ? $apd_fr_region_box['x'] : 92.3 ) ); ?>%; top: <?php echo esc_attr( (string) $apd_band_box['y'] ); ?>%; width: <?php echo esc_attr( (string) $apd_band_box['width'] ); ?>%; height: <?php echo esc_attr( (string) $apd_band_box['height'] ); ?>%;"
+			>
+				<span class="apd-band-box-fill"></span>
+			</div>
+			<div
 				class="apd-text-box"
 				data-apd-text-box
 				style="left: <?php echo esc_attr( (string) $apd_text_box['x'] ); ?>%; top: <?php echo esc_attr( (string) $apd_text_box['y'] ); ?>%; width: <?php echo esc_attr( (string) $apd_text_box['width'] ); ?>%; height: <?php echo esc_attr( (string) $apd_text_box['height'] ); ?>%;"
 			>
 				<span class="apd-text-box-sample<?php echo $apd_two_rows ? ' apd-text-box-sample--rows' : ''; ?>" data-apd-text-box-sample data-fallback="<?php echo esc_attr( $apd_text_box_sample ); ?>">
 					<?php if ( $apd_two_rows ) : ?>
-						<span class="apd-text-row" data-apd-text-row="letters" style="justify-content: <?php echo esc_attr( $apd_align_css( $apd_letter_align ) ); ?>;"><?php echo $apd_glyphs( $apd_sample_letters ); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped ?></span>
-						<span class="apd-text-row" data-apd-text-row="numbers" style="justify-content: <?php echo esc_attr( $apd_align_css( $apd_number_align ) ); ?>;"><?php echo $apd_glyphs( $apd_sample_numbers ); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped ?></span>
+						<span class="apd-text-row" data-apd-text-row="letters" data-apd-gap="<?php echo $apd_row_has_space( $apd_letter_align, $apd_sample_letters ) ? 'spaces' : ''; ?>" style="justify-content: <?php echo esc_attr( $apd_row_has_space( $apd_letter_align, $apd_sample_letters ) ? 'flex-start' : $apd_align_css( $apd_letter_align ) ); ?>;"><?php echo $apd_glyphs( $apd_sample_letters, $apd_row_has_space( $apd_letter_align, $apd_sample_letters ) ); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped ?></span>
+						<span class="apd-text-row" data-apd-text-row="numbers" data-apd-gap="<?php echo $apd_row_has_space( $apd_number_align, $apd_sample_numbers ) ? 'spaces' : ''; ?>" style="justify-content: <?php echo esc_attr( $apd_row_has_space( $apd_number_align, $apd_sample_numbers ) ? 'flex-start' : $apd_align_css( $apd_number_align ) ); ?>;"><?php echo $apd_glyphs( $apd_sample_numbers, $apd_row_has_space( $apd_number_align, $apd_sample_numbers ) ); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped ?></span>
 					<?php else : ?>
 						<?php echo esc_html( $apd_split_on ? 'CA' : $apd_text_box_sample ); ?>
 					<?php endif; ?>
@@ -206,6 +229,68 @@ if ( $apd_text_box_studio ) {
 				<span class="apd-text-box-handle" data-apd-handle="sw"></span>
 				<span class="apd-text-box-handle" data-apd-handle="se"></span>
 			</div>
+			<?php
+			$apd_slogan_box  = isset( $apd_slogan_box ) && is_array( $apd_slogan_box ) ? $apd_slogan_box : APD_Formats::default_slogan_box(
+				array(
+					'type'     => $apd_text_box_type,
+					'width'    => $apd_plate_width,
+					'height'   => $apd_plate_height,
+					'band_box' => $apd_band_box,
+				)
+			);
+			$apd_show_slogan = APD_Formats::is_english( $apd_text_box_type );
+			?>
+			<div
+				class="apd-text-box apd-slogan-box"
+				data-apd-extra-box="slogan"
+				<?php echo $apd_show_slogan ? '' : 'hidden'; ?>
+				style="left: <?php echo esc_attr( (string) $apd_slogan_box['x'] ); ?>%; top: <?php echo esc_attr( (string) $apd_slogan_box['y'] ); ?>%; width: <?php echo esc_attr( (string) $apd_slogan_box['width'] ); ?>%; height: <?php echo esc_attr( (string) $apd_slogan_box['height'] ); ?>%;"
+			>
+				<span class="apd-text-box-sample" data-apd-extra-sample>SLOGAN</span>
+				<span class="apd-text-box-handle" data-apd-extra-handle="nw"></span>
+				<span class="apd-text-box-handle" data-apd-extra-handle="ne"></span>
+				<span class="apd-text-box-handle" data-apd-extra-handle="sw"></span>
+				<span class="apd-text-box-handle" data-apd-extra-handle="se"></span>
+			</div>
+			<?php if ( $apd_show_groups ) : ?>
+			<div class="apd-region-box" data-apd-extra-box="at_region" data-apd-extra-kind="region" hidden style="left: <?php echo esc_attr( (string) $apd_region_box['x'] ); ?>%; top: <?php echo esc_attr( (string) $apd_region_box['y'] ); ?>%; width: <?php echo esc_attr( (string) $apd_region_box['width'] ); ?>%; height: <?php echo esc_attr( (string) $apd_region_box['height'] ); ?>%;">
+				<span class="apd-text-box-handle" data-apd-extra-handle="nw"></span>
+				<span class="apd-text-box-handle" data-apd-extra-handle="ne"></span>
+				<span class="apd-text-box-handle" data-apd-extra-handle="sw"></span>
+				<span class="apd-text-box-handle" data-apd-extra-handle="se"></span>
+			</div>
+			<div class="apd-text-box" data-apd-extra-box="text_box_2" data-apd-extra-kind="text" data-apd-extra-index="1" hidden style="left: <?php echo esc_attr( (string) $apd_group_box_2['x'] ); ?>%; top: <?php echo esc_attr( (string) $apd_group_box_2['y'] ); ?>%; width: <?php echo esc_attr( (string) $apd_group_box_2['width'] ); ?>%; height: <?php echo esc_attr( (string) $apd_group_box_2['height'] ); ?>%;">
+				<span class="apd-text-box-sample" data-apd-extra-sample>000</span>
+				<span class="apd-text-box-handle" data-apd-extra-handle="nw"></span>
+				<span class="apd-text-box-handle" data-apd-extra-handle="ne"></span>
+				<span class="apd-text-box-handle" data-apd-extra-handle="sw"></span>
+				<span class="apd-text-box-handle" data-apd-extra-handle="se"></span>
+			</div>
+			<div class="apd-text-box" data-apd-extra-box="text_box_3" data-apd-extra-kind="text" data-apd-extra-index="2" hidden style="left: <?php echo esc_attr( (string) $apd_group_box_3['x'] ); ?>%; top: <?php echo esc_attr( (string) $apd_group_box_3['y'] ); ?>%; width: <?php echo esc_attr( (string) $apd_group_box_3['width'] ); ?>%; height: <?php echo esc_attr( (string) $apd_group_box_3['height'] ); ?>%;">
+				<span class="apd-text-box-sample" data-apd-extra-sample>AA</span>
+				<span class="apd-text-box-handle" data-apd-extra-handle="nw"></span>
+				<span class="apd-text-box-handle" data-apd-extra-handle="ne"></span>
+				<span class="apd-text-box-handle" data-apd-extra-handle="sw"></span>
+				<span class="apd-text-box-handle" data-apd-extra-handle="se"></span>
+			</div>
+			<div class="apd-text-box apd-date-box" data-apd-extra-box="fr_month" data-apd-extra-kind="date" hidden style="left: <?php echo esc_attr( (string) $apd_date_month['x'] ); ?>%; top: <?php echo esc_attr( (string) $apd_date_month['y'] ); ?>%; width: <?php echo esc_attr( (string) $apd_date_month['width'] ); ?>%; height: <?php echo esc_attr( (string) $apd_date_month['height'] ); ?>%;">
+				<span class="apd-text-box-sample" data-apd-extra-sample>05</span>
+				<span class="apd-text-box-handle" data-apd-extra-handle="nw"></span>
+				<span class="apd-text-box-handle" data-apd-extra-handle="ne"></span>
+				<span class="apd-text-box-handle" data-apd-extra-handle="sw"></span>
+				<span class="apd-text-box-handle" data-apd-extra-handle="se"></span>
+			</div>
+			<div class="apd-region-code-box" data-apd-extra-box="fr_region_code" hidden style="left: <?php echo esc_attr( (string) ( isset( $apd_fr_region_box['x'] ) ? $apd_fr_region_box['x'] : 92.3 ) ); ?>%; top: <?php echo esc_attr( (string) ( isset( $apd_fr_region_box['y'] ) ? $apd_fr_region_box['y'] : 60.4 ) ); ?>%; width: <?php echo esc_attr( (string) ( isset( $apd_fr_region_box['width'] ) ? $apd_fr_region_box['width'] : 7.7 ) ); ?>%; height: <?php echo esc_attr( (string) ( isset( $apd_fr_region_box['height'] ) ? $apd_fr_region_box['height'] : 21.9 ) ); ?>%;">
+				<span class="apd-text-box-sample"><?php echo esc_html( APD_Formats::FR_REGION_SAMPLE ); ?></span>
+			</div>
+			<div class="apd-text-box apd-date-box" data-apd-extra-box="fr_year" data-apd-extra-kind="date" hidden style="left: <?php echo esc_attr( (string) $apd_date_year['x'] ); ?>%; top: <?php echo esc_attr( (string) $apd_date_year['y'] ); ?>%; width: <?php echo esc_attr( (string) $apd_date_year['width'] ); ?>%; height: <?php echo esc_attr( (string) $apd_date_year['height'] ); ?>%;">
+				<span class="apd-text-box-sample" data-apd-extra-sample>26</span>
+				<span class="apd-text-box-handle" data-apd-extra-handle="nw"></span>
+				<span class="apd-text-box-handle" data-apd-extra-handle="ne"></span>
+				<span class="apd-text-box-handle" data-apd-extra-handle="sw"></span>
+				<span class="apd-text-box-handle" data-apd-extra-handle="se"></span>
+			</div>
+			<?php endif; ?>
 			<?php if ( $apd_split_ui ) : ?>
 			<div
 				class="apd-text-box"
@@ -310,6 +395,75 @@ if ( $apd_text_box_studio ) {
 		</span>
 	</label>
 </div>
+<?php if ( $apd_show_groups ) : ?>
+<p class="apd-metric-heading" data-apd-group-fields="text_box_2" hidden><?php esc_html_e( 'Second text area', 'auto-plate-designer' ); ?></p>
+<div class="apd-metric-grid apd-text-box-fields" data-apd-group-fields="text_box_2" hidden>
+	<?php foreach ( array( 'x' => __( 'X', 'auto-plate-designer' ), 'y' => __( 'Y', 'auto-plate-designer' ), 'width' => __( 'Width', 'auto-plate-designer' ), 'height' => __( 'Height', 'auto-plate-designer' ) ) as $apd_field => $apd_field_label ) : ?>
+		<label class="apd-metric"><?php echo esc_html( $apd_field_label ); ?>
+			<span class="apd-metric__control">
+				<input type="number" name="apd_format[text_box_2][<?php echo esc_attr( $apd_field ); ?>]" value="<?php echo esc_attr( (string) $apd_group_box_2[ $apd_field ] ); ?>" min="0" max="100" step="0.01" data-apd-extra-input="text_box_2" data-apd-extra-field="<?php echo esc_attr( $apd_field ); ?>" disabled>
+				<span class="apd-metric__unit">%</span>
+			</span>
+		</label>
+	<?php endforeach; ?>
+	<input type="hidden" name="apd_format[text_box_2][align]" value="<?php echo esc_attr( (string) $apd_group_box_2['align'] ); ?>" data-apd-extra-input="text_box_2" data-apd-extra-field="align" disabled>
+	<input type="hidden" name="apd_format[text_box_2][valign]" value="<?php echo esc_attr( (string) $apd_group_box_2['valign'] ); ?>" data-apd-extra-input="text_box_2" data-apd-extra-field="valign" disabled>
+</div>
+<p class="apd-metric-heading" data-apd-group-fields="text_box_3" hidden><?php esc_html_e( 'Third text area', 'auto-plate-designer' ); ?></p>
+<div class="apd-metric-grid apd-text-box-fields" data-apd-group-fields="text_box_3" hidden>
+	<?php foreach ( array( 'x' => __( 'X', 'auto-plate-designer' ), 'y' => __( 'Y', 'auto-plate-designer' ), 'width' => __( 'Width', 'auto-plate-designer' ), 'height' => __( 'Height', 'auto-plate-designer' ) ) as $apd_field => $apd_field_label ) : ?>
+		<label class="apd-metric"><?php echo esc_html( $apd_field_label ); ?>
+			<span class="apd-metric__control">
+				<input type="number" name="apd_format[text_box_3][<?php echo esc_attr( $apd_field ); ?>]" value="<?php echo esc_attr( (string) $apd_group_box_3[ $apd_field ] ); ?>" min="0" max="100" step="0.01" data-apd-extra-input="text_box_3" data-apd-extra-field="<?php echo esc_attr( $apd_field ); ?>" disabled>
+				<span class="apd-metric__unit">%</span>
+			</span>
+		</label>
+	<?php endforeach; ?>
+	<input type="hidden" name="apd_format[text_box_3][align]" value="<?php echo esc_attr( (string) $apd_group_box_3['align'] ); ?>" data-apd-extra-input="text_box_3" data-apd-extra-field="align" disabled>
+	<input type="hidden" name="apd_format[text_box_3][valign]" value="<?php echo esc_attr( (string) $apd_group_box_3['valign'] ); ?>" data-apd-extra-input="text_box_3" data-apd-extra-field="valign" disabled>
+</div>
+<p class="apd-metric-heading" data-apd-group-fields="at_region" hidden><?php esc_html_e( 'Region box', 'auto-plate-designer' ); ?></p>
+<div class="apd-metric-grid apd-text-box-fields" data-apd-group-fields="at_region" hidden>
+	<?php foreach ( array( 'x' => __( 'X', 'auto-plate-designer' ), 'y' => __( 'Y', 'auto-plate-designer' ), 'width' => __( 'Width', 'auto-plate-designer' ), 'height' => __( 'Height', 'auto-plate-designer' ) ) as $apd_field => $apd_field_label ) : ?>
+		<label class="apd-metric"><?php echo esc_html( $apd_field_label ); ?>
+			<span class="apd-metric__control">
+				<input type="number" name="apd_format[at_region][<?php echo esc_attr( $apd_field ); ?>]" value="<?php echo esc_attr( (string) $apd_region_box[ $apd_field ] ); ?>" min="0" max="100" step="0.01" data-apd-extra-input="at_region" data-apd-extra-field="<?php echo esc_attr( $apd_field ); ?>" disabled>
+				<span class="apd-metric__unit">%</span>
+			</span>
+		</label>
+	<?php endforeach; ?>
+</div>
+<p class="description" data-apd-group-fields="fr_month" hidden><?php esc_html_e( 'The month lines up with the top of the letters. The year lines up with the bottom. Drag a box to move it.', 'auto-plate-designer' ); ?></p>
+<?php foreach ( array( 'fr_month' => array( __( 'Month', 'auto-plate-designer' ), $apd_date_month ), 'fr_year' => array( __( 'Year', 'auto-plate-designer' ), $apd_date_year ) ) as $apd_date_key => $apd_date_pair ) : ?>
+<p class="apd-metric-heading" data-apd-group-fields="<?php echo esc_attr( $apd_date_key ); ?>" hidden><?php echo esc_html( $apd_date_pair[0] ); ?></p>
+<div class="apd-metric-grid apd-text-box-fields" data-apd-group-fields="<?php echo esc_attr( $apd_date_key ); ?>" hidden>
+	<?php foreach ( array( 'x' => __( 'X', 'auto-plate-designer' ), 'y' => __( 'Y', 'auto-plate-designer' ), 'width' => __( 'Width', 'auto-plate-designer' ), 'height' => __( 'Height', 'auto-plate-designer' ) ) as $apd_field => $apd_field_label ) : ?>
+		<label class="apd-metric"><?php echo esc_html( $apd_field_label ); ?>
+			<span class="apd-metric__control">
+				<input type="number" name="apd_format[<?php echo esc_attr( $apd_date_key ); ?>][<?php echo esc_attr( $apd_field ); ?>]" value="<?php echo esc_attr( (string) $apd_date_pair[1][ $apd_field ] ); ?>" min="0" max="100" step="0.01" data-apd-extra-input="<?php echo esc_attr( $apd_date_key ); ?>" data-apd-extra-field="<?php echo esc_attr( $apd_field ); ?>" disabled>
+				<span class="apd-metric__unit">%</span>
+			</span>
+		</label>
+	<?php endforeach; ?>
+	<input type="hidden" name="apd_format[<?php echo esc_attr( $apd_date_key ); ?>][align]" value="<?php echo esc_attr( (string) $apd_date_pair[1]['align'] ); ?>" data-apd-extra-input="<?php echo esc_attr( $apd_date_key ); ?>" data-apd-extra-field="align" disabled>
+	<input type="hidden" name="apd_format[<?php echo esc_attr( $apd_date_key ); ?>][valign]" value="<?php echo esc_attr( (string) $apd_date_pair[1]['valign'] ); ?>" data-apd-extra-input="<?php echo esc_attr( $apd_date_key ); ?>" data-apd-extra-field="valign" disabled>
+</div>
+<?php endforeach; ?>
+<p class="apd-metric-heading" data-apd-group-fields="slogan" <?php echo $apd_show_slogan ? '' : 'hidden'; ?>><?php esc_html_e( 'Slogan', 'auto-plate-designer' ); ?></p>
+<p class="description" data-apd-group-fields="slogan" <?php echo $apd_show_slogan ? '' : 'hidden'; ?>><?php esc_html_e( 'Drag the slogan box to place it on the frame.', 'auto-plate-designer' ); ?></p>
+<div class="apd-metric-grid apd-text-box-fields" data-apd-group-fields="slogan" <?php echo $apd_show_slogan ? '' : 'hidden'; ?>>
+	<?php foreach ( array( 'x' => __( 'X', 'auto-plate-designer' ), 'y' => __( 'Y', 'auto-plate-designer' ), 'width' => __( 'Width', 'auto-plate-designer' ), 'height' => __( 'Height', 'auto-plate-designer' ) ) as $apd_field => $apd_field_label ) : ?>
+		<label class="apd-metric"><?php echo esc_html( $apd_field_label ); ?>
+			<span class="apd-metric__control">
+				<input type="number" name="apd_format[slogan_box][<?php echo esc_attr( $apd_field ); ?>]" value="<?php echo esc_attr( (string) $apd_slogan_box[ $apd_field ] ); ?>" min="0" max="100" step="0.01" data-apd-extra-input="slogan" data-apd-extra-field="<?php echo esc_attr( $apd_field ); ?>" <?php disabled( ! $apd_show_slogan ); ?>>
+				<span class="apd-metric__unit">%</span>
+			</span>
+		</label>
+	<?php endforeach; ?>
+	<input type="hidden" name="apd_format[slogan_box][align]" value="<?php echo esc_attr( (string) $apd_slogan_box['align'] ); ?>" data-apd-extra-input="slogan" data-apd-extra-field="align" <?php disabled( ! $apd_show_slogan ); ?>>
+	<input type="hidden" name="apd_format[slogan_box][valign]" value="<?php echo esc_attr( (string) $apd_slogan_box['valign'] ); ?>" data-apd-extra-input="slogan" data-apd-extra-field="valign" <?php disabled( ! $apd_show_slogan ); ?>>
+</div>
+<?php endif; ?>
 <?php if ( $apd_split_ui ) : ?>
 <div class="apd-metric-grid apd-text-box-fields" data-apd-split-panel<?php echo $apd_split_on ? '' : ' hidden'; ?>>
 	<label class="apd-metric"><?php echo esc_html__( 'Right X', 'auto-plate-designer' ); ?>

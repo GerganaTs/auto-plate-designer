@@ -126,7 +126,19 @@ apd_assert( true === APD_Security::validate_format_type( 'moto_plain' ), 'Accept
 apd_assert( true === APD_Security::validate_format_type( 'moto_240' ), 'Accepts 240x130 motorcycle with a euroband' );
 apd_assert( true === APD_Security::validate_format_type( 'moto_plain_240' ), 'Accepts 240x130 motorcycle without a country band' );
 apd_assert( true === APD_Security::validate_format_type( 'suv' ), 'Accepts SUV format type' );
+apd_assert( true === APD_Security::validate_format_type( 'suv_340' ), 'Accepts wide SUV format type' );
 apd_assert( true === APD_Security::validate_format_type( 'suv_eu' ), 'Accepts EU SUV format type' );
+apd_assert( true === APD_Security::validate_format_type( 'suv_eu_340' ), 'Accepts wide EU SUV format type' );
+apd_assert( true === APD_Security::validate_format_type( 'eu_300' ), 'Accepts EU 300x150 format type' );
+apd_assert( true === APD_Security::validate_format_type( 'atyp_300' ), 'Accepts atypical 300x150 format type' );
+apd_assert( true === APD_Security::validate_format_type( 'fr' ), 'Accepts French plate type' );
+apd_assert( true === APD_Security::validate_format_type( 'fr_ww' ), 'Accepts French temporary plate type' );
+apd_assert( true === APD_Security::validate_format_type( 'fr_region' ), 'Accepts French region plate type' );
+apd_assert( true === APD_Security::validate_format_type( 'austria' ), 'Accepts Austrian plate type' );
+apd_assert( true === APD_Security::validate_format_type( 'uk' ), 'Accepts English plate with a country preset' );
+apd_assert( true === APD_Security::validate_format_type( 'uk_plain' ), 'Accepts English plate without a country preset' );
+apd_assert( true === APD_Security::validate_format_type( 'mini' ), 'Accepts mini plate with a country preset' );
+apd_assert( true === APD_Security::validate_format_type( 'mini_plain' ), 'Accepts mini plate without a country preset' );
 apd_assert( apd_is_error( APD_Security::validate_format_type( 'custom_52' ) ), 'Rejects removed 52x11 type' );
 apd_assert( apd_is_error( APD_Security::validate_format_type( 'pwn' ) ), 'Rejects unknown format type' );
 

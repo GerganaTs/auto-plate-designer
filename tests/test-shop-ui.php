@@ -439,6 +439,390 @@ foreach ( array( 'moto_240', 'moto_plain_240' ) as $wide_type ) {
 	}
 }
 
+$eu_300_format = APD_Formats::sanitize(
+	array(
+		'id'              => 'ui-eu-300',
+		'name'            => 'EU 300 UI',
+		'type'            => 'eu_300',
+		'max_chars_row_1' => 6,
+		'max_chars_row_2' => 5,
+	)
+);
+if ( is_wp_error( $eu_300_format ) ) {
+	fwrite( STDERR, 'SHOP_EU_300_FORMAT_ERR ' . $eu_300_format->get_error_message() . PHP_EOL );
+	exit( 1 );
+}
+$eu_300_ui = APD_Formats::frontend_payload( $eu_300_format );
+$eu_300_ui['fonts']   = array();
+$eu_300_ui['presets'] = array();
+$eu_300_ui['designs'] = array();
+$apd_payload = array(
+	'format'       => $eu_300_ui,
+	'palettes'     => $palettes,
+	'i18n'         => $i18n,
+	'color_fields' => array( 'text', 'border' ),
+	'layouts'      => array( 'text_only' ),
+	'minFont'      => 12,
+	'default_text' => "AB\n12",
+);
+unset( $apd_payload['cart_restore'] );
+ob_start();
+include APD_PLUGIN_DIR . 'templates/product-configurator.php';
+$eu_300_html = ob_get_clean();
+if (
+	empty( $eu_300_ui['capabilities']['two_row'] )
+	|| empty( $eu_300_ui['capabilities']['country_band'] )
+	|| 300 !== (int) $eu_300_ui['width']
+	|| 150 !== (int) $eu_300_ui['height']
+	|| false === strpos( $eu_300_html, '--apd-frame-w: 754px' )
+	|| false === strpos( $eu_300_html, 'aspect-ratio: 300 / 150' )
+	|| false === strpos( $eu_300_html, 'name="apd_text_row_1"' )
+	|| false === strpos( $eu_300_html, 'name="apd_text_row_2"' )
+	|| false === strpos( $eu_300_html, 'maxlength="6"' )
+	|| false === strpos( $eu_300_html, 'maxlength="5"' )
+	|| false !== strpos( $eu_300_html, 'id="apd_text" name="apd_text" value="AB 12"' )
+) {
+	fwrite( STDERR, "SHOP_EU_300_ROWS_FAIL\n" );
+	exit( 1 );
+}
+
+foreach ( array( 'fr', 'fr_ww', 'fr_region' ) as $fr_type ) {
+	$fr_format = APD_Formats::sanitize(
+		array(
+			'id'       => 'ui-' . $fr_type,
+			'name'     => 'fr' === $fr_type ? 'French standard' : 'French temporary',
+			'type'     => $fr_type,
+			'fr_max_1' => 2,
+			'fr_max_2' => 3,
+			'fr_max_3' => 2,
+		)
+	);
+	if ( is_wp_error( $fr_format ) ) {
+		fwrite( STDERR, 'SHOP_FR_FORMAT_ERR ' . $fr_format->get_error_message() . PHP_EOL );
+		exit( 1 );
+	}
+	$fr_ui = APD_Formats::frontend_payload( $fr_format );
+	$fr_ui['fonts']   = array(
+		array(
+			'id'     => 'oswald',
+			'family' => 'Oswald',
+			'weight' => 400,
+			'style'  => 'normal',
+		),
+		array(
+			'id'     => 'french',
+			'family' => 'French font',
+			'weight' => 400,
+			'style'  => 'normal',
+		),
+	);
+	$fr_ui['presets'] = array();
+	$fr_ui['designs'] = array();
+	$apd_payload = array(
+		'format'       => $fr_ui,
+		'palettes'     => $palettes,
+		'i18n'         => $i18n,
+		'color_fields' => array( 'text', 'border', 'background' ),
+		'layouts'      => array( 'text_only' ),
+		'minFont'      => 12,
+		'default_text' => '',
+	);
+	unset( $apd_payload['cart_restore'] );
+	ob_start();
+	include APD_PLUGIN_DIR . 'templates/product-configurator.php';
+	$fr_html = ob_get_clean();
+	$fr_temp = 'fr_ww' === $fr_type;
+	$fr_bad  = empty( $fr_ui['capabilities']['country_locked'] )
+		|| ! empty( $fr_ui['presets'] )
+		|| ! empty( $fr_ui['frame_choice'] )
+		|| 520 !== (int) $fr_ui['width']
+		|| 110 !== (int) $fr_ui['height']
+		|| false === strpos( $fr_html, '--apd-frame-w: 500px' )
+		|| false === strpos( $fr_html, 'aspect-ratio: 520 / 110' )
+		|| false === strpos( $fr_html, 'name="apd_fr_b"' )
+		|| false === strpos( $fr_html, 'name="apd_fr_c"' )
+		|| false === strpos( $fr_html, 'maxlength="3"' )
+		|| false === strpos( $fr_html, 'maxlength="2"' )
+		|| false === strpos( $fr_html, 'apd-round-plate' )
+		|| false === strpos( $fr_html, 'data-apd-fr="letters"' )
+		|| false === strpos( $fr_html, 'data-apd-fr="digits"' )
+		|| false !== strpos( $fr_html, 'data-apd-country-open' )
+		|| false !== strpos( $fr_html, 'name="apd_frame"' )
+		|| false !== strpos( $fr_html, 'class="apd-swatch"' )
+		|| false !== strpos( $fr_html, 'name="apd_text_row_1"' );
+	if ( $fr_temp ) {
+		$fr_bad = $fr_bad
+			|| false !== strpos( $fr_html, 'name="apd_fr_a"' )
+			|| ( false === strpos( $fr_html, 'WW stays on the plate.' ) && false === strpos( $fr_html, 'WW остава на табелата.' ) )
+			|| false === strpos( $fr_html, 'name="apd_fr_month"' )
+			|| false === strpos( $fr_html, 'name="apd_fr_year"' )
+			|| false === strpos( $fr_html, 'value="WW-000-AA"' )
+			|| false === strpos( $fr_html, 'value="05"' )
+			|| false === strpos( $fr_html, 'value="26"' );
+	} else {
+		$fr_bad = $fr_bad
+			|| false === strpos( $fr_html, 'name="apd_fr_a"' )
+			|| false !== strpos( $fr_html, 'name="apd_fr_month"' )
+			|| false === strpos( $fr_html, 'value="AA-000-AA"' );
+	}
+	if ( 'fr_region' === $fr_type ) {
+		$fr_bad = $fr_bad
+			|| false === strpos( $fr_html, 'name="apd_fr_region"' )
+			|| false === strpos( $fr_html, 'value="95"' )
+			|| empty( $fr_ui['fr_region_box']['height'] )
+			|| abs( (float) $fr_ui['fr_region_box']['y'] - 60.4 ) > 0.2
+			|| abs( ( (float) $fr_ui['fr_region_box']['y'] + (float) $fr_ui['fr_region_box']['height'] ) - 82.3 ) > 0.3;
+	} else {
+		$fr_bad = $fr_bad || false !== strpos( $fr_html, 'name="apd_fr_region"' ) || isset( $fr_ui['fr_region_box'] );
+	}
+	if ( $fr_bad ) {
+		fwrite( STDERR, "SHOP_FR_FIELDS_FAIL {$fr_type}\n" );
+		exit( 1 );
+	}
+}
+
+$uk_ids = APD_Color_Palettes::DEFAULT_PALETTE_IDS;
+$uk_format = APD_Formats::sanitize(
+	array(
+		'id'            => 'ui-uk',
+		'name'          => 'English plate',
+		'type'          => 'uk',
+		'slogan_max'    => 24,
+		'palette_slots' => array(
+			'text'       => $uk_ids['text'],
+			'background' => $uk_ids['background'],
+			'border'     => $uk_ids['border'],
+			'slogan'     => $uk_ids['slogan'],
+		),
+	)
+);
+$mini_format = APD_Formats::sanitize(
+	array(
+		'id'   => 'ui-mini',
+		'name' => 'Mini plate',
+		'type' => 'mini',
+	)
+);
+if ( is_wp_error( $uk_format ) || is_wp_error( $mini_format ) ) {
+	fwrite( STDERR, 'SHOP_UK_FORMAT_ERR ' . ( is_wp_error( $uk_format ) ? $uk_format->get_error_message() : $mini_format->get_error_message() ) . PHP_EOL );
+	exit( 1 );
+}
+$uk_ui = APD_Formats::frontend_payload( $uk_format );
+$uk_ui['fonts']   = array();
+$uk_ui['presets'] = array(
+	array(
+		'id'           => 'preset-f',
+		'name'         => 'France',
+		'country_code' => 'F',
+		'image_url'    => '',
+		'side'         => 'left',
+		'band_ratio'   => 0.08,
+	),
+);
+$uk_ui['designs'] = array();
+$apd_payload = array(
+	'format'       => $uk_ui,
+	'palettes'     => array(
+		'text'       => array( array( 'hex' => '#000000', 'label' => 'Black' ) ),
+		'background' => array( array( 'hex' => '#FFFFFF', 'label' => 'White' ), array( 'hex' => '#F5D90A', 'label' => 'Yellow' ) ),
+		'border'     => array( array( 'hex' => '#111111', 'label' => 'Frame' ) ),
+		'slogan'     => array( array( 'hex' => '#000000', 'label' => 'Slogan ink' ) ),
+	),
+	'i18n'         => array_merge(
+		$i18n,
+		array(
+			'sloganLabel' => 'Slogan',
+			'sloganColor' => 'Slogan color',
+		)
+	),
+	'color_fields' => array( 'text', 'border', 'background', 'slogan' ),
+	'layouts'      => array( 'text_only' ),
+	'minFont'      => 12,
+	'default_text'   => '',
+	'default_slogan' => 'Your slogan here',
+);
+unset( $apd_payload['cart_restore'] );
+ob_start();
+include APD_PLUGIN_DIR . 'templates/product-configurator.php';
+$uk_html = ob_get_clean();
+$mini_ui = APD_Formats::frontend_payload( $mini_format );
+$mini_ui['fonts']   = array();
+$mini_ui['presets'] = $uk_ui['presets'];
+$mini_ui['designs'] = array();
+$apd_payload['format']       = $mini_ui;
+$apd_payload['color_fields'] = array();
+$apd_payload['palettes']     = array();
+ob_start();
+include APD_PLUGIN_DIR . 'templates/product-configurator.php';
+$mini_html = ob_get_clean();
+$shop_js_uk = file_get_contents( APD_PLUGIN_DIR . 'assets/js/configurator.js' );
+if (
+	is_wp_error( $uk_format )
+	|| 520 !== (int) $uk_ui['width']
+	|| 110 !== (int) $uk_ui['height']
+	|| 24 !== (int) $uk_ui['slogan_max']
+	|| empty( $uk_ui['slogan_box']['width'] )
+	|| isset( $mini_ui['slogan_box'] )
+	|| empty( $uk_ui['capabilities']['country_band'] )
+	|| ! empty( $uk_ui['capabilities']['country_locked'] )
+	|| false === strpos( $uk_html, 'name="apd_text"' )
+	|| false === strpos( $uk_html, 'value="LKOO FDN"' )
+	|| false === strpos( $uk_html, 'name="apd_slogan"' )
+	|| false === strpos( $uk_html, 'value="Your slogan here"' )
+	|| false === strpos( $uk_html, 'maxlength="24"' )
+	|| false === strpos( $uk_html, 'name="apd_slogan_color"' )
+	|| false === strpos( $uk_html, 'name="apd_background_color"' )
+	|| false === strpos( $uk_html, 'name="apd_border_color"' )
+	|| false === strpos( $uk_html, 'apd-round-plate' )
+	|| false !== strpos( $uk_html, 'name="apd_frame"' )
+	|| false === strpos( $shop_js_uk, 'function drawEnglishPlate' )
+	|| false === strpos( $shop_js_uk, 'cfg.format.slogan_box' )
+	|| false === strpos( $shop_js_uk, 'function strokeEnglishRim' )
+	|| false === strpos( $uk_html, 'apd-english-plate' )
+	|| false !== strpos( $mini_html, 'apd-english-plate' )
+	|| false === strpos( $shop_js_uk, 'function drawMiniPlate' )
+	|| 340 !== (int) $mini_ui['width']
+	|| 90 !== (int) $mini_ui['height']
+	|| false === strpos( $mini_html, 'value="GUNTHER"' )
+	|| false !== strpos( $mini_html, 'name="apd_slogan"' )
+	|| false !== strpos( $mini_html, 'name="apd_frame"' )
+	|| empty( $mini_ui['capabilities']['country_band'] )
+) {
+	fwrite( STDERR, "SHOP_UK_MINI_FAIL\n" );
+	exit( 1 );
+}
+
+echo 'SHOP_UK_MINI_OK' . PHP_EOL;
+
+if (
+	false === strpos( $shop_js_uk, 'function drawLegalRegistration' )
+	|| false === strpos( $shop_js_uk, 'var LEGAL_CAR = { height: 79, width: 50, narrow: 14, gap: 11, group: 50 }' )
+	|| false === strpos( $shop_js_uk, 'var LEGAL_MOTO = { height: 64, width: 44, narrow: 10, gap: 10, group: 44 }' )
+	|| false === strpos( $shop_js_uk, 'drawLegalRegistration(ctx, text, font' )
+	|| false === strpos( $shop_js_uk, 'function standardFrenchGroupBoxes' )
+	|| false === strpos( $shop_js_uk, "format.type === 'fr_region' && boxes.length >= groups.length" )
+	|| false === strpos( $shop_js_uk, 'fitted.scaleX = frenchGroupSqueeze' )
+) {
+	fwrite( STDERR, "SHOP_STRETCH_FAIL\n" );
+	exit( 1 );
+}
+
+echo 'SHOP_STRETCH_OK' . PHP_EOL;
+
+$at_format = APD_Formats::sanitize(
+	array(
+		'id'       => 'ui-austria',
+		'name'     => 'Austrian plate',
+		'type'     => 'austria',
+		'at_max_1' => 2,
+		'at_max_2' => 6,
+	)
+);
+if ( is_wp_error( $at_format ) ) {
+	fwrite( STDERR, 'SHOP_AT_FORMAT_ERR ' . $at_format->get_error_message() . PHP_EOL );
+	exit( 1 );
+}
+$at_ui = APD_Formats::frontend_payload( $at_format );
+$at_ui['fonts']   = array();
+$at_ui['presets'] = array(
+	array(
+		'id'           => 'preset-a',
+		'name'         => 'Austria',
+		'country_code' => 'A',
+		'image_url'    => 'http://localhost/plate-designer/a.png',
+		'side'         => 'left',
+		'band_ratio'   => 0.077,
+	),
+);
+$at_ui['designs'] = array();
+$apd_payload = array(
+	'format'       => $at_ui,
+	'palettes'     => $palettes,
+	'i18n'         => $i18n,
+	'color_fields' => array( 'text', 'border', 'background' ),
+	'layouts'      => array( 'text_only' ),
+	'minFont'      => 12,
+	'default_text' => '',
+);
+unset( $apd_payload['cart_restore'] );
+ob_start();
+include APD_PLUGIN_DIR . 'templates/product-configurator.php';
+$at_html = ob_get_clean();
+if (
+	empty( $at_ui['capabilities']['country_locked'] )
+	|| empty( $at_ui['band_box']['width'] )
+	|| false === strpos( $at_html, 'name="apd_at_left"' )
+	|| false === strpos( $at_html, 'name="apd_at_right"' )
+	|| false === strpos( $at_html, 'value="WE"' )
+	|| false === strpos( $at_html, 'value="000 CF"' )
+	|| false === strpos( $at_html, 'maxlength="2"' )
+	|| false === strpos( $at_html, 'maxlength="6"' )
+	|| false === strpos( $at_html, 'data-apd-at="letters"' )
+	|| false === strpos( $at_html, 'data-apd-at="mixed"' )
+	|| ( false === strpos( $at_html, 'The gray rectangle will be replaced with the region image.' ) && false === strpos( $at_html, 'Сивият правоъгълник ще бъде заменен със снимката на региона.' ) )
+	|| false !== strpos( $at_html, 'data-apd-country-open' )
+	|| false !== strpos( $at_html, 'name="apd_frame"' )
+	|| false !== strpos( $at_html, 'class="apd-swatch"' )
+	|| false === strpos( $at_html, '--apd-frame-w: 500px' )
+	|| false === strpos( $at_html, 'aspect-ratio: 520 / 110' )
+	|| false === strpos( $at_html, 'apd-round-plate' )
+) {
+	fwrite( STDERR, "SHOP_AT_FIELDS_FAIL\n" );
+	exit( 1 );
+}
+
+foreach ( array( '1' => false, '2' => true ) as $atyp_rows => $expects_two ) {
+	$atyp_format = APD_Formats::sanitize(
+		array(
+			'id'              => 'ui-atyp-' . $atyp_rows,
+			'name'            => 'Atypical ' . $atyp_rows,
+			'type'            => 'atyp_300',
+			'text_rows'       => (string) $atyp_rows,
+			'max_chars'       => 9,
+			'max_chars_row_1' => 7,
+			'max_chars_row_2' => 3,
+		)
+	);
+	if ( is_wp_error( $atyp_format ) ) {
+		fwrite( STDERR, 'SHOP_ATYP_FORMAT_ERR ' . $atyp_format->get_error_message() . PHP_EOL );
+		exit( 1 );
+	}
+	$atyp_ui = APD_Formats::frontend_payload( $atyp_format );
+	$atyp_ui['fonts']   = array();
+	$atyp_ui['presets'] = array();
+	$atyp_ui['designs'] = array();
+	$apd_payload = array(
+		'format'       => $atyp_ui,
+		'palettes'     => $palettes,
+		'i18n'         => $i18n,
+		'color_fields' => array( 'text', 'border', 'background' ),
+		'layouts'      => array( 'text_only' ),
+		'minFont'      => 12,
+		'default_text' => $expects_two ? "CTX\n123" : 'CTX 123',
+	);
+	unset( $apd_payload['cart_restore'] );
+	ob_start();
+	include APD_PLUGIN_DIR . 'templates/product-configurator.php';
+	$atyp_html = ob_get_clean();
+	$has_rows  = false !== strpos( $atyp_html, 'name="apd_text_row_1"' ) && false !== strpos( $atyp_html, 'name="apd_text_row_2"' );
+	$has_one   = false !== strpos( $atyp_html, 'type="text" class="input-text" id="apd_text"' );
+	if (
+		$expects_two !== ! empty( $atyp_ui['capabilities']['two_row'] )
+		|| ! empty( $atyp_ui['capabilities']['country_band'] )
+		|| 300 !== (int) $atyp_ui['width']
+		|| 150 !== (int) $atyp_ui['height']
+		|| false === strpos( $atyp_html, '--apd-frame-w: 754px' )
+		|| false === strpos( $atyp_html, 'aspect-ratio: 300 / 150' )
+		|| $expects_two !== $has_rows
+		|| $expects_two === $has_one
+		|| ( $expects_two && ( false === strpos( $atyp_html, 'maxlength="7"' ) || false === strpos( $atyp_html, 'maxlength="3"' ) ) )
+		|| ( ! $expects_two && false === strpos( $atyp_html, 'maxlength="9"' ) )
+	) {
+		fwrite( STDERR, "SHOP_ATYP_300_ROWS_FAIL {$atyp_rows}\n" );
+		exit( 1 );
+	}
+}
+
 if ( empty( $suv_ui['allow_empty'] ) || empty( $moto_ui['allow_empty'] ) || empty( $us_ui['allow_empty'] ) || empty( $plain_ui['allow_empty'] ) ) {
 	fwrite( STDERR, "SHOP_EMPTY_TEXT_TYPES_FAIL\n" );
 	exit( 1 );
@@ -594,6 +978,36 @@ if ( false === strpos( $label_html, '>Oswald — кирилица<' ) || false =
 }
 
 echo "SHOP_FONT_LABEL_OK\n";
+
+if (
+	false === strpos( $shop_css, 'table.variations th' )
+	|| false === strpos( $shop_css, 'table.variations td' )
+	|| false === strpos( $shop_css, 'table.variations label' )
+	|| false === strpos( $shop_css, 'table.variations select' )
+) {
+	fwrite( STDERR, "SHOP_VARIATION_LABEL_FAIL\n" );
+	exit( 1 );
+}
+
+echo "SHOP_VARIATION_LABEL_OK\n";
+
+$admin_studio = file_get_contents( APD_PLUGIN_DIR . 'assets/js/admin-settings.js' );
+if ( false === strpos( $shop_js, 'var TWO_ROW_GAP_MM = 8' ) || false === strpos( $shop_js, 'ink + TWO_ROW_GAP_MM' ) || false === strpos( $shop_js, 'function justifySpread' ) || false === strpos( $shop_js, "chars[index] === ' '" ) || false === strpos( $shop_js, 'function drawFrenchPlate' ) || false === strpos( $shop_js, 'function paintFlippedRegionBand' ) || false === strpos( $shop_js, 'function drawAustriaPlate' ) || false === strpos( $shop_js, 'fitted.size * 0.22' ) || false === strpos( $shop_js, 'w - inset' ) || false === strpos( $shop_js, 'anchorTop + face.ascent' ) || false === strpos( $shop_js, 'anchorBottom - face.descent' ) || false === strpos( $shop_js, 'function drawBoxedFrenchGroups' ) || false === strpos( $shop_js, 'function drawAustriaBoxText' ) || false === strpos( $shop_js, 'country_locked' ) || false === strpos( $admin_studio, 'data-apd-gap' ) || false === strpos( $admin_studio, "type === 'eu_300' || type === 'atyp_300'" ) || false === strpos( $admin_studio, 'data-apd-max-fr' ) || false === strpos( $admin_studio, '#F19DC4' ) ) {
+	fwrite( STDERR, "SHOP_TWO_ROW_GAP_FAIL\n" );
+	exit( 1 );
+}
+
+echo "SHOP_TWO_ROW_GAP_OK\n";
+
+$region_fn_start = strpos( $shop_js, 'function paintFlippedRegionBand' );
+$region_fn_end   = strpos( $shop_js, 'function drawRegionDigits' );
+$region_fn       = ( false !== $region_fn_start && $region_fn_end > $region_fn_start ) ? substr( $shop_js, $region_fn_start, $region_fn_end - $region_fn_start ) : '';
+if ( '' === $region_fn || false !== strpos( $region_fn, 'drawImageCover' ) || false !== strpos( $region_fn, 'scale(-1' ) ) {
+	fwrite( STDERR, "SHOP_REGION_STARS_FAIL\n" );
+	exit( 1 );
+}
+
+echo "SHOP_REGION_BAND_OK\n";
 
 $usa_fonts = array(
 	array(
