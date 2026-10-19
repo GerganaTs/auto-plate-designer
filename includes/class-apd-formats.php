@@ -198,7 +198,7 @@ final class APD_Formats {
 	public const ADMIN_SAMPLE_PAINTED = 'CA 1234';
 
 	/**
-	 * Default strip length for holders. The Limits tab can raise or lower it.
+	 * Shop fallback for a holder format whose own character field is still empty.
 	 */
 	public const HOLDER_TEXT_MAX = 100;
 
@@ -210,6 +210,26 @@ final class APD_Formats {
 	public const SUV_ROW_1_MAX = 5;
 
 	public const SUV_ROW_2_MAX = 4;
+
+	/**
+	 * Embossed Latin letters on one row, including the space in a standard plate.
+	 */
+	public const EMBOSSED_LINE = 9;
+
+	/**
+	 * Embossed first row: two letters, a space, two letters.
+	 */
+	public const EMBOSSED_ROW_1 = 5;
+
+	/**
+	 * Embossed second row: four digits.
+	 */
+	public const EMBOSSED_ROW_2 = 4;
+
+	/**
+	 * Optional note on a configured plate.
+	 */
+	public const COMMENT_MAX = 400;
 
 	/**
 	 * Default character caps for a USA plate split around a center graphic.
@@ -795,6 +815,23 @@ final class APD_Formats {
 			$row['max_chars']       = min( APD_Security::ABSOLUTE_MAX_CHARS, $side_left + $side_right );
 		}
 
+		if ( self::letters_follow_count( $type ) ) {
+			$two_rows = self::uses_two_rows( $type ) || ( self::is_atypical_300( $type ) && 2 === (int) $text_rows );
+
+			if ( $two_rows ) {
+				$row['embossed_row_1'] = self::int_in_range( isset( $raw['embossed_row_1'] ) ? $raw['embossed_row_1'] : self::EMBOSSED_ROW_1, 1, APD_Security::ABSOLUTE_MAX_CHARS, self::EMBOSSED_ROW_1 );
+				$row['embossed_row_2'] = self::int_in_range( isset( $raw['embossed_row_2'] ) ? $raw['embossed_row_2'] : self::EMBOSSED_ROW_2, 1, APD_Security::ABSOLUTE_MAX_CHARS, self::EMBOSSED_ROW_2 );
+			} else {
+				$row['embossed_chars'] = self::int_in_range( isset( $raw['embossed_chars'] ) ? $raw['embossed_chars'] : self::EMBOSSED_LINE, 1, APD_Security::ABSOLUTE_MAX_CHARS, self::EMBOSSED_LINE );
+			}
+		}
+
+		if ( self::offers_digital_palette( $type ) ) {
+			$digital_id = isset( $raw['digital_palette_id'] ) ? sanitize_text_field( (string) $raw['digital_palette_id'] ) : '';
+			$digital    = '' !== $digital_id ? APD_Color_Palettes::get( $digital_id ) : null;
+			$row['digital_palette_id'] = ( is_array( $digital ) && ! empty( $digital['active'] ) ) ? $digital_id : '';
+		}
+
 		$palette_ids = APD_Color_Palettes::sanitize_product_ids( isset( $raw['palette_ids'] ) ? $raw['palette_ids'] : array(), $type );
 
 		if ( self::uses_palette_slots( $type ) && isset( $raw['palette_slots'] ) ) {
@@ -1196,6 +1233,186 @@ final class APD_Formats {
 	}
 
 	/**
+	 * Bulgarian registration plates whose Latin letters stay embossed up to a count.
+	 *
+	 * @param string $type Format type.
+	 * @return bool
+	 */
+	public static function is_registration_plate( $type ) {
+		return in_array(
+			(string) $type,
+			array(
+				'eu',
+				'eu_plain',
+				'moto',
+				'moto_240',
+				'moto_plain',
+				'moto_plain_240',
+				'suv',
+				'suv_340',
+				'suv_eu',
+				'suv_eu_340',
+				'eu_300',
+				'atyp_300',
+			),
+			true
+		);
+	}
+
+	/**
+	 * Latin letters are embossed until the format count, then flat.
+	 *
+	 * @param string $type Format type.
+	 * @return bool
+	 */
+	public static function letters_follow_count( $type ) {
+		return self::is_registration_plate( $type ) || self::is_mini( $type );
+	}
+
+	/**
+	 * How this type decides embossed or digital letters.
+	 *
+	 * @param string $type Format type.
+	 * @return string count|digital|empty
+	 */
+	public static function letter_rule( $type ) {
+		if ( 'color' === (string) $type ) {
+			return 'digital';
+		}
+
+		if ( self::letters_follow_count( $type ) ) {
+			return 'count';
+		}
+
+		return '';
+	}
+
+	/**
+	 * The product can offer Latin, Cyrillic, or both.
+	 *
+	 * @param string $type Format type.
+	 * @return bool
+	 */
+	public static function offers_script( $type ) {
+		return self::is_registration_plate( $type ) || 'color' === (string) $type || self::is_mini( $type );
+	}
+
+	/**
+	 * One palette paints digital letters and the frame together.
+	 *
+	 * @param string $type Format type.
+	 * @return bool
+	 */
+	public static function offers_digital_palette( $type ) {
+		return self::is_registration_plate( $type );
+	}
+
+	/**
+	 * Shoppers can leave the frame embossed and uncolored.
+	 *
+	 * @param string $type Format type.
+	 * @return bool
+	 */
+	public static function offers_uncolored_frame( $type ) {
+		return self::is_registration_plate( $type ) || 'color' === (string) $type;
+	}
+
+	/**
+	 * Standard embossed length. One-row plates use the first number.
+	 *
+	 * Two-row plates use both. A missing saved value stays at the Bulgarian standard.
+	 *
+	 * @param array<string, mixed> $format Format row.
+	 * @return array{0: int, 1: int}
+	 */
+	public static function embossed_limits( $format ) {
+		if ( ! is_array( $format ) || ! self::letters_follow_count( isset( $format['type'] ) ? (string) $format['type'] : '' ) ) {
+			return array( 0, 0 );
+		}
+
+		$ceiling = APD_Security::ABSOLUTE_MAX_CHARS;
+
+		if ( self::format_uses_two_rows( $format ) ) {
+			$row1 = isset( $format['embossed_row_1'] ) ? (int) $format['embossed_row_1'] : 0;
+			$row2 = isset( $format['embossed_row_2'] ) ? (int) $format['embossed_row_2'] : 0;
+
+			if ( $row1 < 1 ) {
+				$row1 = self::EMBOSSED_ROW_1;
+			}
+
+			if ( $row2 < 1 ) {
+				$row2 = self::EMBOSSED_ROW_2;
+			}
+
+			return array( min( $ceiling, $row1 ), min( $ceiling, $row2 ) );
+		}
+
+		$chars = isset( $format['embossed_chars'] ) ? (int) $format['embossed_chars'] : 0;
+
+		if ( $chars < 1 ) {
+			$chars = self::EMBOSSED_LINE;
+		}
+
+		return array( min( $ceiling, $chars ), 0 );
+	}
+
+	/**
+	 * Typing caps suggested for a new two-row format.
+	 *
+	 * Saved formats keep the numbers already stored on them.
+	 *
+	 * @param string $type Format type.
+	 * @return array{0: int, 1: int}
+	 */
+	public static function typing_row_defaults( $type ) {
+		if ( in_array( (string) $type, array( 'moto', 'moto_plain' ), true ) ) {
+			return array( 7, 5 );
+		}
+
+		return array( 8, 6 );
+	}
+
+	/**
+	 * Whether these letters are produced digitally.
+	 *
+	 * @param array<string, mixed> $format Format row.
+	 * @param string               $script latin|cyrillic|empty.
+	 * @param string               $text   Plate text.
+	 * @return bool
+	 */
+	public static function letters_are_digital( $format, $script, $text ) {
+		$type = is_array( $format ) && isset( $format['type'] ) ? (string) $format['type'] : '';
+		$rule = self::letter_rule( $type );
+
+		if ( 'digital' === $rule ) {
+			return true;
+		}
+
+		if ( 'count' !== $rule ) {
+			return false;
+		}
+
+		if ( 'cyrillic' === $script ) {
+			return true;
+		}
+
+		$limits = self::embossed_limits( $format );
+		$text   = str_replace( array( "\r\n", "\r" ), "\n", (string) $text );
+		$length = static function ( $value ) {
+			return function_exists( 'mb_strlen' ) ? mb_strlen( (string) $value, 'UTF-8' ) : strlen( (string) $value );
+		};
+
+		if ( self::format_uses_two_rows( $format ) ) {
+			$parts = explode( "\n", $text, 2 );
+			$second = isset( $parts[1] ) ? $parts[1] : '';
+
+			return $length( $parts[0] ) > $limits[0] || $length( $second ) > $limits[1];
+		}
+
+		return $length( str_replace( "\n", '', $text ) ) > $limits[0];
+	}
+
+	/**
 	 * SUV family covers both widths, with and without a country preset.
 	 *
 	 * @param string $type Format type.
@@ -1330,26 +1547,12 @@ final class APD_Formats {
 	}
 
 	/**
-	 * Character cap for the holder strip, from Limits → Per-layout limits.
+	 * Character cap used until a holder format stores its own maximum.
 	 *
 	 * @return int
 	 */
 	public static function holder_text_limit() {
-		$settings = APD_Plugin::get_settings();
-		$row      = isset( $settings['limits']['layouts']['holder'] ) && is_array( $settings['limits']['layouts']['holder'] )
-			? $settings['limits']['layouts']['holder']
-			: array();
-		$chars    = isset( $row['max_chars'] ) ? (int) $row['max_chars'] : self::HOLDER_TEXT_MAX;
-
-		if ( $chars < 1 ) {
-			$chars = self::HOLDER_TEXT_MAX;
-		}
-
-		if ( $chars > APD_Security::ABSOLUTE_MAX_CHARS ) {
-			$chars = APD_Security::ABSOLUTE_MAX_CHARS;
-		}
-
-		return $chars;
+		return self::HOLDER_TEXT_MAX;
 	}
 
 	/**
@@ -1359,17 +1562,14 @@ final class APD_Formats {
 	 */
 	public static function wrap_line_limit() {
 		$settings = APD_Plugin::get_settings();
-		$row      = isset( $settings['limits']['layouts']['multiline_text'] ) && is_array( $settings['limits']['layouts']['multiline_text'] )
-			? $settings['limits']['layouts']['multiline_text']
-			: array();
-		$lines    = isset( $row['max_lines'] ) ? (int) $row['max_lines'] : 5;
+		$lines    = isset( $settings['limits']['wrap_lines'] ) ? (int) $settings['limits']['wrap_lines'] : 5;
 
 		if ( $lines < 1 ) {
 			$lines = 1;
 		}
 
-		if ( $lines > 20 ) {
-			$lines = 20;
+		if ( $lines > 5 ) {
+			$lines = 5;
 		}
 
 		return $lines;
@@ -4105,6 +4305,28 @@ final class APD_Formats {
 			$side_max   = self::us_side_limits( $format );
 		}
 
+		$embossed_limits = self::embossed_limits( $format );
+		$digital_colors  = array();
+
+		if ( self::offers_digital_palette( $type ) && ! empty( $format['digital_palette_id'] ) ) {
+			$digital_palette = APD_Color_Palettes::get( (string) $format['digital_palette_id'] );
+
+			if ( is_array( $digital_palette ) ) {
+				foreach ( APD_Color_Palettes::palette_colors( $digital_palette ) as $digital_color ) {
+					$digital_hex = isset( $digital_color['hex'] ) ? (string) $digital_color['hex'] : '';
+
+					if ( '' === $digital_hex ) {
+						continue;
+					}
+
+					$digital_colors[] = array(
+						'hex'   => $digital_hex,
+						'label' => isset( $digital_color['label'] ) ? (string) $digital_color['label'] : '',
+					);
+				}
+			}
+		}
+
 		$no_frame = self::uses_painted_plate( $type ) && ! empty( $format['no_frame'] );
 		$band_box = array();
 
@@ -4152,6 +4374,10 @@ final class APD_Formats {
 			'multiline'        => self::is_street_plate( $type ),
 			'wrap_text'        => self::is_street_plate( $type ) && ! empty( $format['wrap_text'] ),
 			'max_lines'        => self::wrap_line_limit(),
+			'letter_rule'      => self::letter_rule( $type ),
+			'embossed_chars'   => $embossed_limits[0],
+			'embossed_rows'    => $embossed_limits,
+			'digital_colors'   => $digital_colors,
 		);
 
 		if ( self::is_french( $type ) ) {

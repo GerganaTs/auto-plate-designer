@@ -13,6 +13,7 @@
 	var bandHit = null;
 	var imageCache = {};
 	var previewChromeTop = null;
+	var previewStageFrame = 0;
 
 	function ready(fn) {
 		if (document.readyState === 'loading') {
@@ -245,11 +246,19 @@
 		}));
 	}
 
-	function scheduleDraw(root, cache) {
+	function scheduleDraw(root, cache, keepStage) {
 		var font = currentFont(root);
 		ensureFontLoaded(font).then(function () {
-			draw(root, cache);
+			draw(root, cache, keepStage);
 		});
+	}
+
+	function offersCountryPicker() {
+		var presets = (cfg.format && cfg.format.presets) || [];
+		if (presets.length < 2) {
+			return false;
+		}
+		return !(cfg.format && cfg.format.capabilities && cfg.format.capabilities.country_locked);
 	}
 
 	function currentPreset() {
@@ -308,7 +317,187 @@
 		return document.querySelector('.apd-canvas');
 	}
 
+	function currentScript() {
+		var picked = document.querySelector('[data-apd-script]:checked') || document.querySelector('[name="apd_script"]');
+		return picked && picked.value ? picked.value : 'latin';
+	}
+
+	function currentPlateText() {
+		var input = document.querySelector('[name="apd_text"]');
+		return input ? input.value : '';
+	}
+
+	function letterMode(text) {
+		var rule = cfg.format && cfg.format.letter_rule ? cfg.format.letter_rule : '';
+		if (rule === 'digital') {
+			return 'digital';
+		}
+		if (rule !== 'count') {
+			return '';
+		}
+		if (currentScript() === 'cyrillic') {
+			return 'digital';
+		}
+		var rows = String(text || '').replace(/\r\n/g, '\n').replace(/\r/g, '\n').split('\n');
+		var limits = cfg.format.embossed_rows || [];
+		if (limits.length >= 2 && limits[1] > 0 && rows.length >= 2) {
+			if (Array.from(rows[0] || '').length > limits[0] || Array.from(rows[1] || '').length > limits[1]) {
+				return 'digital';
+			}
+			return 'embossed';
+		}
+		var flat = Array.from(String(text || '').replace(/[\r\n]/g, ''));
+		return flat.length > (cfg.format.embossed_chars || 9) ? 'digital' : 'embossed';
+	}
+
+	function scriptRejected(text) {
+		if (!cfg.format || !cfg.format.letter_rule || !cfg.scripts || !cfg.scripts.length) {
+			return false;
+		}
+		var value = String(text || '').replace(/[\r\n]/g, '');
+		if (!value) {
+			return false;
+		}
+		if (currentScript() === 'cyrillic') {
+			return /[A-Za-z\u00C0-\u024F]/.test(value);
+		}
+		return /[\u0400-\u04FF]/.test(value);
+	}
+
+	function scriptPlateText(text) {
+		text = String(text || '');
+		if (!scriptRejected(text)) {
+			return text;
+		}
+		if (currentScript() === 'cyrillic') {
+			return text.replace(/[A-Za-z\u00C0-\u024F]/g, '');
+		}
+		return text.replace(/[\u0400-\u04FF]/g, '');
+	}
+
+	function stripWrongScript(input) {
+		if (!input || input.type === 'hidden' || !cfg.format || !cfg.format.letter_rule || !cfg.scripts || !cfg.scripts.length) {
+			return false;
+		}
+		var value = String(input.value || '');
+		var pattern = currentScript() === 'cyrillic' ? /[A-Za-z\u00C0-\u024F]/g : /[\u0400-\u04FF]/g;
+		var next = value.replace(pattern, '');
+		if (next === value) {
+			return false;
+		}
+		var start = typeof input.selectionStart === 'number' ? input.selectionStart : next.length;
+		var kept = value.slice(0, start).replace(pattern, '').length;
+		input.value = next;
+		if (typeof input.setSelectionRange === 'function') {
+			input.setSelectionRange(kept, kept);
+		}
+		return true;
+	}
+
+	function keepsPreviewStage(node) {
+		if (!node) {
+			return false;
+		}
+		if (node.closest && node.closest('[data-apd-swatch]')) {
+			return true;
+		}
+		return node.type === 'checkbox';
+	}
+
+	function syncFonts() {
+		var select = document.querySelector('#apd_font_id');
+		if (!select) {
+			return;
+		}
+		var script = currentScript();
+		var first = null;
+		Array.prototype.forEach.call(select.options, function (option) {
+			var allow = option.getAttribute('data-apd-font-for');
+			var show = !allow || allow.split(/\s+/).indexOf(script) !== -1;
+			option.hidden = !show;
+			option.disabled = !show;
+			if (show && !first) {
+				first = option;
+			}
+		});
+		if (select.selectedOptions && select.selectedOptions[0] && select.selectedOptions[0].disabled && first) {
+			select.value = first.value;
+		}
+	}
+
+	function syncLetterChrome() {
+		var text = currentPlateText();
+		var mode = letterMode(text);
+		var rule = cfg.format && cfg.format.letter_rule ? cfg.format.letter_rule : '';
+		var shared = rule === 'count' && mode === 'digital';
+		var digital = document.querySelector('[data-apd-digital-colors]');
+		var textColors = document.querySelector('[data-apd-text-colors]');
+		var plain = document.querySelector('[data-apd-frame-plain]');
+		var plainWrap = plain ? plain.closest('[data-apd-plain-frame]') : null;
+		var colors = document.querySelector('[data-apd-frame-colors]');
+		var box = document.querySelector('[data-apd-frame]');
+		var note = document.querySelector('[data-apd-production]');
+		var error = document.querySelector('[data-apd-script-error]');
+		var bad = scriptRejected(text) || scriptWarning;
+		var root = document.querySelector('[data-apd-root]');
+		var submit = root && root.closest('form') ? root.closest('form').querySelector('[type="submit"]') : null;
+		if (digital) {
+			digital.hidden = true;
+		}
+		if (textColors) {
+			textColors.hidden = false;
+			var legend = textColors.querySelector('legend');
+			if (legend) {
+				if (!legend.hasAttribute('data-apd-label')) {
+					legend.setAttribute('data-apd-label', legend.textContent);
+				}
+				legend.textContent = shared && cfg.i18n && cfg.i18n.inkFrameColor ? cfg.i18n.inkFrameColor : legend.getAttribute('data-apd-label');
+			}
+		}
+		if (plainWrap) {
+			var allowPlain = rule === 'digital' || mode === 'embossed' || currentScript() === 'cyrillic';
+			plainWrap.hidden = !allowPlain;
+			if (!allowPlain && plain) {
+				plain.checked = false;
+			}
+		}
+		if (colors) {
+			if (box) {
+				colors.hidden = !box.checked;
+			} else if (shared) {
+				colors.hidden = true;
+			} else if (plain) {
+				colors.hidden = !!plain.checked;
+			}
+		}
+		if (note) {
+			var message = '';
+			var mini = cfg.format && (cfg.format.type === 'mini' || cfg.format.type === 'mini_plain');
+			var digitalLetters = rule === 'digital' || (rule === 'count' && mode === 'digital');
+			if (digitalLetters && mini) {
+				message = (cfg.i18n && cfg.i18n.miniDigital) || '';
+			} else if (digitalLetters && currentScript() === 'cyrillic') {
+				message = (cfg.i18n && cfg.i18n.cyrillicNotice) || '';
+			} else if (digitalLetters) {
+				message = (cfg.i18n && cfg.i18n.digitalNotice) || '';
+			}
+			note.hidden = !message;
+			note.textContent = message;
+		}
+		if (error) {
+			error.hidden = !bad;
+			error.textContent = bad ? ((currentScript() === 'cyrillic' ? (cfg.i18n && cfg.i18n.cyrillicOnly) : (cfg.i18n && cfg.i18n.latinOnly)) || '') : '';
+		}
+		if (submit && !submit.getAttribute('data-apd-posting')) {
+			submit.disabled = bad;
+		}
+		syncFonts();
+	}
+
 	function wantsNoFrame() {
+		if (document.querySelector('[data-apd-legacy-no-frame]')) {
+			return true;
+		}
 		if (!cfg.format || cfg.format.frame_choice === false || isHolderFamily(cfg.format.type) || cfg.format.type === 'us') {
 			return true;
 		}
@@ -320,12 +509,7 @@
 	}
 
 	function syncFrameColors() {
-		var box = document.querySelector('[data-apd-frame]');
-		var colors = document.querySelector('[data-apd-frame-colors]');
-		if (!colors) {
-			return;
-		}
-		colors.hidden = !box || !box.checked;
+		syncLetterChrome();
 	}
 
 	var TEXT_FRAME_GAP_MM = 8;
@@ -347,14 +531,28 @@
 		return thick + TEXT_FRAME_GAP_MM;
 	}
 
+	function plateCornerRadius(h) {
+		return Math.min(10, h * 0.12);
+	}
+
 	function paintAdminFrame(ctx, w, h) {
 		var border = frameThickness();
 		if (border <= 0) {
 			return;
 		}
-		var radius = Math.min(w, h) * 0.08;
+		var radius = plateCornerRadius(h);
 		ctx.lineWidth = border;
-		ctx.strokeStyle = colorValue('apd_border_color');
+		var stroke = colorValue('apd_border_color');
+		var rule = cfg.format && cfg.format.letter_rule ? cfg.format.letter_rule : '';
+		var mode = letterMode(currentPlateText());
+		var plain = document.querySelector('[data-apd-frame-plain]');
+		var plainWrap = plain ? plain.closest('[data-apd-plain-frame]') : null;
+		if (plain && plain.checked && plainWrap && !plainWrap.hidden) {
+			stroke = colorValue('apd_background_color');
+		} else if (rule === 'count' && mode === 'digital') {
+			stroke = colorValue('apd_text_color');
+		}
+		ctx.strokeStyle = stroke;
 		roundRect(ctx, border / 2, border / 2, w - border, h - border, radius);
 		ctx.stroke();
 	}
@@ -409,18 +607,14 @@
 		img.style.top = (band.y / h * 100) + '%';
 		img.style.width = (band.width / w * 100) + '%';
 		img.style.height = (band.height / h * 100) + '%';
-		var thick = frameThickness();
-		var radius = Math.max(0, Math.min(w, h) * 0.08 - thick);
 		var frameEl = canvas.parentElement;
 		var scale = frameEl && frameEl.clientHeight ? frameEl.clientHeight / h : 1;
-		var rpx = radius * scale;
+		var rpx = plateCornerRadius(h) * scale;
 		var left = band.side !== 'right';
-		var touchTop = band.y <= thick + 0.5;
-		var touchBottom = (band.y + band.height) >= (h - thick - 0.5);
-		img.style.borderTopLeftRadius = (left && touchTop) ? rpx + 'px' : '0';
-		img.style.borderBottomLeftRadius = (left && touchBottom) ? rpx + 'px' : '0';
-		img.style.borderTopRightRadius = (!left && touchTop) ? rpx + 'px' : '0';
-		img.style.borderBottomRightRadius = (!left && touchBottom) ? rpx + 'px' : '0';
+		img.style.borderTopLeftRadius = left ? rpx + 'px' : '0';
+		img.style.borderBottomLeftRadius = left ? rpx + 'px' : '0';
+		img.style.borderTopRightRadius = left ? '0' : rpx + 'px';
+		img.style.borderBottomRightRadius = left ? '0' : rpx + 'px';
 	}
 
 	function hoistPreview(root) {
@@ -474,12 +668,35 @@
 	}
 
 	function desktopPreview() {
-		return window.matchMedia('(min-width: 960px)').matches;
+		return window.matchMedia('(min-width: 768px)').matches;
+	}
+
+	function headerClearance() {
+		var chrome = 0;
+		var bars = document.querySelectorAll('#wpadminbar, #masthead, header.site-header, .kadence-sticky-header');
+		for (var i = 0; i < bars.length; i++) {
+			var rect = bars[i].getBoundingClientRect();
+			if (rect.height < 24 || rect.width < window.innerWidth * 0.5 || rect.top > 80 || rect.bottom < 24) {
+				continue;
+			}
+			chrome = Math.max(chrome, Math.round(rect.bottom));
+		}
+		return Math.min(chrome > 0 ? chrome + 12 : 12, 200);
+	}
+
+	var previewStageUntil = 0;
+	var scriptWarning = false;
+
+	function holdPreviewStage() {
+		previewStageUntil = Date.now() + 800;
 	}
 
 	function measurePreviewStage() {
 		var preview = document.querySelector('.apd-product-layout__preview');
 		if (!preview) {
+			return;
+		}
+		if (previewStageUntil && Date.now() < previewStageUntil) {
 			return;
 		}
 		if (!desktopPreview()) {
@@ -488,12 +705,31 @@
 			previewChromeTop = null;
 			return;
 		}
-		var top = Math.max(0, Math.round(preview.getBoundingClientRect().top));
-		if (previewChromeTop == null || top > previewChromeTop) {
-			previewChromeTop = top;
+		var chrome = headerClearance();
+		var layout = preview.parentElement;
+		var details = layout ? layout.querySelector('.apd-product-layout__details') : null;
+		var anchorTop = layout ? layout.getBoundingClientRect().top : 0;
+		var limitBottom = details ? details.getBoundingClientRect().bottom : window.innerHeight;
+		var visibleTop = Math.max(anchorTop, chrome);
+		var visibleBottom = Math.min(window.innerHeight - 12, limitBottom);
+		var height = Math.round(visibleBottom - visibleTop);
+		previewChromeTop = chrome;
+		preview.style.setProperty('--apd-chrome-top', chrome + 'px');
+		if (height < 180) {
+			preview.style.removeProperty('--apd-stage-h');
+		} else {
+			preview.style.setProperty('--apd-stage-h', height + 'px');
 		}
-		preview.style.setProperty('--apd-chrome-top', previewChromeTop + 'px');
-		preview.style.setProperty('--apd-stage-h', Math.max(220, window.innerHeight - previewChromeTop - 24) + 'px');
+	}
+
+	function schedulePreviewStage() {
+		if (previewStageFrame) {
+			return;
+		}
+		previewStageFrame = window.requestAnimationFrame(function () {
+			previewStageFrame = 0;
+			measurePreviewStage();
+		});
 	}
 
 	function paintCountryThumb(root, band) {
@@ -574,12 +810,16 @@
 		}
 		var cap = measureInk(ctx, 'H', size).ascent;
 		var laidDescent = 0;
+		var crown = 0;
+		var tail = 0;
 		var normalized = false;
 		width = 0;
 		for (i = 0; i < lines.length; i += 1) {
 			var laid = lineSpan(ctx, lines[i] || 'H', cap);
 			width = Math.max(width, laid.width);
 			laidDescent = Math.max(laidDescent, laid.descent);
+			crown = Math.max(crown, laid.crown || 0);
+			tail = Math.max(tail, laid.tail || 0);
 			if (laid.normalized) {
 				normalized = true;
 			}
@@ -587,15 +827,48 @@
 		if (cap > 0 && (normalized || ascent > cap * 1.04)) {
 			ascent = cap;
 		}
-		if (laidDescent > 0) {
+		if (laidDescent > 0 || tail > 0) {
 			descent = laidDescent;
 		}
 		return {
 			ascent: ascent,
 			descent: descent,
 			width: width,
-			height: ascent + descent + Math.max(0, lines.length - 1) * size
+			height: ascent + descent + Math.max(0, lines.length - 1) * size,
+			crown: crown,
+			tail: tail
 		};
+	}
+
+	function cyrillicPlate() {
+		return currentScript() === 'cyrillic';
+	}
+
+	function cyrillicTailLetter(ch) {
+		return ch === '\u0426' || ch === '\u0429' || ch === '\u0414' || ch === '\u0446' || ch === '\u0449' || ch === '\u0434';
+	}
+
+	function cyrillicCrownLetter(ch) {
+		return ch === '\u0419' || ch === '\u0439' || ch === '\u0401' || ch === '\u0451';
+	}
+
+	function cyrillicEdge(box) {
+		var plateH = box && box.plateH ? box.plateH : 0;
+		if (!box || !(plateH > 0)) {
+			return { top: 0, bottom: 0 };
+		}
+		var pad = frameThickness() + 2;
+		return {
+			top: Math.max(0, box.y - pad),
+			bottom: Math.max(0, plateH - (box.y + box.height) - pad)
+		};
+	}
+
+	function cyrillicRoomFits(body, maxHeight, crown, tail, edge) {
+		var slack = maxHeight - body;
+		var roomTop = (edge && edge.top ? edge.top : 0) + Math.max(0, slack) / 2;
+		var roomBottom = (edge && edge.bottom ? edge.bottom : 0) + Math.max(0, slack) / 2;
+		return (crown || 0) <= roomTop + 0.5 && (tail || 0) <= roomBottom + 0.5;
 	}
 
 	function glyphInkScale(ascent, cap) {
@@ -617,17 +890,28 @@
 		var spans = [];
 		var width = 0;
 		var descent = 0;
+		var crown = 0;
+		var tail = 0;
 		var normalized = false;
 		var i;
 		var measured;
 		var scale;
 		var down;
+		var plate = cyrillicPlate();
 		for (i = 0; i < chars.length; i += 1) {
 			measured = ctx.measureText(chars[i]);
-			scale = glyphInkScale(measured.actualBoundingBoxAscent, cap);
+			var marked = plate && cyrillicCrownLetter(chars[i]);
+			scale = marked ? 1 : glyphInkScale(measured.actualBoundingBoxAscent, cap);
 			down = measured.actualBoundingBoxDescent;
 			if (!isFinite(down) || down < 0) {
 				down = 0;
+			}
+			if (plate && cyrillicTailLetter(chars[i])) {
+				tail = Math.max(tail, down * scale);
+				down = 0;
+			}
+			if (marked && cap > 0 && isFinite(measured.actualBoundingBoxAscent) && measured.actualBoundingBoxAscent > cap) {
+				crown = Math.max(crown, (measured.actualBoundingBoxAscent - cap) * scale);
 			}
 			if (Math.abs(scale - 1) > 0.001) {
 				normalized = true;
@@ -644,7 +928,9 @@
 			spans: spans,
 			width: width,
 			descent: descent,
-			normalized: normalized
+			normalized: normalized,
+			crown: crown,
+			tail: tail
 		};
 	}
 
@@ -763,7 +1049,7 @@
 		return out.length ? out : [''];
 	}
 
-	function fitText(ctx, text, family, weight, style, maxWidth, maxHeight, minSize) {
+	function fitText(ctx, text, family, weight, style, maxWidth, maxHeight, minSize, edge) {
 		text = plateGlyphs(ctx, text, family, weight, style);
 		var sourceLines = String(text).split('\n');
 		var lines = sourceLines;
@@ -779,7 +1065,7 @@
 			face = faceMetrics(ctx, size);
 			var extra = Math.max(0, lines.length - 1) * size;
 			var blockH = lines.length === 1 ? (ink.ascent + ink.descent) : (face.ascent + extra + face.descent);
-			if (ink.width <= maxWidth && blockH <= maxHeight) {
+			if (ink.width <= maxWidth && blockH <= maxHeight && cyrillicRoomFits(blockH, maxHeight, ink.crown, ink.tail, edge)) {
 				return { font: font, size: size, lines: lines, face: face, ink: ink };
 			}
 			size -= 1;
@@ -864,7 +1150,8 @@
 			align: box.align === 'left' || box.align === 'right' ? box.align : 'center',
 			valign: box.valign === 'top' || box.valign === 'bottom' ? box.valign : 'middle',
 			letter_align: usesTwoRows(format && format.type) ? rowAlignValue(box.letter_align) : '',
-			number_align: usesTwoRows(format && format.type) ? rowAlignValue(box.number_align) : ''
+			number_align: usesTwoRows(format && format.type) ? rowAlignValue(box.number_align) : '',
+			plateH: h
 		};
 		return clampBoxInsideFrame(resolved, w, h);
 	}
@@ -982,14 +1269,14 @@
 			top = box.y + box.height - blockH;
 		}
 		var baseline = top + ink.ascent;
-		var i;
+			var i;
 		var j;
 		var line;
 		var chars;
 		var ch;
 		var x;
 		var lineW;
-		for (i = 0; i < lines.length; i += 1) {
+			for (i = 0; i < lines.length; i += 1) {
 			line = lines[i] || '';
 			var laid = lineSpan(ctx, line, cap);
 			chars = laid.chars;
@@ -1084,10 +1371,21 @@
 		return Math.max(0, fit.ink.ascent) + Math.max(0, fit.ink.descent);
 	}
 
+	function stackedGap(fitL, fitN) {
+		var gap = TWO_ROW_GAP_MM;
+		if (fitL && fitN && fitL.ink && fitN.ink) {
+			var need = (fitL.ink.tail || 0) + (fitN.ink.crown || 0);
+			if (need > gap) {
+				gap = need;
+			}
+		}
+		return gap;
+	}
+
 	function lineBlockHeight(fitL, fitN) {
 		var ink = rowInkHeight(fitL) + rowInkHeight(fitN);
 		if (fitL && fitN) {
-			return ink + TWO_ROW_GAP_MM;
+			return ink + TWO_ROW_GAP_MM + Math.max(0, stackedGap(fitL, fitN) - TWO_ROW_GAP_MM);
 		}
 		return ink;
 	}
@@ -1095,7 +1393,7 @@
 	function drawConfiguredText(ctx, text, font, box, color, minSize, band) {
 		resetCanvasSpacing(ctx);
 		if (!box || !box.letter_align) {
-			var fitted = fitText(ctx, text, font.family, font.weight, font.style, box.width, box.height, minSize);
+			var fitted = fitText(ctx, text, font.family, font.weight, font.style, box.width, box.height, minSize, cyrillicEdge(box));
 			drawTextInBox(ctx, fitted, box, color);
 			return;
 		}
@@ -1136,7 +1434,10 @@
 			fitL = parts.letters ? fittedAtSize(ctx, parts.letters, font.family, font.weight, font.style, size) : null;
 			fitN = parts.numbers ? fittedAtSize(ctx, parts.numbers, font.family, font.weight, font.style, size) : null;
 			var widthOk = (!fitL || fitL.ink.width <= letterWidth) && (!fitN || fitN.ink.width <= box.width);
-			if (widthOk && lineBlockHeight(fitL, fitN) <= box.height + 0.5) {
+			var blockH = lineBlockHeight(fitL, fitN);
+			var rowCrown = fitL && fitL.ink ? (fitL.ink.crown || 0) : (fitN && fitN.ink ? (fitN.ink.crown || 0) : 0);
+			var rowTail = fitN && fitN.ink ? (fitN.ink.tail || 0) : (fitL && fitL.ink ? (fitL.ink.tail || 0) : 0);
+			if (widthOk && blockH <= box.height + 0.5 && cyrillicRoomFits(blockH, box.height, rowCrown, rowTail, cyrillicEdge(box))) {
 				break;
 			}
 			size -= 1;
@@ -1164,7 +1465,7 @@
 			}, color);
 			cursor += letterInk;
 			if (fitN) {
-				cursor += TWO_ROW_GAP_MM;
+				cursor += stackedGap(fitL, fitN);
 			}
 		}
 		if (fitN) {
@@ -1493,6 +1794,7 @@
 			ctx.save();
 			roundRect(ctx, 0, 0, w, h, radius);
 			ctx.clip();
+			clipCountryBand(ctx, band, h);
 			ctx.fillStyle = '#003399';
 			ctx.fillRect(band.x, band.y, band.width, band.height);
 			if (img) {
@@ -1521,9 +1823,11 @@
 			height: leftBand.height
 		};
 		var radius = Math.min(10, h * 0.12);
+		band.side = 'right';
 		ctx.save();
 		roundRect(ctx, 0, 0, w, h, radius);
 		ctx.clip();
+		clipCountryBand(ctx, band, h);
 		ctx.fillStyle = '#003399';
 		ctx.fillRect(band.x, band.y, band.width, band.height);
 		ctx.restore();
@@ -2077,6 +2381,7 @@
 		ctx.save();
 		roundRect(ctx, 0, 0, w, h, radius);
 		ctx.clip();
+		clipCountryBand(ctx, band, h);
 		ctx.fillStyle = '#003399';
 		ctx.fillRect(band.x, band.y, band.width, band.height);
 		if (img) {
@@ -2110,15 +2415,79 @@
 		return /[0-9A-Za-z\u0400-\u04FF]/.test(ch);
 	}
 
-	function fontSizeForInk(ctx, font, target) {
+	function glyphInk(measured) {
+		var left = measured.actualBoundingBoxLeft;
+		var right = measured.actualBoundingBoxRight;
+		var ink = (isFinite(left) ? left : 0) + (isFinite(right) ? right : 0);
+		if (!(ink > 0.5)) {
+			ink = measured.width > 0 ? measured.width : 1;
+			left = 0;
+			right = ink;
+		}
+		return {
+			left: isFinite(left) ? left : 0,
+			right: isFinite(right) ? right : ink,
+			ink: ink
+		};
+	}
+
+	function registrationFace(ctx, chars) {
+		var ascent = 0;
+		var descent = 0;
+		var crown = 0;
+		var tail = 0;
+		var seen = false;
+		var plate = cyrillicPlate();
+		var cap = 0;
+		var i;
+		if (plate) {
+			var capInk = ctx.measureText('H');
+			cap = isFinite(capInk.actualBoundingBoxAscent) ? capInk.actualBoundingBoxAscent : 0;
+		}
+		for (i = 0; i < chars.length; i += 1) {
+			if (chars[i] === ' ') {
+				continue;
+			}
+			var measured = ctx.measureText(chars[i]);
+			var up = measured.actualBoundingBoxAscent;
+			var down = measured.actualBoundingBoxDescent;
+			if (plate && cyrillicCrownLetter(chars[i]) && cap > 0 && isFinite(up) && up > cap) {
+				crown = Math.max(crown, up - cap);
+				up = cap;
+			}
+			if (plate && cyrillicTailLetter(chars[i]) && isFinite(down) && down > 0) {
+				tail = Math.max(tail, down);
+				down = 0;
+			}
+			if (isFinite(up) && up > ascent) {
+				ascent = up;
+			}
+			if (isFinite(down) && down > descent) {
+				descent = down;
+			}
+			seen = true;
+		}
+		if (!seen || !(ascent > 0)) {
+			return measureInk(ctx, 'H', 0);
+		}
+		return {
+			ascent: ascent,
+			descent: descent,
+			crown: crown,
+			tail: tail
+		};
+	}
+
+	function fontSizeForInk(ctx, font, target, chars) {
 		var family = font && font.family ? font.family : 'sans-serif';
 		var weight = font && font.weight ? font.weight : 400;
 		var style = font && font.style ? font.style : 'normal';
 		var size = Math.max(8, Math.round(target));
+		var sample = chars && chars.length ? chars : ['H'];
 		var step;
 		for (step = 0; step < 6; step += 1) {
 			ctx.font = frenchFont(style, weight, size, family);
-			var ink = measureInk(ctx, 'H', size);
+			var ink = registrationFace(ctx, sample);
 			var height = ink.ascent + ink.descent;
 			if (!(height > 0)) {
 				return size;
@@ -2126,7 +2495,7 @@
 			var next = Math.max(8, Math.round(size * target / height));
 			if (Math.abs(next - size) <= 1) {
 				ctx.font = frenchFont(style, weight, next, family);
-				var check = measureInk(ctx, 'H', next);
+				var check = registrationFace(ctx, sample);
 				if (check.ascent + check.descent > target + 0.6) {
 					return Math.max(8, next - 1);
 				}
@@ -2141,15 +2510,23 @@
 		var family = font && font.family ? font.family : 'sans-serif';
 		var weight = font && font.weight ? font.weight : 400;
 		var style = font && font.style ? font.style : 'normal';
-		var size = fontSizeForInk(ctx, font, target);
+		var size = fontSizeForInk(ctx, font, target, chars);
 		ctx.font = frenchFont(style, weight, size, family);
-		var face = measureInk(ctx, 'H', size);
+		var face = registrationFace(ctx, chars);
 		var inkH = face.ascent + face.descent;
 		var ratio = law.height > 0 ? inkH / law.height : 1;
 		var full = law.width * ratio;
 		var narrow = law.narrow * ratio;
 		var gap = law.gap * ratio;
 		var group = law.group * ratio;
+		// Same horizontal scale as a normal figure. A proportional "1" or "I"
+		// stays at that scale when it is wider than the legal stroke, so the
+		// stem is not crushed into the stroke width.
+		var uniform = full;
+		var ref = glyphInk(ctx.measureText('0'));
+		if (ref.ink > 0.5) {
+			uniform = full / ref.ink;
+		}
 		var glyphs = [];
 		var total = 0;
 		var i;
@@ -2160,25 +2537,22 @@
 				total += group;
 				continue;
 			}
-			var measured = ctx.measureText(ch);
-			var left = measured.actualBoundingBoxLeft;
-			var right = measured.actualBoundingBoxRight;
-			var ink = (isFinite(left) ? left : 0) + (isFinite(right) ? right : 0);
-			if (!(ink > 0.5)) {
-				ink = measured.width > 0 ? measured.width : 1;
-				left = 0;
-				right = ink;
-			}
+			var bounds = glyphInk(ctx.measureText(ch));
+			var ink = bounds.ink;
 			var cell = ink;
 			if (legalPlateGlyph(ch)) {
-				cell = legalNarrowGlyph(ch) ? narrow : full;
+				if (legalNarrowGlyph(ch)) {
+					var natural = ink * uniform;
+					cell = natural > narrow ? natural : narrow;
+				} else {
+					cell = full;
+				}
 			}
-			var center = ((isFinite(right) ? right : ink) - (isFinite(left) ? left : 0)) / 2;
 			glyphs.push({
 				ch: ch,
 				sx: ink > 0 ? cell / ink : 1,
 				adv: cell,
-				center: center
+				center: (bounds.right - bounds.left) / 2
 			});
 			total += cell;
 			if (chars[i + 1] && chars[i + 1] !== ' ') {
@@ -2192,6 +2566,21 @@
 			face: face,
 			font: ctx.font
 		};
+	}
+
+	function legalBodyFits(inner, laid) {
+		var face = laid && laid.face ? laid.face : null;
+		if (!face) {
+			return true;
+		}
+		var crown = face.crown || 0;
+		var tail = face.tail || 0;
+		if (!(crown > 0) && !(tail > 0)) {
+			return true;
+		}
+		var body = face.ascent + face.descent;
+		var top = inner.y + (inner.height - body) / 2;
+		return top - crown >= inner.y - 0.5 && top + body + tail <= inner.y + inner.height + 0.5;
 	}
 
 	function drawLegalRegistration(ctx, text, font, box, color, law, minSize) {
@@ -2209,16 +2598,31 @@
 			return;
 		}
 		resetCanvasSpacing(ctx);
-		var target = Math.min(law.height, box.height);
+		// Keep the stroke inside the clearance box. The plate clips to that
+		// box, and a glyph sized from "H" alone was sliced at the top and bottom.
+		var pad = Math.min(box.width, box.height) * 0.02;
+		var inner = {
+			x: box.x + pad,
+			y: box.y + pad,
+			width: Math.max(1, box.width - pad * 2),
+			height: Math.max(1, box.height - pad * 2)
+		};
+		var target = Math.min(law.height, inner.height);
 		if (!(target > 1)) {
 			target = Math.max(minSize || 8, 8);
 		}
 		var laid = layoutLegalLine(ctx, chars, font, law, target);
 		var guard = 0;
-		while (laid.total > box.width + 0.5 && laid.total > 0 && guard < 3) {
-			target = Math.max(1, target * (box.width / laid.total));
+		while (laid.total > inner.width + 0.5 && laid.total > 0 && guard < 3) {
+			target = Math.max(1, target * (inner.width / laid.total));
 			laid = layoutLegalLine(ctx, chars, font, law, target);
 			guard += 1;
+		}
+		var overflowGuard = 0;
+		while (!legalBodyFits(inner, laid) && overflowGuard < 8) {
+			target = Math.max(1, target * 0.94);
+			laid = layoutLegalLine(ctx, chars, font, law, target);
+			overflowGuard += 1;
 		}
 		ctx.save();
 		ctx.fillStyle = color;
@@ -2226,8 +2630,8 @@
 		ctx.textAlign = 'left';
 		ctx.textBaseline = 'alphabetic';
 		var inkH = laid.face.ascent + laid.face.descent;
-		var baseline = box.y + (box.height - inkH) / 2 + laid.face.ascent;
-		var x = box.x + Math.max(0, (box.width - laid.total) / 2);
+		var baseline = inner.y + (inner.height - inkH) / 2 + laid.face.ascent;
+		var x = inner.x + Math.max(0, (inner.width - laid.total) / 2);
 		var g;
 		for (g = 0; g < laid.glyphs.length; g += 1) {
 			var item = laid.glyphs[g];
@@ -2346,8 +2750,8 @@
 		var slogan = sloganInput ? String(sloganInput.value || '') : '';
 		var bandOnLeft = !!(rawBand && rawBand.width > 0 && rawBand.side !== 'right');
 		var bandOnRight = !!(rawBand && rawBand.width > 0 && rawBand.side === 'right');
-		var left = bandOnLeft ? (rawBand.x + rawBand.width + line / 2) : inset;
-		var right = bandOnRight ? (rawBand.x - line / 2) : (w - inset);
+		var left = bandOnLeft ? (rawBand.x + rawBand.width + inset) : inset;
+		var right = bandOnRight ? (rawBand.x - inset) : (w - inset);
 		var top = inset;
 		var innerW = Math.max(8, right - left);
 		var sloganSize = 11;
@@ -2382,7 +2786,7 @@
 			gapRight,
 			colorValue('apd_border_color'),
 			line,
-			bandOnLeft ? 'left' : (bandOnRight ? 'right' : '')
+			''
 		);
 		var textPad = 2.5;
 		var textLeft = left + line / 2 + textPad;
@@ -2392,13 +2796,24 @@
 		var textBottom = lineY - line / 2 - sloganClear;
 		var textInput = root.querySelector('[name="apd_text"]');
 		var text = textInput ? textInput.value : '';
-		if (text) {
-			drawLegalRegistration(ctx, text, font, {
+		var registration = (cfg.format && cfg.format.text_box && Number(cfg.format.text_box.width) > 0 && Number(cfg.format.text_box.height) > 0)
+			? percentBoxes([cfg.format.text_box], w, h)[0]
+			: null;
+		if (!registration || !(registration.width > 0) || !(registration.height > 0)) {
+			registration = {
 				x: textLeft,
 				y: textTop,
 				width: Math.max(8, textRight - textLeft),
 				height: Math.max(8, textBottom - textTop)
-			}, colorValue('apd_text_color'), LEGAL_CAR, minSize);
+			};
+		}
+		if (text) {
+			ctx.save();
+			ctx.beginPath();
+			ctx.rect(registration.x, registration.y, registration.width, registration.height);
+			ctx.clip();
+			drawLegalRegistration(ctx, text, font, registration, colorValue('apd_text_color'), LEGAL_CAR, minSize);
+			ctx.restore();
 		}
 		if (slogan) {
 			ctx.save();
@@ -2432,8 +2847,8 @@
 		ctx.stroke();
 		ctx.restore();
 		var textInput = root.querySelector('[name="apd_text"]');
-		var text = textInput ? textInput.value : '';
-		if (!text) {
+		var text = scriptPlateText(textInput ? textInput.value : '');
+		if (!text.replace(/[\s\r\n]/g, '')) {
 			return;
 		}
 		var left = rawBand ? rawBand.x + rawBand.width + 8 : 8;
@@ -2446,11 +2861,13 @@
 		}, '#000000', LEGAL_MOTO, minSize);
 	}
 
-	function draw(root, cache) {
+	function draw(root, cache, keepStage) {
 		if (cache && cache.images) {
 			imageCache = cache.images;
 		}
-		measurePreviewStage();
+		if (!keepStage) {
+			measurePreviewStage();
+		}
 		var canvas = getCanvas();
 		if (!canvas) {
 			return;
@@ -2465,6 +2882,8 @@
 		var text = textInput ? textInput.value : '';
 		if (plainHolderOn(root)) {
 			text = '';
+		} else {
+			text = scriptPlateText(text);
 		}
 		var font = currentFont(root);
 		var minSize = cfg.minFont || 12;
@@ -2510,7 +2929,7 @@
 					paintHolderBody(ctx, canvas, img, w, h, colorValue('apd_holder_color'));
 				} else if (type === 'us') {
 					drawPlateArtwork(ctx, img, 0, 0, w, h);
-				} else {
+			} else {
 					drawImageContained(ctx, img, 0, 0, w, h);
 				}
 			}
@@ -2554,7 +2973,7 @@
 			return;
 		}
 
-		var radius = Math.min(w, h) * 0.08;
+		var radius = plateCornerRadius(h);
 		var border = wantsNoFrame() ? 0 : ((cfg.format && cfg.format.border_width) || 8);
 		var preset = usesCountryBand(type) ? currentPreset() : null;
 		var rawBand = usesCountryBand(type) ? resolveBand(format, preset, w, h) : null;
@@ -2585,15 +3004,19 @@
 					align: 'center',
 					valign: 'middle',
 					letter_align: usesTwoRows(type) ? 'justify' : '',
-					number_align: usesTwoRows(type) ? 'justify' : ''
+					number_align: usesTwoRows(type) ? 'justify' : '',
+					plateH: h
 				}, w, h);
 			}
-			drawConfiguredText(ctx, text, font, euBox, colorValue('apd_text_color'), minSize, band);
+			var ink = colorValue('apd_text_color');
+			drawConfiguredText(ctx, text, font, euBox, ink, minSize, band);
 		}
 		ctx.restore();
 
 		paintAdminFrame(ctx, w, h);
 		if (band && !bandUrl && preset && preset.country_code) {
+			ctx.save();
+			clipCountryBand(ctx, band, h);
 			ctx.fillStyle = '#003399';
 			ctx.fillRect(band.x, band.y, band.width, band.height);
 			ctx.fillStyle = '#ffffff';
@@ -2601,6 +3024,9 @@
 			ctx.textBaseline = 'middle';
 			ctx.font = '700 ' + Math.round(band.height * 0.22) + 'px sans-serif';
 			ctx.fillText(preset.country_code, band.x + band.width / 2, band.y + band.height * 0.72);
+			ctx.textAlign = 'left';
+			ctx.textBaseline = 'alphabetic';
+			ctx.restore();
 		}
 		placeBandLayer(canvas, band, bandUrl, w, h);
 		paintCountryThumb(root, band);
@@ -2836,6 +3262,25 @@
 		ctx.drawImage(img, (sw - cw) / 2, (sh - ch) / 2, cw, ch, dx, dy, dw, dh);
 	}
 
+	function clipCountryBand(ctx, band, plateH) {
+		if (!band || !(band.width > 0) || !(band.height > 0)) {
+			return;
+		}
+		var radius = plateCornerRadius(plateH);
+		var left = band.side !== 'right';
+		clipRoundedBox(
+			ctx,
+			band.x,
+			band.y,
+			band.width,
+			band.height,
+			left ? radius : 0,
+			left ? 0 : radius,
+			left ? 0 : radius,
+			left ? radius : 0
+		);
+	}
+
 	function clipRoundedBox(ctx, x, y, w, h, tl, tr, br, bl) {
 		var limit = Math.min(w, h) / 2;
 		tl = Math.max(0, Math.min(limit, tl));
@@ -2951,6 +3396,10 @@
 				input.setAttribute('data-apd-initial', input.value);
 			}
 		});
+		var plain = root.querySelector('[data-apd-frame-plain]');
+		if (plain && !plain.hasAttribute('data-apd-initial-on')) {
+			plain.setAttribute('data-apd-initial-on', plain.checked ? '1' : '0');
+		}
 	}
 
 	function restoreInitialValue(input) {
@@ -2962,43 +3411,12 @@
 		input.value = initial;
 	}
 
-	function resetConfigurator(root, cache) {
-		var form = root.closest('form');
-		if (form) {
-			form.reset();
-		}
-		root.querySelectorAll('[data-apd-color], [data-apd-preset], [data-apd-design]').forEach(restoreInitialValue);
-		root.querySelectorAll('[data-apd-swatch]').forEach(function (btn) {
-			var name = btn.getAttribute('data-apd-swatch');
-			var hidden = root.querySelector('[data-apd-color="' + name + '"]');
-			var pressed = hidden && String(btn.getAttribute('data-apd-hex') || '').toLowerCase() === String(hidden.value || '').toLowerCase();
-			btn.setAttribute('aria-pressed', pressed ? 'true' : 'false');
-		});
-		var presetInput = root.querySelector('[data-apd-preset]');
-		var presetButton = null;
-		root.querySelectorAll('[data-apd-preset-id]').forEach(function (btn) {
-			var on = presetInput && btn.getAttribute('data-apd-preset-id') === presetInput.value;
-			btn.setAttribute('aria-pressed', on ? 'true' : 'false');
-			if (on) {
-				presetButton = btn;
-			}
-		});
-		if (presetButton) {
-			applyCountry(root, presetButton);
-		}
-		closeCountryDialog(root);
-		syncFrameColors();
-		upperPlateFields(root);
-		syncSuvRows(root);
-		syncSideFields(root);
-		applyPlainHolder(root);
-		updateCount(root);
-		showCartNotice(root, null);
-		scheduleDraw(root, cache);
+	function cartDrawerOpen() {
+		return document.body.classList.contains('showing-popup-drawer-from-cart') || document.body.classList.contains('showing-popup-drawer-from-right');
 	}
 
 	function openKadenceCart() {
-		if (document.body.classList.contains('showing-popup-drawer-from-cart')) {
+		if (cartDrawerOpen()) {
 			return;
 		}
 		var nodes = document.querySelectorAll('.header-cart-button, [data-toggle-target="#cart-drawer"]');
@@ -3016,6 +3434,101 @@
 		}
 	}
 
+	function revealAddedCartLine(previousKeys, plateText, originScroll) {
+		var tries = 0;
+		var origin = typeof originScroll === 'number' ? originScroll : 0;
+		var needle = String(plateText || '').replace(/\s+/g, ' ').trim();
+		var stableList = null;
+		var stableFrames = 0;
+		function tick() {
+			var list = document.querySelector('#cart-drawer ul.woocommerce-mini-cart');
+			if (!list || list.clientHeight < 40 || !cartDrawerOpen()) {
+				stableList = null;
+				stableFrames = 0;
+				if (tries < 50) {
+					tries += 1;
+					window.requestAnimationFrame(tick);
+				}
+				return;
+			}
+			if (list !== stableList) {
+				stableList = list;
+				stableFrames = 0;
+				window.requestAnimationFrame(tick);
+				return;
+			}
+			stableFrames += 1;
+			if (stableFrames < 3) {
+				window.requestAnimationFrame(tick);
+				return;
+			}
+			var items = list.querySelectorAll('.woocommerce-mini-cart-item');
+			var target = null;
+			var i;
+			for (i = 0; i < items.length; i += 1) {
+				var keyNode = items[i].querySelector('[data-cart_item_key]');
+				var key = keyNode ? keyNode.getAttribute('data-cart_item_key') : '';
+				if (previousKeys.indexOf(key) === -1) {
+					target = items[i];
+				}
+			}
+			if (!target && needle) {
+				for (i = items.length - 1; i >= 0; i -= 1) {
+					if (items[i].textContent.replace(/\s+/g, ' ').indexOf(needle) !== -1) {
+						target = items[i];
+						break;
+					}
+				}
+			}
+			if (!target) {
+				return;
+			}
+			var listRect = list.getBoundingClientRect();
+			var itemRect = target.getBoundingClientRect();
+			var fully = itemRect.top >= listRect.top - 1 && itemRect.bottom <= listRect.bottom + 1;
+			if (fully && Math.abs(list.scrollTop - origin) < 8) {
+				return;
+			}
+			var delta = itemRect.height >= listRect.height - 8 || itemRect.top < listRect.top
+				? itemRect.top - listRect.top
+				: itemRect.bottom - listRect.bottom;
+			var top = list.scrollTop + delta;
+			if (Math.abs(top - origin) < 2) {
+				return;
+			}
+			if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+				list.scrollTop = top;
+				return;
+			}
+			var start = origin;
+			var duration = Math.min(700, Math.max(280, Math.abs(top - start) * 0.45));
+			var began = 0;
+			list.scrollTop = start;
+			function step(now) {
+				var current = document.querySelector('#cart-drawer ul.woocommerce-mini-cart');
+				if (current && current !== list) {
+					list = current;
+					began = 0;
+					list.scrollTop = start;
+				}
+				if (!list) {
+					return;
+				}
+				if (!began) {
+					began = now;
+				}
+				var progress = Math.min(1, (now - began) / duration);
+				var eased = 1 - Math.pow(1 - progress, 3);
+				list.scrollTop = start + (top - start) * eased;
+				if (progress < 1) {
+					window.requestAnimationFrame(step);
+				}
+			}
+			window.requestAnimationFrame(step);
+		}
+		window.requestAnimationFrame(tick);
+	}
+
 	function bindStayOnProduct(root, cache) {
 		var form = root.closest('form');
 		if (!form || form.getAttribute('data-apd-stay')) {
@@ -3024,8 +3537,22 @@
 		form.setAttribute('data-apd-stay', '1');
 		form.addEventListener('submit', function (event) {
 			event.preventDefault();
+			if (scriptRejected(currentPlateText())) {
+				syncLetterChrome();
+				return;
+			}
 			syncSuvRows(root);
 			syncSideFields(root);
+			var previousKeys = [];
+			document.querySelectorAll('#cart-drawer [data-cart_item_key]').forEach(function (node) {
+				var key = node.getAttribute('data-cart_item_key');
+				if (key) {
+					previousKeys.push(key);
+				}
+			});
+			var listBefore = document.querySelector('#cart-drawer ul.woocommerce-mini-cart');
+			var originScroll = listBefore ? listBefore.scrollTop : 0;
+			var addedText = currentPlateText();
 			var data = new FormData(form);
 			var shot = plateSnapshot();
 			if (shot) {
@@ -3045,6 +3572,7 @@
 			}
 			var button = submitter || form.querySelector('[type="submit"]');
 			if (button) {
+				button.setAttribute('data-apd-posting', '1');
 				button.disabled = true;
 			}
 			fetch(form.getAttribute('action') || window.location.href, {
@@ -3061,15 +3589,17 @@
 					return;
 				}
 				return refreshCartWidgets().then(function () {
-					resetConfigurator(root, cache);
+					showCartNotice(root, null);
 					openKadenceCart();
+					revealAddedCartLine(previousKeys, addedText, originScroll);
 				});
 			}).catch(function () {
 				form.removeAttribute('data-apd-stay');
 				HTMLFormElement.prototype.submit.call(form);
 			}).then(function () {
 				if (button) {
-					button.disabled = false;
+					button.removeAttribute('data-apd-posting');
+					button.disabled = scriptRejected(currentPlateText());
 				}
 			});
 		});
@@ -3177,8 +3707,54 @@
 	}
 
 	function bind(root, cache) {
+		function resetFieldsAfterScript() {
+			if (!cfg.scripts || cfg.scripts.length < 2) {
+				return;
+			}
+			scriptWarning = false;
+			var sample = currentScript() === 'cyrillic' ? (cfg.default_text_cyrillic || '') : (cfg.default_text || '');
+			sample = String(sample).replace(/\r\n/g, '\n').replace(/\r/g, '\n');
+			var rows = root.querySelectorAll('[data-apd-plate-row]');
+			if (rows.length >= 2) {
+				var parts = sample.split('\n');
+				rows[0].value = parts[0] || '';
+				rows[1].value = parts[1] || '';
+				rows.forEach(function (input) {
+					upperPlateControl(input);
+					stripWrongScript(input);
+				});
+			} else {
+				var input = root.querySelector('[name="apd_text"]');
+				if (input) {
+					input.value = sample.replace(/\n/g, ' ');
+					if (input.type !== 'hidden') {
+						upperPlateControl(input);
+						stripWrongScript(input);
+					}
+				}
+			}
+			syncSuvRows(root);
+			syncSideFields(root);
+			root.querySelectorAll('[data-apd-color]').forEach(restoreInitialValue);
+			root.querySelectorAll('[data-apd-swatch]').forEach(function (btn) {
+				var name = btn.getAttribute('data-apd-swatch');
+				var hidden = root.querySelector('[data-apd-color="' + name + '"]');
+				var pressed = hidden && String(btn.getAttribute('data-apd-hex') || '').toLowerCase() === String(hidden.value || '').toLowerCase();
+				btn.setAttribute('aria-pressed', pressed ? 'true' : 'false');
+			});
+			var plain = root.querySelector('[data-apd-frame-plain]');
+			if (plain) {
+				plain.checked = plain.getAttribute('data-apd-initial-on') === '1';
+			}
+			updateCount(root);
+		}
 		rememberInitialValues(root);
 		upperPlateFields(root);
+		root.querySelectorAll('[name="apd_text"], [data-apd-plate-row], [data-apd-plate-side]').forEach(function (input) {
+			if (stripWrongScript(input)) {
+				scriptWarning = true;
+			}
+		});
 		syncSuvRows(root);
 		syncSideFields(root);
 		syncFrenchFields(root);
@@ -3187,27 +3763,38 @@
 			if (plateTextControl(event.target)) {
 				upperPlateControl(event.target);
 				filterFrenchField(event.target);
+				if (event.target.name === 'apd_text' || event.target.hasAttribute('data-apd-plate-row') || event.target.hasAttribute('data-apd-plate-side')) {
+					scriptWarning = stripWrongScript(event.target);
+				}
 			}
 			syncSuvRows(root);
 			syncSideFields(root);
 			syncFrenchFields(root);
 			syncAustriaFields(root);
 			updateCount(root);
+			syncLetterChrome();
 			scheduleDraw(root, cache);
 		});
 		syncFrameColors();
 		root.addEventListener('change', function (event) {
+			if (keepsPreviewStage(event.target)) {
+				holdPreviewStage();
+			}
 			if (event.target && event.target.hasAttribute('data-apd-plain')) {
 				applyPlainHolder(root);
 			}
+			if (event.target && event.target.hasAttribute('data-apd-script')) {
+				resetFieldsAfterScript();
+			}
 			syncFrameColors();
-			scheduleDraw(root, cache);
+			scheduleDraw(root, cache, keepsPreviewStage(event.target));
 		});
 
 		root.addEventListener('click', function (event) {
 			var swatch = event.target.closest('[data-apd-swatch]');
 			if (swatch) {
 				event.preventDefault();
+				holdPreviewStage();
 				var name = swatch.getAttribute('data-apd-swatch');
 				var hex = swatch.getAttribute('data-apd-hex');
 				var hidden = root.querySelector('[data-apd-color="' + name + '"]');
@@ -3217,7 +3804,7 @@
 				root.querySelectorAll('[data-apd-swatch="' + name + '"]').forEach(function (btn) {
 					btn.setAttribute('aria-pressed', btn === swatch ? 'true' : 'false');
 				});
-				scheduleDraw(root, cache);
+				scheduleDraw(root, cache, true);
 				return;
 			}
 
@@ -3275,7 +3862,7 @@
 		var canvas = getCanvas();
 		if (canvas) {
 			canvas.addEventListener('click', function (event) {
-				if (cfg.format && cfg.format.capabilities && cfg.format.capabilities.country_locked) {
+				if (!offersCountryPicker()) {
 					return;
 				}
 				var packed = { w: cfg.format.width || 520, h: cfg.format.height || 110 };
@@ -3287,7 +3874,7 @@
 			});
 			canvas.addEventListener('mousemove', function (event) {
 				var packed = { w: cfg.format.width || 520, h: cfg.format.height || 110 };
-				canvas.style.cursor = pointerOnBand(canvas, event, packed.w, packed.h) ? 'pointer' : '';
+				canvas.style.cursor = offersCountryPicker() && pointerOnBand(canvas, event, packed.w, packed.h) ? 'pointer' : '';
 			});
 			canvas.addEventListener('mouseleave', function () {
 				canvas.style.cursor = '';
@@ -3380,5 +3967,6 @@
 			measurePreviewStage();
 			scheduleDraw(root, cache);
 		});
+		window.addEventListener('scroll', schedulePreviewStage, { passive: true });
 	});
 })();

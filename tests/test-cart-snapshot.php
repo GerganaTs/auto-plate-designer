@@ -472,4 +472,200 @@ if ( false === strpos( $shop_css, 'img[src*="apd-previews"]' ) || false === strp
 }
 
 echo 'PREVIEW_IMAGE_OK' . PHP_EOL;
+
+if ( function_exists( 'wc_load_cart' ) ) {
+	wc_load_cart();
+}
+
+$edit_format  = null;
+$edit_product = null;
+$extra_product = null;
+
+$apd_cart_edit_cleanup = static function () use ( &$edit_format, &$edit_product, &$extra_product ) {
+	if ( function_exists( 'WC' ) && WC()->cart ) {
+		WC()->cart->empty_cart();
+	}
+
+	unset( $_GET['apd_cart_item'], $_POST['apd_nonce'], $_POST['apd_text'], $_POST['apd_cart_item'] );
+
+	if ( $edit_product instanceof WC_Product ) {
+		$edit_product->delete( true );
+	}
+
+	if ( $extra_product instanceof WC_Product ) {
+		$extra_product->delete( true );
+	}
+
+	if ( is_array( $edit_format ) && ! empty( $edit_format['id'] ) ) {
+		APD_Formats::delete( $edit_format['id'] );
+	}
+};
+
+$edit_format = APD_Formats::save(
+	array(
+		'name'             => 'APD cart edit',
+		'type'             => 'eu_plain',
+		'width'            => 520,
+		'height'           => 110,
+		'border_width'     => 0,
+		'border_color'     => '#000000',
+		'band_ratio'       => 0,
+		'band_side'        => 'left',
+		'price_adjustment' => 0,
+	)
+);
+
+if ( is_wp_error( $edit_format ) || ! WC()->cart ) {
+	fwrite( STDERR, "CART_EDIT_SETUP_FAIL\n" );
+	$apd_cart_edit_cleanup();
+	exit( 1 );
+}
+
+$edit_product = new WC_Product_Simple();
+$edit_product->set_name( 'APD cart edit plate' );
+$edit_product->set_status( 'publish' );
+$edit_product->set_regular_price( '10' );
+$edit_product->save();
+$edit_id = $edit_product->get_id();
+update_post_meta( $edit_id, APD_Admin_Settings::META_ENABLED, 'yes' );
+update_post_meta( $edit_id, APD_Admin_Settings::META_FORMAT, $edit_format['id'] );
+
+$extra_product = new WC_Product_Simple();
+$extra_product->set_name( 'APD cart extra' );
+$extra_product->set_status( 'publish' );
+$extra_product->set_regular_price( '5' );
+$extra_product->save();
+$extra_id = $extra_product->get_id();
+
+WC()->cart->empty_cart();
+$_POST['apd_nonce'] = wp_create_nonce( 'apd_configure' );
+$_POST['apd_text']  = 'AB12 CDE';
+unset( $_POST['apd_cart_item'] );
+$first_key = WC()->cart->add_to_cart( $edit_id, 1 );
+
+if ( ! is_string( $first_key ) || '' === $first_key ) {
+	fwrite( STDERR, "CART_EDIT_ADD_FAIL\n" );
+	$apd_cart_edit_cleanup();
+	exit( 1 );
+}
+
+WC()->cart->set_quantity( $first_key, 2, true );
+$_GET['apd_cart_item'] = $first_key;
+$opened                = APD_WooCommerce::requested_cart_edit( $edit_id );
+$_GET['apd_cart_item'] = 'missing-key';
+$missing               = APD_WooCommerce::requested_cart_edit( $edit_id );
+$_GET['apd_cart_item'] = $first_key;
+$wrong_product         = APD_WooCommerce::requested_cart_edit( $extra_id );
+unset( $_GET['apd_cart_item'] );
+
+$first_item = WC()->cart->get_cart_item( $first_key );
+$plain_item = array(
+	'product_id' => $extra_id,
+	'data'       => $extra_product,
+);
+$edit_permalink  = apply_filters( 'woocommerce_cart_item_permalink', $edit_product->get_permalink(), $first_item, $first_key );
+$plain_permalink = apply_filters( 'woocommerce_cart_item_permalink', $extra_product->get_permalink(), $plain_item, 'plainkey' );
+ob_start();
+do_action( 'woocommerce_after_cart_item_name', $first_item, $first_key );
+$classic_link = ob_get_clean();
+$mini_link    = apply_filters( 'woocommerce_widget_cart_item_quantity', '<span class="quantity">2</span>', $first_item, $first_key );
+$display      = APD_WooCommerce::instance()->display_cart_item_data( array(), $first_item );
+$display_keys = array();
+
+foreach ( $display as $row ) {
+	$display_keys[] = isset( $row['key'] ) ? (string) $row['key'] : '';
+}
+
+if (
+	'AB12 CDE' !== ( $opened['restore']['text'] ?? '' )
+	|| $first_key !== $opened['key']
+	|| '' !== $missing['key']
+	|| array() !== $missing['restore']
+	|| '' !== $wrong_product['key']
+	|| false === strpos( $edit_permalink, 'apd_cart_item=' . rawurlencode( $first_key ) )
+	|| false !== strpos( $edit_permalink, 'class="apd-cart-edit"' )
+	|| false !== strpos( $plain_permalink, 'apd_cart_item' )
+	|| '' !== $classic_link
+	|| false !== strpos( $mini_link, 'apd-cart-edit' )
+	|| false !== strpos( $mini_link, 'apd_cart_item' )
+	|| in_array( 'apd-edit', $display_keys, true )
+) {
+	fwrite( STDERR, "CART_EDIT_RESTORE_FAIL\n" );
+	$apd_cart_edit_cleanup();
+	exit( 1 );
+}
+
+$_POST['apd_nonce']     = wp_create_nonce( 'apd_configure' );
+$_POST['apd_text']      = 'ZZ99 ZZZ';
+$_POST['apd_cart_item'] = $first_key;
+$updated_key            = WC()->cart->add_to_cart( $edit_id, 1 );
+$plate_lines            = array();
+
+foreach ( WC()->cart->get_cart() as $line_key => $line ) {
+	if ( (int) $line['product_id'] === $edit_id ) {
+		$plate_lines[ $line_key ] = $line;
+	}
+}
+
+$updated_line = is_string( $updated_key ) ? ( $plate_lines[ $updated_key ] ?? null ) : null;
+
+if (
+	1 !== count( $plate_lines )
+	|| ! is_array( $updated_line )
+	|| 2 !== (int) $updated_line['quantity']
+	|| 'ZZ99 ZZZ' !== ( $updated_line[ APD_WooCommerce::CART_KEY ]['text'] ?? '' )
+	|| 0.0 !== (float) ( $updated_line[ APD_WooCommerce::CART_KEY ]['price_adjustment'] ?? -1 )
+) {
+	fwrite( STDERR, "CART_EDIT_REPLACE_FAIL\n" );
+	$apd_cart_edit_cleanup();
+	exit( 1 );
+}
+
+unset( $_POST['apd_cart_item'] );
+$extra_key = WC()->cart->add_to_cart( $extra_id, 1 );
+$after_extra = WC()->cart->get_cart();
+$plate_after = 0;
+$extra_after = 0;
+
+foreach ( $after_extra as $line ) {
+	if ( (int) $line['product_id'] === $edit_id ) {
+		++$plate_after;
+
+		if ( 'ZZ99 ZZZ' !== ( $line[ APD_WooCommerce::CART_KEY ]['text'] ?? '' ) ) {
+			$plate_after = -1;
+		}
+	}
+
+	if ( (int) $line['product_id'] === $extra_id ) {
+		++$extra_after;
+	}
+}
+
+if ( ! is_string( $extra_key ) || 1 !== $plate_after || 1 !== $extra_after || isset( $after_extra[ $extra_key ][ APD_WooCommerce::CART_KEY ] ) ) {
+	fwrite( STDERR, "CART_EDIT_EXTRA_FAIL\n" );
+	$apd_cart_edit_cleanup();
+	exit( 1 );
+}
+
+$_POST['apd_nonce']     = wp_create_nonce( 'apd_configure' );
+$_POST['apd_text']      = 'QQ11 QQQ';
+$_POST['apd_cart_item'] = 'expired-key';
+$fresh_key              = WC()->cart->add_to_cart( $edit_id, 1 );
+$fresh_count            = 0;
+
+foreach ( WC()->cart->get_cart() as $line ) {
+	if ( (int) $line['product_id'] === $edit_id ) {
+		++$fresh_count;
+	}
+}
+
+if ( ! is_string( $fresh_key ) || $fresh_key === $updated_key || 2 !== $fresh_count ) {
+	fwrite( STDERR, "CART_EDIT_EXPIRED_FAIL\n" );
+	$apd_cart_edit_cleanup();
+	exit( 1 );
+}
+
+$apd_cart_edit_cleanup();
+
+echo 'CART_EDIT_OK' . PHP_EOL;
 echo 'ALL_OK' . PHP_EOL;

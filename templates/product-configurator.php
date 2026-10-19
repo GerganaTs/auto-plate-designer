@@ -24,6 +24,7 @@ $max            = (int) $format['max_chars'];
 $multiline      = ! empty( $format['multiline'] );
 $show_eu        = APD_Formats::uses_painted_plate( $type );
 $show_country   = APD_Formats::uses_country_band( $type ) && empty( $format['capabilities']['country_locked'] );
+$country_picker = $show_country && count( $presets ) > 1;
 $show_designs   = APD_Formats::uses_plate_designs( $type ) && ! empty( $designs );
 $show_strip     = APD_Formats::is_holder( $type );
 $color_fields   = isset( $apd_payload['color_fields'] ) && is_array( $apd_payload['color_fields'] ) ? $apd_payload['color_fields'] : array();
@@ -35,6 +36,13 @@ $restore        = isset( $apd_payload['cart_restore'] ) && is_array( $apd_payloa
 if ( isset( $restore['text'] ) && '' !== (string) $restore['text'] ) {
 	$default_text = (string) $restore['text'];
 }
+$scripts = isset( $apd_payload['scripts'] ) && is_array( $apd_payload['scripts'] ) ? array_values( $apd_payload['scripts'] ) : array();
+$cyr_default = isset( $apd_payload['default_text_cyrillic'] ) ? (string) $apd_payload['default_text_cyrillic'] : '';
+$script_value = isset( $restore['script'] ) && in_array( (string) $restore['script'], $scripts, true ) ? (string) $restore['script'] : ( isset( $scripts[0] ) ? (string) $scripts[0] : '' );
+if ( ! isset( $restore['text'] ) && 'cyrillic' === $script_value ) {
+	$default_text = $cyr_default;
+}
+$comment_value = isset( $restore['comment'] ) ? (string) $restore['comment'] : '';
 $default_font   = APD_Formats::default_font_id( $fonts, $type );
 if ( ! empty( $restore['font_id'] ) ) {
 	$default_font = (string) $restore['font_id'];
@@ -48,7 +56,10 @@ if ( ! empty( $restore['design_id'] ) ) {
 	$default_design = (string) $restore['design_id'];
 }
 $us_side_limits = APD_Formats::active_us_side_limits( $format, $default_design );
-$show_frame     = APD_Formats::offers_frame_choice( $type );
+$show_frame     = APD_Formats::offers_frame_choice( $type ) && ! APD_Formats::offers_uncolored_frame( $type );
+$plain_frame    = APD_Formats::offers_uncolored_frame( $type ) && empty( $format['no_frame'] ) && ( isset( $format['border_width'] ) ? (int) $format['border_width'] : 0 ) > 0;
+$plain_on       = $plain_frame && ! empty( $restore['frame_plain'] );
+$legacy_frame_off = $plain_frame && array_key_exists( 'no_frame', $restore ) && ! array_key_exists( 'frame_plain', $restore ) && ! empty( $restore['no_frame'] );
 $frame_on       = $show_frame && $show_eu && empty( $format['no_frame'] );
 if ( $show_frame && array_key_exists( 'no_frame', $restore ) ) {
 	$frame_on = empty( $restore['no_frame'] );
@@ -66,11 +77,11 @@ if ( APD_Formats::is_photo_holder( $type ) ) {
 }
 $border_hex     = ! empty( $restore['border_color'] ) ? (string) $restore['border_color'] : APD_Plugin::palette_preferred_hex( 'border', array( '#000000', isset( $format['border_color'] ) ? (string) $format['border_color'] : '#000000' ) );
 $slogan_hex     = ! empty( $restore['slogan_color'] ) ? (string) $restore['slogan_color'] : '#000000';
-$apd_round      = APD_Formats::is_french( $type ) || APD_Formats::is_austria( $type ) || APD_Formats::is_english( $type ) || APD_Formats::is_mini( $type );
+$apd_round      = APD_Formats::uses_painted_plate( $type );
 $apd_english    = APD_Formats::is_english( $type );
 $apd_plate_rx   = $apd_round ? round( 10 / max( 1, (int) $format['width'] ) * 100, 3 ) : 0;
 $apd_plate_ry   = $apd_round ? round( 10 / max( 1, (int) $format['height'] ) * 100, 3 ) : 0;
-$canvas_label   = $show_country && ! empty( $presets )
+$canvas_label   = $country_picker && ! empty( $presets )
 	? ( isset( $i18n['bandHint'] ) ? $i18n['bandHint'] : __( 'Click the country band to change country', 'auto-plate-designer' ) )
 	: __( 'Plate preview', 'auto-plate-designer' );
 
@@ -109,6 +120,12 @@ $apd_swatches = static function ( $label, $name, $colors, $current ) {
 ?>
 <div class="apd-configurator" data-apd-root style="--apd-swatch-size: <?php echo esc_attr( (string) (int) $swatch_ui['size'] ); ?>px; --apd-swatch-radius: <?php echo esc_attr( APD_Color_Palettes::swatch_radius_css( $swatch_ui ) ); ?>; --apd-swatch-border: <?php echo esc_attr( APD_Color_Palettes::swatch_border_css( $swatch_ui ) ); ?>;">
 	<?php wp_nonce_field( 'apd_configure', 'apd_nonce' ); ?>
+	<?php if ( ! empty( $apd_payload['cart_item_key'] ) ) : ?>
+		<input type="hidden" name="apd_cart_item" value="<?php echo esc_attr( (string) $apd_payload['cart_item_key'] ); ?>">
+	<?php endif; ?>
+	<?php if ( ! empty( $legacy_frame_off ) ) : ?>
+		<input type="hidden" name="apd_legacy_no_frame" value="1" data-apd-legacy-no-frame>
+	<?php endif; ?>
 
 	<div class="apd-preview" style="--apd-ratio: <?php echo esc_attr( (string) ( (int) $format['width'] ) ); ?> / <?php echo esc_attr( (string) ( (int) $format['height'] ) ); ?>; --apd-canvas-max: <?php echo esc_attr( (string) (int) APD_Formats::CANVAS_DISPLAY_MAX_PX ); ?>px; --apd-frame-w: <?php echo esc_attr( (string) (int) $frame_w ); ?>px;">
 		<div class="apd-canvas-frame<?php echo $apd_round ? ' apd-round-plate' : ''; ?><?php echo $apd_english ? ' apd-english-plate' : ''; ?>" style="aspect-ratio: <?php echo esc_attr( (string) (int) $format['width'] ); ?> / <?php echo esc_attr( (string) (int) $format['height'] ); ?>;<?php echo $apd_round ? ' --apd-plate-rx: ' . esc_attr( (string) $apd_plate_rx ) . '%; --apd-plate-ry: ' . esc_attr( (string) $apd_plate_ry ) . '%;' : ''; ?>">
@@ -125,12 +142,33 @@ $apd_swatches = static function ( $label, $name, $colors, $current ) {
 		<?php if ( $show_strip ) : ?>
 			<p class="form-row form-row-wide apd-field">
 				<label class="apd-choice">
-					<input type="checkbox" name="apd_plain" value="1" data-apd-plain>
+					<input type="checkbox" name="apd_plain" value="1" data-apd-plain <?php checked( ! empty( $restore['unstyled'] ) ); ?>>
 					<?php esc_html_e( 'I do not want personalization', 'auto-plate-designer' ); ?>
 				</label>
 			</p>
 		<?php endif; ?>
 		<div data-apd-personal>
+		<?php if ( count( $scripts ) > 1 ) : ?>
+			<div class="form-row form-row-wide apd-field">
+				<label><?php esc_html_e( 'Inscription language', 'auto-plate-designer' ); ?></label>
+				<span class="apd-font-hint"><?php esc_html_e( 'For Cyrillic text, or Latin text longer than 10 characters, the letters are made digitally while the plate frame stays classic and embossed.', 'auto-plate-designer' ); ?></span>
+				<fieldset class="apd-script">
+					<legend class="screen-reader-text"><?php esc_html_e( 'Inscription language', 'auto-plate-designer' ); ?></legend>
+					<label class="apd-choice">
+						<input type="radio" name="apd_script" value="latin" data-apd-script <?php checked( 'latin', $script_value ); ?>>
+						<?php esc_html_e( 'Latin', 'auto-plate-designer' ); ?>
+					</label>
+					<label class="apd-choice">
+						<input type="radio" name="apd_script" value="cyrillic" data-apd-script <?php checked( 'cyrillic', $script_value ); ?>>
+						<?php esc_html_e( 'Cyrillic letters', 'auto-plate-designer' ); ?>
+					</label>
+				</fieldset>
+			</div>
+		<?php elseif ( 1 === count( $scripts ) ) : ?>
+			<input type="hidden" name="apd_script" value="<?php echo esc_attr( $script_value ); ?>" data-apd-script>
+			<p class="apd-font-hint"><?php echo 'cyrillic' === $script_value ? esc_html__( 'This plate is written in Cyrillic letters.', 'auto-plate-designer' ) : esc_html__( 'This plate is written in Latin letters.', 'auto-plate-designer' ); ?></p>
+		<?php endif; ?>
+		<p class="apd-font-hint apd-field-error" data-apd-script-error role="alert" hidden></p>
 		<?php if ( $two_row_fields ) : ?>
 			<?php
 			$suv_rows = APD_Formats::suv_plate_rows( $default_text );
@@ -291,6 +329,7 @@ $apd_swatches = static function ( $label, $name, $colors, $current ) {
 				<span class="apd-count" data-apd-count></span>
 			</p>
 		<?php endif; ?>
+		<p class="apd-font-hint apd-field-error" data-apd-production hidden></p>
 
 		<?php if ( APD_Formats::is_english( $type ) ) : ?>
 			<?php
@@ -308,12 +347,16 @@ $apd_swatches = static function ( $label, $name, $colors, $current ) {
 		<?php endif; ?>
 
 		<?php if ( count( $fonts ) > 1 ) : ?>
+			<?php $apd_font_style_hint = ! APD_Formats::is_english( $type ) && ! APD_Formats::is_french( $type ) && ! APD_Formats::is_austria( $type ) && 'us' !== (string) $type; ?>
 			<p class="form-row form-row-wide apd-field">
 				<label for="apd_font_id"><?php echo esc_html( $i18n['fontLabel'] ); ?></label>
-				<span class="apd-font-hint"><?php esc_html_e( 'For a perfect look, choose a font that matches the plate style and the language of your text (Latin or Cyrillic).', 'auto-plate-designer' ); ?></span>
+				<?php if ( $apd_font_style_hint ) : ?>
+					<span class="apd-font-hint"><?php esc_html_e( 'For a perfect look, choose a font that matches the plate style and the language of your text (Latin or Cyrillic).', 'auto-plate-designer' ); ?></span>
+				<?php endif; ?>
 				<select id="apd_font_id" name="apd_font_id">
 					<?php foreach ( $fonts as $font ) : ?>
-						<option value="<?php echo esc_attr( $font['id'] ); ?>" <?php selected( $font['id'], $default_font ); ?>><?php echo esc_html( APD_Formats::font_shop_label( $font ) ); ?></option>
+						<?php $font_for = isset( $font['scripts'] ) && is_array( $font['scripts'] ) ? implode( ' ', $font['scripts'] ) : ''; ?>
+						<option value="<?php echo esc_attr( $font['id'] ); ?>" <?php echo '' !== $font_for ? 'data-apd-font-for="' . esc_attr( $font_for ) . '"' : ''; ?> <?php selected( $font['id'], $default_font ); ?>><?php echo esc_html( APD_Formats::font_shop_label( $font ) ); ?></option>
 					<?php endforeach; ?>
 				</select>
 			</p>
@@ -321,7 +364,7 @@ $apd_swatches = static function ( $label, $name, $colors, $current ) {
 			<input type="hidden" name="apd_font_id" value="<?php echo esc_attr( $default_font ); ?>">
 		<?php endif; ?>
 
-		<?php if ( $show_country && ! empty( $presets ) ) : ?>
+		<?php if ( $country_picker ) : ?>
 			<?php
 			$current_preset = null;
 			foreach ( $presets as $preset ) {
@@ -382,6 +425,8 @@ $apd_swatches = static function ( $label, $name, $colors, $current ) {
 					</div>
 				</div>
 			</div>
+		<?php elseif ( $show_country && ! empty( $presets ) ) : ?>
+			<input type="hidden" name="apd_preset_id" value="<?php echo esc_attr( $default_preset ); ?>" data-apd-preset>
 		<?php endif; ?>
 
 		<?php if ( $show_designs ) : ?>
@@ -393,6 +438,13 @@ $apd_swatches = static function ( $label, $name, $colors, $current ) {
 				<label class="apd-choice">
 					<input type="checkbox" name="apd_frame" value="1" data-apd-frame <?php checked( $frame_on ); ?>>
 					<?php echo esc_html( isset( $i18n['frameLabel'] ) ? $i18n['frameLabel'] : __( 'Add frame', 'auto-plate-designer' ) ); ?>
+				</label>
+			</p>
+		<?php elseif ( $plain_frame && ! $legacy_frame_off ) : ?>
+			<p class="form-row form-row-wide apd-field" data-apd-plain-frame>
+				<label class="apd-choice">
+					<input type="checkbox" name="apd_frame_plain" value="1" data-apd-frame-plain <?php checked( $plain_on ); ?>>
+					<?php esc_html_e( 'Without frame color', 'auto-plate-designer' ); ?>
 				</label>
 			</p>
 		<?php endif; ?>
@@ -409,15 +461,26 @@ $apd_swatches = static function ( $label, $name, $colors, $current ) {
 		}
 
 		if ( ! empty( $apd_text_colors ) && ! $show_strip ) {
+			echo '<div data-apd-text-colors>';
 			$apd_swatches( $i18n['textColor'], 'apd_text_color', $apd_text_colors, $text_hex );
+			echo '</div>';
+		}
+
+		$digital_colors = isset( $format['digital_colors'] ) && is_array( $format['digital_colors'] ) ? $format['digital_colors'] : array();
+		if ( ! empty( $digital_colors ) && APD_Formats::offers_digital_palette( $type ) ) {
+			echo '<div data-apd-digital-colors hidden>';
+			$apd_swatches( __( 'Digital color', 'auto-plate-designer' ), 'apd_digital_color', $digital_colors, isset( $digital_colors[0]['hex'] ) ? (string) $digital_colors[0]['hex'] : '' );
+			echo '</div>';
 		}
 
 		if ( ! empty( $apd_plate_colors ) && $show_eu ) {
 			$apd_swatches( $i18n['plateColor'], 'apd_background_color', $apd_plate_colors, $plate_hex );
 		}
 
-		if ( ! empty( $apd_frame_colors ) && $show_frame ) {
-			echo '<div data-apd-frame-colors' . ( $frame_on ? '' : ' hidden' ) . '>';
+		$apd_frame_family = $show_frame || APD_Formats::offers_uncolored_frame( $type );
+		$apd_frame_hidden = ( $show_frame && ! $frame_on ) || ( ! $show_frame && ! $plain_frame ) || $legacy_frame_off;
+		if ( ! empty( $apd_frame_colors ) && $apd_frame_family ) {
+			echo '<div data-apd-frame-colors' . ( $apd_frame_hidden ? ' hidden' : '' ) . '>';
 			$apd_swatches( $i18n['borderColor'], 'apd_border_color', $apd_frame_colors, $border_hex );
 			echo '</div>';
 		} elseif ( ! empty( $apd_frame_colors ) && APD_Formats::is_english( $type ) ) {
@@ -444,6 +507,10 @@ $apd_swatches = static function ( $label, $name, $colors, $current ) {
 		}
 		?>
 		</div>
+		<p class="form-row form-row-wide apd-field">
+			<label for="apd_comment"><?php esc_html_e( 'Comment', 'auto-plate-designer' ); ?></label>
+			<textarea class="input-text" id="apd_comment" name="apd_comment" rows="3" maxlength="<?php echo esc_attr( (string) APD_Formats::COMMENT_MAX ); ?>"><?php echo esc_textarea( $comment_value ); ?></textarea>
+		</p>
 	</div>
 </div>
 <script>

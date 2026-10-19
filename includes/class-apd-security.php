@@ -440,6 +440,45 @@ final class APD_Security {
 	}
 
 	/**
+	 * Reject the alphabet that this product does not offer.
+	 *
+	 * Digits and the existing punctuation stay allowed on both.
+	 *
+	 * @param string $text   Plate text.
+	 * @param string $script latin|cyrillic|empty.
+	 * @return true|WP_Error
+	 */
+	public static function validate_plate_script( $text, $script ) {
+		$script = (string) $script;
+
+		if ( 'latin' !== $script && 'cyrillic' !== $script ) {
+			return true;
+		}
+
+		$text = str_replace( array( "\r\n", "\r", "\n" ), '', (string) $text );
+
+		if ( '' === $text ) {
+			return true;
+		}
+
+		if ( 'cyrillic' === $script && 1 === preg_match( '/[A-Za-z\x{00C0}-\x{024F}]/u', $text ) ) {
+			return new WP_Error(
+				'apd_text_script',
+				__( 'Latin letters are not allowed when Cyrillic is selected.', 'auto-plate-designer' )
+			);
+		}
+
+		if ( 'latin' === $script && 1 === preg_match( '/[\x{0400}-\x{04FF}]/u', $text ) ) {
+			return new WP_Error(
+				'apd_text_script',
+				__( 'Cyrillic letters are not allowed when Latin is selected.', 'auto-plate-designer' )
+			);
+		}
+
+		return true;
+	}
+
+	/**
 	 * Sanitize plate text for storage. Call only after validate_plate_text() succeeds.
 	 *
 	 * @param string $text      Already-validated text.

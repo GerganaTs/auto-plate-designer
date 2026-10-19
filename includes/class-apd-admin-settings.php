@@ -24,8 +24,13 @@ final class APD_Admin_Settings {
 	const META_COLOR_FIELDS = '_apd_color_fields';
 	const META_PALETTE_IDS  = '_apd_palette_ids';
 	const META_DEFAULT_TEXT   = '_apd_default_text';
+	const META_DEFAULT_TEXT_CYR = '_apd_default_text_cyrillic';
 	const META_DEFAULT_SLOGAN = '_apd_default_slogan';
 	const META_FR_REGION   = '_apd_fr_region';
+	const META_LATIN       = '_apd_script_latin';
+	const META_CYRILLIC    = '_apd_script_cyrillic';
+	const META_LATIN_FONTS = '_apd_font_ids_latin';
+	const META_CYRILLIC_FONTS = '_apd_font_ids_cyrillic';
 
 	const PRODUCT_NONCE_ACTION = 'apd_product_meta';
 
@@ -140,7 +145,7 @@ final class APD_Admin_Settings {
 		}
 
 		if ( $is_settings ) {
-			wp_enqueue_media();
+		wp_enqueue_media();
 		}
 
 		$css_file = APD_PLUGIN_DIR . 'assets/css/admin-settings.css';
@@ -538,7 +543,7 @@ final class APD_Admin_Settings {
 				$group_limits = APD_Formats::austria_limits( $item );
 			}
 			printf(
-				'<option value="%1$s" data-apd-type="%2$s" data-apd-rows="%11$s" data-apd-no-frame="%6$s" data-apd-split="%7$s" data-apd-photo="%8$s" data-apd-left="%9$s" data-apd-right="%10$s" data-apd-g1="%12$s" data-apd-g2="%13$s" data-apd-g3="%14$s" data-apd-slogan-max="%15$s" %3$s>%4$s (%5$s)</option>',
+				'<option value="%1$s" data-apd-type="%2$s" data-apd-rows="%11$s" data-apd-no-frame="%6$s" data-apd-split="%7$s" data-apd-photo="%8$s" data-apd-left="%9$s" data-apd-right="%10$s" data-apd-g1="%12$s" data-apd-g2="%13$s" data-apd-g3="%14$s" data-apd-slogan-max="%15$s" data-apd-scripts="%16$s" data-apd-font-ids="%17$s" data-apd-fonts-all="%18$s" %3$s>%4$s (%5$s)</option>',
 				esc_attr( $item['id'] ),
 				esc_attr( $item['type'] ),
 				selected( $format, $item['id'], false ),
@@ -553,11 +558,68 @@ final class APD_Admin_Settings {
 				esc_attr( (string) $group_limits[0] ),
 				esc_attr( isset( $group_limits[1] ) ? (string) $group_limits[1] : '' ),
 				esc_attr( isset( $group_limits[2] ) ? (string) $group_limits[2] : '' ),
-				esc_attr( (string) ( APD_Formats::is_english( $item['type'] ) ? APD_Formats::slogan_limit( $item ) : 0 ) )
+				esc_attr( (string) ( APD_Formats::is_english( $item['type'] ) ? APD_Formats::slogan_limit( $item ) : 0 ) ),
+				APD_Formats::offers_script( $item['type'] ) ? '1' : '0',
+				esc_attr( isset( $item['font_ids'] ) && is_array( $item['font_ids'] ) ? implode( ',', $item['font_ids'] ) : '' ),
+				! empty( $item['font_ids_all'] ) ? '1' : '0'
 			);
 		}
 
 		echo '</select></p>';
+
+		$script_notice = get_transient( 'apd_product_script_notice_' . get_current_user_id() );
+		if ( is_string( $script_notice ) && '' !== $script_notice ) {
+			delete_transient( 'apd_product_script_notice_' . get_current_user_id() );
+			echo '<p class="notice notice-warning inline" style="margin:0 0 12px;padding:8px 12px;">' . esc_html( $script_notice ) . '</p>';
+		}
+
+		$latin_on = 'yes' === (string) get_post_meta( $post->ID, self::META_LATIN, true ) || ( '' === (string) get_post_meta( $post->ID, self::META_LATIN, true ) && '' === (string) get_post_meta( $post->ID, self::META_CYRILLIC, true ) );
+		$cyr_on   = 'yes' === (string) get_post_meta( $post->ID, self::META_CYRILLIC, true );
+		$latin_font_ids = get_post_meta( $post->ID, self::META_LATIN_FONTS, true );
+		$cyr_font_ids   = get_post_meta( $post->ID, self::META_CYRILLIC_FONTS, true );
+		$latin_font_ids = is_array( $latin_font_ids ) ? array_map( 'strval', $latin_font_ids ) : array();
+		$cyr_font_ids   = is_array( $cyr_font_ids ) ? array_map( 'strval', $cyr_font_ids ) : array();
+		$library         = APD_Plugin::get_settings();
+		$library_fonts   = isset( $library['fonts'] ) && is_array( $library['fonts'] ) ? $library['fonts'] : array();
+		$script_format   = '' !== $format ? APD_Formats::get( $format ) : null;
+		$script_type     = is_array( $script_format ) && isset( $script_format['type'] ) ? (string) $script_format['type'] : '';
+		$script_open     = '' !== $script_type && APD_Formats::offers_script( $script_type );
+
+		echo '<div data-apd-script-panel' . ( $script_open ? '' : ' hidden' ) . '>';
+		echo '<p><label class="apd-choice"><input type="checkbox" name="apd_script_latin" value="1" ' . checked( $latin_on, true, false ) . '> ';
+		echo esc_html__( 'Latin', 'auto-plate-designer' );
+		echo '</label></p>';
+		echo '<p><label class="apd-choice"><input type="checkbox" name="apd_script_cyrillic" value="1" ' . checked( $cyr_on, true, false ) . '> ';
+		echo esc_html__( 'Cyrillic letters', 'auto-plate-designer' );
+		echo '</label></p>';
+		echo '<p class="description">' . esc_html__( 'One alphabet shows a sentence on the product. Both show two choices. Existing products stay Latin until you tick Cyrillic.', 'auto-plate-designer' ) . '</p>';
+		echo '<p><strong>' . esc_html__( 'Latin fonts', 'auto-plate-designer' ) . '</strong></p>';
+		echo '<div class="apd-choice-list" data-apd-script-fonts="latin">';
+		foreach ( $library_fonts as $library_font ) {
+			if ( empty( $library_font['id'] ) ) {
+				continue;
+			}
+			$font_id = (string) $library_font['id'];
+			echo '<label class="apd-choice" data-apd-product-font="' . esc_attr( $font_id ) . '"><input type="checkbox" name="apd_font_ids_latin[]" value="' . esc_attr( $font_id ) . '" ' . checked( in_array( $font_id, $latin_font_ids, true ), true, false ) . '> ';
+			echo esc_html( APD_Formats::font_shop_label( $library_font ) );
+			echo '</label>';
+		}
+		echo '</div>';
+		echo '<p class="description">' . esc_html__( 'An empty Latin list uses every font on the format.', 'auto-plate-designer' ) . '</p>';
+		echo '<p><strong>' . esc_html__( 'Cyrillic fonts', 'auto-plate-designer' ) . '</strong></p>';
+		echo '<div class="apd-choice-list" data-apd-script-fonts="cyrillic">';
+		foreach ( $library_fonts as $library_font ) {
+			if ( empty( $library_font['id'] ) ) {
+				continue;
+			}
+			$font_id = (string) $library_font['id'];
+			echo '<label class="apd-choice" data-apd-product-font="' . esc_attr( $font_id ) . '"><input type="checkbox" name="apd_font_ids_cyrillic[]" value="' . esc_attr( $font_id ) . '" ' . checked( in_array( $font_id, $cyr_font_ids, true ), true, false ) . '> ';
+			echo esc_html( APD_Formats::font_shop_label( $library_font ) );
+			echo '</label>';
+		}
+		echo '</div>';
+		echo '<p class="description">' . esc_html__( 'Cyrillic needs at least one font from this list.', 'auto-plate-designer' ) . '</p>';
+		echo '</div>';
 
 		$selected_format = '' !== $format ? APD_Formats::get( $format ) : null;
 		$selected_type   = is_array( $selected_format ) && isset( $selected_format['type'] ) ? (string) $selected_format['type'] : '';
@@ -569,7 +631,7 @@ final class APD_Admin_Settings {
 			? implode( ',', $locked_design['allowed_format_ids'] )
 			: '';
 
-		printf(
+			printf(
 			'<input type="hidden" name="apd_design_id" id="apd_design_id" data-apd-product-design value="%1$s" data-apd-formats="%2$s" data-apd-split="%3$s" data-apd-left="%4$s" data-apd-right="%5$s"%6$s>',
 			esc_attr( $design_id ),
 			esc_attr( $locked_formats ),
@@ -601,6 +663,17 @@ final class APD_Admin_Settings {
 		$french_limits   = $french_default ? APD_Formats::french_group_limits( $selected_format ) : array( 2, 3, 2 );
 		$austria_limits  = $austria_default ? APD_Formats::austria_limits( $selected_format ) : array( 2, 6 );
 		$french_temp     = $french_default && APD_Formats::is_french_temporary( $selected_type );
+		$cyr_text        = (string) get_post_meta( $post->ID, self::META_DEFAULT_TEXT_CYR, true );
+		$both_scripts    = $script_open && $latin_on && $cyr_on;
+		$only_cyrillic   = $script_open && $cyr_on && ! $latin_on;
+		if ( $both_scripts && '' === trim( $cyr_text ) && '' !== trim( $default_text ) && true === APD_Security::validate_plate_script( $default_text, 'cyrillic' ) && is_wp_error( APD_Security::validate_plate_script( $default_text, 'latin' ) ) ) {
+			$cyr_text     = $default_text;
+			$default_text = '';
+		}
+		$cyr_single      = str_replace( array( "\r\n", "\r", "\n" ), ' ', $cyr_text );
+		$cyr_rows        = APD_Formats::suv_plate_rows( $cyr_text );
+		$single_text     = str_replace( array( "\r\n", "\r", "\n" ), ' ', $default_text );
+		$suv_rows        = APD_Formats::suv_plate_rows( $default_text );
 		$single_open     = ! $suv_default && ! $sides_default && ! $french_default && ! $austria_default;
 		$english_product = is_array( $selected_format ) && APD_Formats::is_english( $selected_type );
 		$slogan_max      = $english_product ? APD_Formats::slogan_limit( $selected_format ) : APD_Formats::UK_SLOGAN_MAX;
@@ -609,8 +682,15 @@ final class APD_Admin_Settings {
 		}
 		$default_slogan = (string) get_post_meta( $post->ID, self::META_DEFAULT_SLOGAN, true );
 
-		echo '<p data-apd-default-single' . ( $single_open ? '' : ' hidden' ) . '><label for="apd_default_text">' . esc_html__( 'Initial plate text', 'auto-plate-designer' ) . '</label><br>';
+		echo '<p data-apd-default-single' . ( $single_open ? '' : ' hidden' ) . '><label for="apd_default_text">';
+		echo '<span data-apd-latin-only' . ( ( $both_scripts || $only_cyrillic ) ? ' hidden' : '' ) . '>' . esc_html__( 'Initial plate text', 'auto-plate-designer' ) . '</span>';
+		echo '<span data-apd-latin-both' . ( $both_scripts ? '' : ' hidden' ) . '>' . esc_html__( 'Latin', 'auto-plate-designer' ) . '</span>';
+		echo '<span data-apd-cyr-only' . ( $only_cyrillic ? '' : ' hidden' ) . '>' . esc_html__( 'Cyrillic letters', 'auto-plate-designer' ) . '</span>';
+		echo '</label><br>';
 		echo '<input type="text" class="widefat" id="apd_default_text" name="apd_default_text" value="' . esc_attr( $single_text ) . '" maxlength="32" autocomplete="off"' . ( $single_open ? '' : ' disabled' ) . '>';
+		echo '</p>';
+		echo '<p data-apd-cyrillic-defaults="single"' . ( ( $both_scripts && $single_open ) ? '' : ' hidden' ) . '><label for="apd_default_text_cyrillic">' . esc_html__( 'Cyrillic letters', 'auto-plate-designer' ) . '</label><br>';
+		echo '<input type="text" class="widefat" id="apd_default_text_cyrillic" name="apd_default_text_cyrillic" value="' . esc_attr( $cyr_single ) . '" maxlength="32" autocomplete="off"' . ( ( $both_scripts && $single_open ) ? '' : ' disabled' ) . '>';
 		echo '</p>';
 		echo '<p data-apd-default-slogan' . ( $english_product ? '' : ' hidden' ) . '><label for="apd_default_slogan">' . esc_html__( 'Initial slogan', 'auto-plate-designer' ) . '</label><br>';
 		echo '<input type="text" class="widefat" id="apd_default_slogan" name="apd_default_slogan" value="' . esc_attr( $default_slogan ) . '" maxlength="' . esc_attr( (string) $slogan_max ) . '" autocomplete="off"' . ( $english_product ? '' : ' disabled' ) . '>';
@@ -624,6 +704,7 @@ final class APD_Admin_Settings {
 		echo '<input type="text" class="widefat" id="apd_default_text_right" name="apd_default_text_right" value="' . esc_attr( isset( $side_parts[1] ) ? $side_parts[1] : '' ) . '" maxlength="' . esc_attr( (string) $side_right_max ) . '" autocomplete="off"' . ( $sides_default ? '' : ' disabled' ) . '>';
 		echo '</p>';
 		echo '</div>';
+		echo '<p data-apd-latin-both' . ( ( $both_scripts && $suv_default ) ? '' : ' hidden' ) . '><strong>' . esc_html__( 'Latin', 'auto-plate-designer' ) . '</strong></p>';
 		echo '<div class="apd-default-rows" data-apd-default-rows' . ( $suv_default ? '' : ' hidden' ) . '>';
 		echo '<p><label for="apd_default_text_row_1">' . esc_html__( 'First row', 'auto-plate-designer' ) . '</label><br>';
 		echo '<input type="text" class="widefat" id="apd_default_text_row_1" name="apd_default_text_row_1" value="' . esc_attr( $suv_rows[0] ) . '" maxlength="32" autocomplete="off"' . ( $suv_default ? '' : ' disabled' ) . '>';
@@ -632,6 +713,16 @@ final class APD_Admin_Settings {
 		echo '<input type="text" class="widefat" id="apd_default_text_row_2" name="apd_default_text_row_2" value="' . esc_attr( $suv_rows[1] ) . '" maxlength="32" autocomplete="off"' . ( $suv_default ? '' : ' disabled' ) . '>';
 		echo '</p>';
 		echo '</div>';
+		echo '<div data-apd-cyrillic-defaults="rows"' . ( ( $both_scripts && $suv_default ) ? '' : ' hidden' ) . '>';
+		echo '<p><strong>' . esc_html__( 'Cyrillic letters', 'auto-plate-designer' ) . '</strong></p>';
+		echo '<p><label for="apd_default_text_cyr_row_1">' . esc_html__( 'First row', 'auto-plate-designer' ) . '</label><br>';
+		echo '<input type="text" class="widefat" id="apd_default_text_cyr_row_1" name="apd_default_text_cyr_row_1" value="' . esc_attr( $cyr_rows[0] ) . '" maxlength="32" autocomplete="off"' . ( ( $both_scripts && $suv_default ) ? '' : ' disabled' ) . '>';
+		echo '</p>';
+		echo '<p><label for="apd_default_text_cyr_row_2">' . esc_html__( 'Second row', 'auto-plate-designer' ) . '</label><br>';
+		echo '<input type="text" class="widefat" id="apd_default_text_cyr_row_2" name="apd_default_text_cyr_row_2" value="' . esc_attr( $cyr_rows[1] ) . '" maxlength="32" autocomplete="off"' . ( ( $both_scripts && $suv_default ) ? '' : ' disabled' ) . '>';
+		echo '</p>';
+		echo '</div>';
+		echo '<p class="description" data-apd-script-text-help' . ( $both_scripts ? '' : ' hidden' ) . '>' . esc_html__( 'Each alphabet keeps its own starting text. The product page shows the text for the alphabet the customer chooses.', 'auto-plate-designer' ) . '</p>';
 		echo '<div class="apd-default-french" data-apd-default-french' . ( $french_default ? '' : ' hidden' ) . '>';
 		echo '<p data-apd-fr-field="1"' . ( $french_temp ? ' hidden' : '' ) . '><label for="apd_default_fr_1">' . esc_html__( 'Letters', 'auto-plate-designer' ) . '</label><br>';
 		echo '<input type="text" class="widefat" id="apd_default_fr_1" name="apd_default_fr_1" value="' . esc_attr( $french_temp ? '' : (string) $french_values[0] ) . '" maxlength="' . esc_attr( (string) $french_limits[0] ) . '" autocomplete="off"' . ( ( $french_default && ! $french_temp ) ? '' : ' disabled' ) . '>';
@@ -706,6 +797,72 @@ final class APD_Admin_Settings {
 		if ( '' !== $format_id ) {
 			$format_row  = APD_Formats::get( $format_id );
 			$format_type = is_array( $format_row ) && isset( $format_row['type'] ) ? (string) $format_row['type'] : '';
+		}
+
+		if ( ! APD_Formats::offers_script( $format_type ) ) {
+			delete_post_meta( $product_id, self::META_LATIN );
+			delete_post_meta( $product_id, self::META_CYRILLIC );
+			delete_post_meta( $product_id, self::META_LATIN_FONTS );
+			delete_post_meta( $product_id, self::META_CYRILLIC_FONTS );
+		} else {
+			$allowed_fonts = array();
+
+			if ( is_array( $format_row ) ) {
+				if ( ! empty( $format_row['font_ids_all'] ) ) {
+					$settings = APD_Plugin::get_settings();
+					$library  = isset( $settings['fonts'] ) && is_array( $settings['fonts'] ) ? $settings['fonts'] : array();
+
+					foreach ( $library as $library_font ) {
+						if ( ! empty( $library_font['id'] ) ) {
+							$allowed_fonts[] = (string) $library_font['id'];
+						}
+					}
+				} elseif ( isset( $format_row['font_ids'] ) && is_array( $format_row['font_ids'] ) ) {
+					$allowed_fonts = array_map( 'strval', $format_row['font_ids'] );
+				}
+			}
+
+			$keep_font = static function ( $key ) use ( $allowed_fonts ) {
+				$posted = isset( $_POST[ $key ] ) ? wp_unslash( $_POST[ $key ] ) : array(); // phpcs:ignore WordPress.Security.ValidatedSanitizedInput.InputNotSanitized
+				$clean  = array();
+
+				if ( ! is_array( $posted ) ) {
+					return $clean;
+				}
+
+				foreach ( $posted as $font_id ) {
+					$font_id = sanitize_text_field( (string) $font_id );
+
+					if ( '' !== $font_id && in_array( $font_id, $allowed_fonts, true ) ) {
+						$clean[] = $font_id;
+					}
+				}
+
+				return array_values( array_unique( $clean ) );
+			};
+
+			$latin_fonts = $keep_font( 'apd_font_ids_latin' );
+			$cyr_fonts   = $keep_font( 'apd_font_ids_cyrillic' );
+			$latin_yes   = isset( $_POST['apd_script_latin'] );
+			$cyr_yes     = isset( $_POST['apd_script_cyrillic'] );
+
+			if ( $cyr_yes && empty( $cyr_fonts ) ) {
+				$cyr_yes = false;
+				set_transient(
+					'apd_product_script_notice_' . get_current_user_id(),
+					__( 'Cyrillic needs at least one font from this list.', 'auto-plate-designer' ),
+					MINUTE_IN_SECONDS
+				);
+			}
+
+			if ( ! $latin_yes && ! $cyr_yes ) {
+				$latin_yes = true;
+			}
+
+			update_post_meta( $product_id, self::META_LATIN, $latin_yes ? 'yes' : 'no' );
+			update_post_meta( $product_id, self::META_CYRILLIC, $cyr_yes ? 'yes' : 'no' );
+			update_post_meta( $product_id, self::META_LATIN_FONTS, $latin_fonts );
+			update_post_meta( $product_id, self::META_CYRILLIC_FONTS, $cyr_fonts );
 		}
 
 		$design_id = isset( $_POST['apd_design_id'] ) ? sanitize_text_field( wp_unslash( $_POST['apd_design_id'] ) ) : '';
@@ -802,15 +959,7 @@ final class APD_Admin_Settings {
 			}
 		}
 
-		$text_ok = APD_Security::validate_plate_text(
-			$clean_text,
-			array(
-				'max_length'  => $text_limit,
-				'multiline'   => $multiline,
-				'allow_empty' => true,
-			)
-		);
-		update_post_meta( $product_id, self::META_DEFAULT_TEXT, is_wp_error( $text_ok ) ? '' : $clean_text );
+		$this->save_script_plate_text( $product_id, $format_row, $format_type, $clean_text, $text_limit, $multiline );
 
 		if ( APD_Formats::is_english( $format_type ) && is_array( $format_row ) ) {
 			$posted_slogan = isset( $_POST['apd_default_slogan'] ) ? (string) wp_unslash( $_POST['apd_default_slogan'] ) : ''; // phpcs:ignore WordPress.Security.ValidatedSanitizedInput.InputNotSanitized
@@ -846,6 +995,64 @@ final class APD_Admin_Settings {
 	 * @param int $product_id Product ID.
 	 * @return string
 	 */
+	/**
+	 * Alphabets and font lists saved on a product.
+	 *
+	 * An empty Latin list means every font on the format.
+	 *
+	 * @param int                  $product_id Product ID.
+	 * @param array<string, mixed> $format     Format row.
+	 * @return array{scripts: array<int, string>, latin_fonts: array<int, string>, cyrillic_fonts: array<int, string>}
+	 */
+	public static function product_script_state( $product_id, $format ) {
+		$empty = array(
+			'scripts'         => array(),
+			'latin_fonts'     => array(),
+			'cyrillic_fonts'  => array(),
+		);
+		$type = is_array( $format ) && isset( $format['type'] ) ? (string) $format['type'] : '';
+
+		if ( ! APD_Formats::offers_script( $type ) ) {
+			return $empty;
+		}
+
+		$product_id = absint( $product_id );
+		$latin      = $product_id ? (string) get_post_meta( $product_id, self::META_LATIN, true ) : '';
+		$cyrillic   = $product_id ? (string) get_post_meta( $product_id, self::META_CYRILLIC, true ) : '';
+		$scripts    = array();
+
+		if ( '' === $latin && '' === $cyrillic ) {
+			$scripts[] = 'latin';
+		} else {
+			if ( 'yes' === $latin ) {
+				$scripts[] = 'latin';
+			}
+
+			if ( 'yes' === $cyrillic ) {
+				$scripts[] = 'cyrillic';
+			}
+		}
+
+		if ( empty( $scripts ) ) {
+			$scripts[] = 'latin';
+		}
+
+		$latin_fonts = $product_id ? get_post_meta( $product_id, self::META_LATIN_FONTS, true ) : array();
+		$cyr_fonts   = $product_id ? get_post_meta( $product_id, self::META_CYRILLIC_FONTS, true ) : array();
+
+		return array(
+			'scripts'        => $scripts,
+			'latin_fonts'    => is_array( $latin_fonts ) ? array_map( 'strval', $latin_fonts ) : array(),
+			'cyrillic_fonts' => is_array( $cyr_fonts ) ? array_map( 'strval', $cyr_fonts ) : array(),
+		);
+	}
+
+	/**
+	 * Two-digit region stored on a French region product.
+	 *
+	 * @param int $product_id Product ID.
+	 * @return string
+	 */
 	public static function product_region_text( $product_id ) {
 		$product_id = absint( $product_id );
 		$stored     = $product_id ? (string) get_post_meta( $product_id, self::META_FR_REGION, true ) : '';
@@ -858,6 +1065,144 @@ final class APD_Admin_Settings {
 	 *
 	 * @param int                    $product_id Product ID.
 	 * @param array<string, mixed>|null $format  Format row.
+	 * @return string
+	 */
+	/**
+	 * Keep the Latin and Cyrillic starting texts apart when both alphabets are on.
+	 *
+	 * @param int                       $product_id  Product ID.
+	 * @param array<string, mixed>|null $format_row  Format row.
+	 * @param string                    $format_type Format type.
+	 * @param string                    $clean_text  Text from the main fields.
+	 * @param int                       $text_limit  Character ceiling.
+	 * @param bool                      $multiline   Whether newlines are part of the plate.
+	 */
+	private function save_script_plate_text( $product_id, $format_row, $format_type, $clean_text, $text_limit, $multiline ) {
+		$latin_text = $clean_text;
+		$cyr_text   = '';
+		$latin_on   = false;
+		$cyr_on     = false;
+
+		if ( APD_Formats::offers_script( $format_type ) ) {
+			$latin_on = 'yes' === (string) get_post_meta( $product_id, self::META_LATIN, true );
+			$cyr_on   = 'yes' === (string) get_post_meta( $product_id, self::META_CYRILLIC, true );
+
+			if ( $cyr_on && $latin_on ) {
+				$cyr_text = $this->posted_cyrillic_default( $format_row, $format_type );
+
+				if ( is_array( $format_row ) && APD_Formats::format_uses_two_rows( $format_row ) ) {
+					$row_limits = APD_Formats::suv_row_limits( $format_row );
+					$text_limit = $row_limits[0] + $row_limits[1] + 1;
+				}
+			} elseif ( $cyr_on ) {
+				$cyr_text   = $clean_text;
+				$latin_text = '';
+			}
+		}
+
+		$latin_text = $this->accept_script_default( $latin_text, $latin_on && $cyr_on ? 'latin' : '', $text_limit, $multiline );
+		$cyr_text   = $this->accept_script_default( $cyr_text, $cyr_on ? 'cyrillic' : '', $text_limit, $multiline );
+
+		update_post_meta( $product_id, self::META_DEFAULT_TEXT, $latin_text );
+
+		if ( '' === $cyr_text ) {
+			delete_post_meta( $product_id, self::META_DEFAULT_TEXT_CYR );
+		} else {
+			update_post_meta( $product_id, self::META_DEFAULT_TEXT_CYR, $cyr_text );
+		}
+	}
+
+	/**
+	 * Cyrillic starting text posted beside the Latin fields.
+	 *
+	 * @param array<string, mixed>|null $format_row  Format row.
+	 * @param string                    $format_type Format type.
+	 * @return string
+	 */
+	private function posted_cyrillic_default( $format_row, $format_type ) {
+		if ( is_array( $format_row ) && APD_Formats::format_uses_two_rows( $format_row ) ) {
+			$limits = APD_Formats::suv_row_limits( $format_row );
+			$row1   = isset( $_POST['apd_default_text_cyr_row_1'] ) ? (string) wp_unslash( $_POST['apd_default_text_cyr_row_1'] ) : ''; // phpcs:ignore WordPress.Security.ValidatedSanitizedInput.InputNotSanitized
+			$row2   = isset( $_POST['apd_default_text_cyr_row_2'] ) ? (string) wp_unslash( $_POST['apd_default_text_cyr_row_2'] ) : ''; // phpcs:ignore WordPress.Security.ValidatedSanitizedInput.InputNotSanitized
+
+			return APD_Formats::limit_suv_rows( $row1, $row2, $limits[0], $limits[1] );
+		}
+
+		$posted = isset( $_POST['apd_default_text_cyrillic'] ) ? (string) wp_unslash( $_POST['apd_default_text_cyrillic'] ) : ''; // phpcs:ignore WordPress.Security.ValidatedSanitizedInput.InputNotSanitized
+		$clean  = APD_Security::sanitize_plate_text( $posted, false );
+		$max    = is_array( $format_row ) && isset( $format_row['max_chars'] ) ? (int) $format_row['max_chars'] : 12;
+
+		if ( $max > 0 ) {
+			$length = function_exists( 'mb_strlen' ) ? mb_strlen( $clean, 'UTF-8' ) : strlen( $clean );
+
+			if ( $length > $max ) {
+				$clean = function_exists( 'mb_substr' ) ? mb_substr( $clean, 0, $max, 'UTF-8' ) : substr( $clean, 0, $max );
+			}
+		}
+
+		unset( $format_type );
+
+		return $clean;
+	}
+
+	/**
+	 * Store a starting text only when it matches the alphabet.
+	 *
+	 * An empty script skips the alphabet check. The admin character class still applies to Latin.
+	 *
+	 * @param string $text       Plate text.
+	 * @param string $script     latin, cyrillic, or empty.
+	 * @param int    $text_limit Character ceiling.
+	 * @param bool   $multiline  Whether newlines are part of the plate.
+	 * @return string
+	 */
+	private function accept_script_default( $text, $script, $text_limit, $multiline ) {
+		$check = APD_Security::validate_plate_text(
+			$text,
+			array(
+				'max_length'       => $text_limit,
+				'multiline'        => $multiline,
+				'allow_empty'      => true,
+				'skip_admin_regex' => 'cyrillic' === $script,
+			)
+		);
+
+		if ( is_wp_error( $check ) ) {
+			if ( '' !== $script && '' !== trim( $text ) ) {
+				set_transient(
+					'apd_product_script_notice_' . get_current_user_id(),
+					$check->get_error_message(),
+					MINUTE_IN_SECONDS
+				);
+			}
+
+			return '';
+		}
+
+		if ( '' === $script || '' === trim( $text ) ) {
+			return $text;
+		}
+
+		$script_check = APD_Security::validate_plate_script( $text, $script );
+
+		if ( is_wp_error( $script_check ) ) {
+			set_transient(
+				'apd_product_script_notice_' . get_current_user_id(),
+				$script_check->get_error_message(),
+				MINUTE_IN_SECONDS
+			);
+
+			return '';
+		}
+
+		return $text;
+	}
+
+	/**
+	 * Plate text shown on the product until the shopper types their own.
+	 *
+	 * @param int                       $product_id Product ID.
+	 * @param array<string, mixed>|null $format     Format row.
 	 * @return string
 	 */
 	public static function product_initial_text( $product_id, $format = null ) {
@@ -876,6 +1221,22 @@ final class APD_Admin_Settings {
 		$type = is_array( $format ) && isset( $format['type'] ) ? (string) $format['type'] : 'eu';
 
 		return APD_Formats::sample_plate_text( $type );
+	}
+
+	/**
+	 * Cyrillic plate text shown until the shopper types their own.
+	 *
+	 * @param int $product_id Product ID.
+	 * @return string
+	 */
+	public static function product_cyrillic_text( $product_id ) {
+		$product_id = absint( $product_id );
+
+		if ( ! $product_id ) {
+			return '';
+		}
+
+		return trim( (string) get_post_meta( $product_id, self::META_DEFAULT_TEXT_CYR, true ) );
 	}
 
 	/**
@@ -1470,7 +1831,7 @@ final class APD_Admin_Settings {
 			}
 
 			if ( null === $existing ) {
-				return new WP_Error(
+			return new WP_Error(
 					'apd_font_missing',
 					__( 'Font was not found.', 'auto-plate-designer' )
 				);
@@ -1572,7 +1933,7 @@ final class APD_Admin_Settings {
 	}
 
 	/**
-	 * Save layout limits and character whitelist.
+	 * Save the font floor, street-plate wrap lines, and character class.
 	 *
 	 * @return true|WP_Error
 	 */
@@ -1590,56 +1951,19 @@ final class APD_Admin_Settings {
 			$min_font = 48;
 		}
 
-		$max_lines = isset( $posted['max_lines'] ) ? absint( $posted['max_lines'] ) : 5;
+		$wrap_lines = isset( $posted['wrap_lines'] ) ? absint( $posted['wrap_lines'] ) : 5;
 
-		if ( $max_lines < 1 ) {
-			$max_lines = 1;
+		if ( $wrap_lines < 1 ) {
+			$wrap_lines = 1;
 		}
 
-		if ( $max_lines > 5 ) {
-			$max_lines = 5;
+		if ( $wrap_lines > 5 ) {
+			$wrap_lines = 5;
 		}
 
 		$settings['limits']['min_font_size'] = $min_font;
-		$settings['limits']['max_lines']     = $max_lines;
-
-		$layout_keys = array( 'text_only', 'text_image_text', 'image_text', 'multiline_text', 'holder' );
-
-		foreach ( $layout_keys as $layout ) {
-			$row = isset( $posted['layouts'][ $layout ] ) && is_array( $posted['layouts'][ $layout ] )
-				? $posted['layouts'][ $layout ]
-				: array();
-
-			$fallback  = 'holder' === $layout ? APD_Formats::HOLDER_TEXT_MAX : 12;
-			$max_chars = isset( $row['max_chars'] ) ? absint( $row['max_chars'] ) : $fallback;
-
-			if ( $max_chars < 1 ) {
-				$max_chars = 1;
-			}
-
-			if ( $max_chars > APD_Security::ABSOLUTE_MAX_CHARS ) {
-				$max_chars = APD_Security::ABSOLUTE_MAX_CHARS;
-			}
-
-			$lines = isset( $row['max_lines'] ) ? absint( $row['max_lines'] ) : 1;
-
-			if ( $lines < 1 ) {
-				$lines = 1;
-			}
-
-			if ( $lines > 5 ) {
-				$lines = 5;
-			}
-
-			if ( 'multiline_text' !== $layout ) {
-				$lines = 1;
-			}
-
-			$settings['limits']['layouts'][ $layout ] = array(
-				'max_chars' => $max_chars,
-				'max_lines' => $lines,
-			);
-		}
+		$settings['limits']['wrap_lines']    = $wrap_lines;
+		unset( $settings['limits']['layouts'], $settings['limits']['max_lines'] );
 
 		if ( isset( $posted['char_whitelist'] ) ) {
 			$whitelist = (string) $posted['char_whitelist'];

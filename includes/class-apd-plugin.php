@@ -233,29 +233,7 @@ final class APD_Plugin {
 			),
 			'limits'           => array(
 				'min_font_size' => 12,
-				'max_lines'     => 5,
-				'layouts'       => array(
-					'text_only'        => array(
-						'max_chars' => 12,
-						'max_lines' => 1,
-					),
-					'text_image_text'  => array(
-						'max_chars' => 8,
-						'max_lines' => 1,
-					),
-					'image_text'       => array(
-						'max_chars' => 12,
-						'max_lines' => 1,
-					),
-					'multiline_text'   => array(
-						'max_chars' => 40,
-						'max_lines' => 5,
-					),
-					'holder'           => array(
-						'max_chars' => APD_Formats::HOLDER_TEXT_MAX,
-						'max_lines' => 1,
-					),
-				),
+				'wrap_lines'    => 5,
 			),
 			'char_whitelist'   => APD_Security::DEFAULT_ADMIN_CHAR_CLASS,
 			'enabled_layouts'  => array(
@@ -650,25 +628,10 @@ final class APD_Plugin {
 		$settings['color_palettes'] = $colors['palettes'];
 		$settings['palettes']       = $colors['lists'];
 
-		$settings['limits'] = array_merge(
-			$defaults['limits'],
-			isset( $stored['limits'] ) && is_array( $stored['limits'] ) ? $stored['limits'] : array()
-		);
-
-		$settings['limits']['layouts'] = array_merge(
-			$defaults['limits']['layouts'],
-			isset( $settings['limits']['layouts'] ) && is_array( $settings['limits']['layouts'] )
-				? $settings['limits']['layouts']
-				: array()
-		);
-
-		foreach ( $defaults['limits']['layouts'] as $layout => $layout_defaults ) {
-			$current = isset( $settings['limits']['layouts'][ $layout ] ) && is_array( $settings['limits']['layouts'][ $layout ] )
-				? $settings['limits']['layouts'][ $layout ]
-				: array();
-
-			$settings['limits']['layouts'][ $layout ] = array_merge( $layout_defaults, $current );
-		}
+		$stored_limits      = isset( $stored['limits'] ) && is_array( $stored['limits'] ) ? $stored['limits'] : array();
+		$settings['limits'] = array_merge( $defaults['limits'], $stored_limits );
+		$settings['limits']['wrap_lines'] = self::stored_wrap_lines( $stored_limits );
+		unset( $settings['limits']['layouts'], $settings['limits']['max_lines'] );
 
 		if ( ! is_array( $settings['formats'] ) ) {
 			$settings['formats'] = array();
@@ -693,6 +656,30 @@ final class APD_Plugin {
 		);
 
 		return $settings;
+	}
+
+	/**
+	 * Street-plate wrap cap. A saved wrap_lines value wins. Older installs stored it on the multiline layout row.
+	 *
+	 * @param array<string, mixed> $limits Stored limits array.
+	 * @return int
+	 */
+	private static function stored_wrap_lines( $limits ) {
+		$lines = isset( $limits['wrap_lines'] ) ? (int) $limits['wrap_lines'] : 0;
+
+		if ( $lines < 1 && isset( $limits['layouts']['multiline_text']['max_lines'] ) ) {
+			$lines = (int) $limits['layouts']['multiline_text']['max_lines'];
+		}
+
+		if ( $lines < 1 ) {
+			$lines = 5;
+		}
+
+		if ( $lines > 5 ) {
+			$lines = 5;
+		}
+
+		return $lines;
 	}
 
 	/**

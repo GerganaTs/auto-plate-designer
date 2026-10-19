@@ -95,6 +95,7 @@ $required = array(
 	'Initial slogan' => 'Начален слоган',
 	'Shown on the product page until the shopper types a slogan. Leave blank for no slogan.' => 'Показва се на страницата на продукта, докато клиентът не напише слоган. Остави празно, ако няма слоган.',
 	'Text color'         => 'Цвят на текста',
+	'Text and frame color' => 'Цвят на текст и рамка',
 	'Border color'       => 'Цвят на рамката',
 	'Plate preview'      => 'Преглед на табелата',
 	'Select image'       => 'Избери изображение',
@@ -102,6 +103,7 @@ $required = array(
 	'Band width'         => 'Широчина на лентата',
 	'Band height'        => 'Височина на лентата',
 	'Center text area'   => 'Центрирай текстовата област',
+	'Center preset vertically' => 'Центрирай пресета вертикално',
 	'X, Y, width, and height are percentages of the white strip.' => 'X, Y, ширината и височината са проценти от бялата лента.',
 	'EU motorcycle plate 199×154' => 'EU табела за мотор 199×154 мм',
 	'EU motorcycle plate 240×130' => 'EU табела за мотор 240×130 мм',
@@ -174,11 +176,46 @@ $required = array(
 	'Choose a palette for the text, the plate, the frame, and the slogan.' => 'Избери палета за номера, табелата, рамката и слогана.',
 	'Choose one palette for the number, the plate, the frame, and the slogan.' => 'Избери по една палета за номера, табелата, рамката и слогана.',
 	'Choose one palette for the text, the plate, and the frame. Every active palette is listed with its name and colors.' => 'Избери по една палета за текста, табелата и рамката. Всяка активна палета е в списъка с името и цветовете си.',
+	'Maximum wrapped lines' => 'Максимален брой редове при пренасяне',
+	'Street plates with text wrap stop after this many lines. The limit is 5.' => 'Уличните табели с пренасяне спират след този брой редове. Таванът е 5.',
 	'Text wrap'          => 'Пренасяне на текста',
 	'Wrap long text onto extra lines.' => 'Дългият текст минава на следващ ред.',
 	'Second text area'   => 'Втора текстова област',
 	'Third text area'    => 'Трета текстова област',
 	'Region box'         => 'Поле за региона',
+	'Latin'              => 'Латиница',
+	'Cyrillic letters'   => 'Кирилица',
+	'One alphabet shows a sentence on the product. Both show two choices. Existing products stay Latin until you tick Cyrillic.' => 'Една азбука се показва с изречение върху продукта. Двете показват два избора. Съществуващите продукти остават на латиница, докато не отметнеш кирилица.',
+	'Each alphabet keeps its own starting text. The product page shows the text for the alphabet the customer chooses.' => 'Всяка азбука си има собствен начален текст. На продукта се вижда текстът за азбуката, която клиентът избере.',
+	'Latin fonts'        => 'Шрифтове за латиница',
+	'An empty Latin list uses every font on the format.' => 'Празен списък за латиница ползва всички шрифтове на формата.',
+	'Cyrillic fonts'     => 'Шрифтове за кирилица',
+	'Cyrillic needs at least one font from this list.' => 'Кирилицата иска поне един шрифт от този списък.',
+	'Embossed up to'     => 'Релеф до',
+	'Letters past this count are printed digitally. The frame stays embossed. The space counts.' => 'Над този брой буквите се печатат дигитално. Рамката остава релефна. Интервалът се брои.',
+	'First row embossed' => 'Релеф на първи ред',
+	'Second row embossed' => 'Релеф на втори ред',
+	'Digital letters and frame' => 'Дигитални букви и рамка',
+	'One color paints the letters and the frame when the letters are digital. Until you choose one, the frame uses the letter color.' => 'Един цвят боядисва буквите и рамката, когато буквите са дигитални. Докато не избереш палета, рамката ползва цвета на буквите.',
+	'Alphabet'           => 'Азбука',
+	'Inscription language' => 'Език на надписа',
+	'For Cyrillic text, or Latin text longer than 10 characters, the letters are made digitally while the plate frame stays classic and embossed.' => 'При текст на кирилица или при текст на латиница с повече от 10 символа, буквите се изработват като дигитални, докато рамката на табелата остава класическа и релефна.',
+	'This plate is written in Cyrillic letters.' => 'Тази табела се пише на кирилица.',
+	'This plate is written in Latin letters.' => 'Тази табела се пише на латиница.',
+	'Without frame color' => 'Без цвят на рамката',
+	'Digital color'      => 'Дигитален цвят',
+	'Comment'            => 'Коментар',
+	'Past the standard character count the letters are printed digitally. The frame stays embossed.' => 'Над стандартния 10 броя символи, буквите се печатат дигитално. Рамката остава релефна.',
+	'The plate letters are printed digitally and the frame stays embossed.' => 'Буквите на табелата се печатат дигитално, а рамката остава релефна.',
+	'The letters are printed digitally.' => 'Буквите се печатат дигитално.',
+	'The text must be in Latin letters.' => 'Текстът трябва да е на латиница.',
+	'The text must be in Cyrillic letters.' => 'Текстът трябва да е на кирилица.',
+	'Latin letters are not allowed when Cyrillic is selected.' => 'При избор на кирилица, буквите на латиница не са позволени.',
+	'Cyrillic letters are not allowed when Latin is selected.' => 'При избор на латиница, буквите на кирилица не са позволени.',
+	'Digital print'      => 'дигитален печат',
+	'Embossed letters'   => 'релефни',
+	'Embossed frame'     => 'релефна',
+	'Embossed, without color' => 'релефна, без цвят',
 );
 
 $missing = array();
@@ -273,6 +310,15 @@ $row_one    = __( 'Text on 1 row', 'auto-plate-designer' );
 $row_two    = __( 'Text on 2 rows', 'auto-plate-designer' );
 $left_text  = __( 'Left text', 'auto-plate-designer' );
 $right_text = __( 'Right text', 'auto-plate-designer' );
+$inscription = __( 'Inscription language', 'auto-plate-designer' );
+$inscription_hint = __( 'For Cyrillic text, or Latin text longer than 10 characters, the letters are made digitally while the plate frame stays classic and embossed.', 'auto-plate-designer' );
+$ink_frame = __( 'Text and frame color', 'auto-plate-designer' );
+$digital_ten = __( 'Past the standard character count the letters are printed digitally. The frame stays embossed.', 'auto-plate-designer' );
+
+if ( 'Език на надписа' !== $inscription || 'При текст на кирилица или при текст на латиница с повече от 10 символа, буквите се изработват като дигитални, докато рамката на табелата остава класическа и релефна.' !== $inscription_hint || 'Цвят на текст и рамка' !== $ink_frame || 'Над стандартния 10 броя символи, буквите се печатат дигитално. Рамката остава релефна.' !== $digital_ten ) {
+	fwrite( STDERR, "WP_INSCRIPTION_I18N_FAIL label={$inscription} hint={$inscription_hint} ink={$ink_frame} notice={$digital_ten}\n" );
+	exit( 1 );
+}
 
 if ( 'Формати' !== $translated || 'Без рамка' !== $without || 'Цвят по подразбиране' !== $default || 'Държава на регистрация' !== $country || 'Първи ред' !== $row_label || 'Текст ляво поле' !== $left_text || 'Текст дясно поле' !== $right_text || 'EU табела за мотор 199×154 мм' !== $moto_199 || 'EU табела за мотор 240×130 мм' !== $moto_240 || 'EU табела за мотор без държавна лента 199×154 мм' !== $plain_199 || 'EU табела за мотор без държавна лента 240×130 мм' !== $plain_240 || 'Стойка за мотор (199×154 мм)' !== $holder_199 || 'EU табела за SUV 280x200' !== $suv_280 || 'EU табела за SUV 340x200' !== $suv_340 || 'Табела за SUV без пресет 280x200' !== $plain_280 || 'Табела за SUV без пресет 340x200' !== $plain_340 || 'EU табела размер 300x150 мм' !== $eu_300 || 'Атипична табела размер 300x150 мм' !== $atyp_300 || 'Текст на 1 ред' !== $row_one || 'Текст на 2 реда' !== $row_two || 'Френски номер' !== $fr_label || 'Френски временен номер' !== $fr_ww || 'Френска табела с регион' !== $fr_region || 'Регион' !== $fr_region_label || 'Тиретата се отпечатват на табелата.' !== $fr_dashes || 'Месец' !== $fr_month || 'Година' !== $fr_year || 'Австрийски номер' !== $at_label || 'Сивият правоъгълник ще бъде заменен със снимката на региона.' !== $at_note || 'Стандартна английска табела с държавен пресет' !== $uk_label || 'Стандартна английска табела без държавен пресет' !== $uk_plain || 'Мини табела 340×90 мм с държавен пресет' !== $mini_label || 'Мини табела 340×90 мм без държавен пресет' !== $mini_plain || 'Слоган' !== $slogan_label || 'Влачи полето за слогана, за да го поставиш на рамката.' !== $slogan_drag ) {
 	fwrite( STDERR, "WP_TRANSLATE_FAIL Formats={$translated} Without={$without} Default={$default} Country={$country} Row={$row_label} Left={$left_text} Right={$right_text} Moto={$moto_199} Wide={$moto_240} Plain={$plain_199} PlainWide={$plain_240} Holder={$holder_199} Suv={$suv_280} SuvWide={$suv_340} SuvPlain={$plain_280} SuvPlainWide={$plain_340}\n" );

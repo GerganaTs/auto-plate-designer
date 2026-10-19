@@ -174,7 +174,7 @@ $details_hidden  = $has_type ? '' : ' hidden';
 
 	<h3><?php echo $editing['id'] ? esc_html__( 'Edit format', 'auto-plate-designer' ) : esc_html__( 'Add format', 'auto-plate-designer' ); ?></h3>
 
-	<form method="post" enctype="multipart/form-data" action="<?php echo esc_url( $apd_admin->tab_url( 'formats' ) ); ?>" class="apd-form" data-apd-format-form>
+	<form method="post" enctype="multipart/form-data" action="<?php echo esc_url( $apd_admin->tab_url( 'formats' ) ); ?>" class="apd-form" data-apd-format-form<?php echo $editing['id'] ? '' : ' data-apd-fresh="1"'; ?>>
 		<?php wp_nonce_field( 'apd_save_settings', 'apd_settings_nonce' ); ?>
 		<input type="hidden" name="apd_settings_action" value="save_format">
 		<input type="hidden" name="apd_format[id]" value="<?php echo esc_attr( $editing['id'] ); ?>">
@@ -229,7 +229,28 @@ $details_hidden  = $has_type ? '' : ' hidden';
 				$limit_source['text_rows'] = 2;
 			}
 			$suv_limits = APD_Formats::suv_row_limits( $limit_source );
+			if ( ! $editing['id'] && $show_suv_rows ) {
+				$fresh_rows = APD_Formats::typing_row_defaults( $format_type );
+				if ( (int) $limit_source['max_chars_row_1'] < 1 ) {
+					$suv_limits[0] = $fresh_rows[0];
+				}
+				if ( (int) $limit_source['max_chars_row_2'] < 1 ) {
+					$suv_limits[1] = $fresh_rows[1];
+				}
+			}
+			$show_embossed      = $has_type && APD_Formats::letters_follow_count( $format_type );
+			$embossed_limits    = APD_Formats::embossed_limits( $show_embossed ? $editing : array( 'type' => '' ) );
+			$show_embossed_rows = $show_embossed && $show_suv_rows;
+			$show_embossed_line = $show_embossed && ! $show_suv_rows;
 			$show_us_split   = $has_type && 'us' === $format_type && ! empty( $editing['split_text'] );
+			$us_left_max     = isset( $editing['max_chars_left'] ) ? (int) $editing['max_chars_left'] : APD_Formats::US_SIDE_LEFT_MAX;
+			$us_right_max    = isset( $editing['max_chars_right'] ) ? (int) $editing['max_chars_right'] : APD_Formats::US_SIDE_RIGHT_MAX;
+			if ( $us_left_max < 1 ) {
+				$us_left_max = APD_Formats::US_SIDE_LEFT_MAX;
+			}
+			if ( $us_right_max < 1 ) {
+				$us_right_max = APD_Formats::US_SIDE_RIGHT_MAX;
+			}
 			$show_fr         = $has_type && APD_Formats::is_french( $format_type );
 			$show_fr_first   = $show_fr && ! APD_Formats::is_french_temporary( $format_type );
 			$fr_limits       = APD_Formats::french_group_limits( $editing );
@@ -269,6 +290,30 @@ $details_hidden  = $has_type ? '' : ' hidden';
 					<input type="number" id="apd_format_max_chars" name="apd_format[max_chars]" min="1" max="<?php echo esc_attr( (string) APD_Security::ABSOLUTE_MAX_CHARS ); ?>" value="<?php echo esc_attr( $max_field_value ); ?>"<?php echo ( $show_suv_rows && ! $show_row_choice ) ? ' disabled' : ''; ?><?php echo $holder_max_attr; // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped ?>>
 				</td>
 			</tr>
+			<tr data-apd-format-details data-apd-embossed-line<?php echo $show_embossed_line ? '' : ' hidden'; // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped ?>>
+				<th><label for="apd_format_embossed_chars"><?php esc_html_e( 'Embossed up to', 'auto-plate-designer' ); ?></label></th>
+				<td>
+					<input type="number" id="apd_format_embossed_chars" name="apd_format[embossed_chars]" min="1" max="<?php echo esc_attr( (string) APD_Security::ABSOLUTE_MAX_CHARS ); ?>" value="<?php echo esc_attr( (string) ( $embossed_limits[0] > 0 ? $embossed_limits[0] : APD_Formats::EMBOSSED_LINE ) ); ?>"<?php disabled( ! $show_embossed_line ); ?>>
+					<p class="description"><?php esc_html_e( 'Letters past this count are printed digitally. The frame stays embossed. The space counts.', 'auto-plate-designer' ); ?></p>
+				</td>
+			</tr>
+			<tr data-apd-format-details data-apd-max-sides<?php echo $show_us_split ? '' : ' hidden'; // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped ?>>
+				<th><?php esc_html_e( 'Maximum characters', 'auto-plate-designer' ); ?></th>
+				<td>
+					<div class="apd-metric-grid">
+						<label class="apd-metric"><?php esc_html_e( 'Left maximum', 'auto-plate-designer' ); ?>
+							<span class="apd-metric__control">
+								<input type="number" id="apd_format_max_chars_left" name="apd_format[max_chars_left]" min="1" max="<?php echo esc_attr( (string) APD_Security::ABSOLUTE_MAX_CHARS ); ?>" value="<?php echo esc_attr( (string) $us_left_max ); ?>"<?php disabled( ! $show_us_split ); ?>>
+							</span>
+						</label>
+						<label class="apd-metric"><?php esc_html_e( 'Right maximum', 'auto-plate-designer' ); ?>
+							<span class="apd-metric__control">
+								<input type="number" id="apd_format_max_chars_right" name="apd_format[max_chars_right]" min="1" max="<?php echo esc_attr( (string) APD_Security::ABSOLUTE_MAX_CHARS ); ?>" value="<?php echo esc_attr( (string) $us_right_max ); ?>"<?php disabled( ! $show_us_split ); ?>>
+							</span>
+						</label>
+					</div>
+				</td>
+			</tr>
 			<tr data-apd-format-details data-apd-wrap<?php echo ( $has_type && APD_Formats::is_street_plate( $format_type ) ) ? '' : ' hidden'; // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped ?>>
 				<th><?php esc_html_e( 'Text wrap', 'auto-plate-designer' ); ?></th>
 				<td>
@@ -284,12 +329,26 @@ $details_hidden  = $has_type ? '' : ' hidden';
 				<td>
 					<div class="apd-metric-grid">
 						<label class="apd-metric"><?php esc_html_e( 'First row maximum', 'auto-plate-designer' ); ?>
-							<input type="number" id="apd_format_row_1_max" name="apd_format[max_chars_row_1]" min="1" max="<?php echo esc_attr( (string) APD_Security::ABSOLUTE_MAX_CHARS ); ?>" value="<?php echo esc_attr( (string) $suv_limits[0] ); ?>"<?php echo ( $show_suv_rows || $show_row_choice ) ? '' : ' disabled'; ?>>
+							<input type="number" id="apd_format_row_1_max" name="apd_format[max_chars_row_1]" min="1" max="<?php echo esc_attr( (string) APD_Security::ABSOLUTE_MAX_CHARS ); ?>" value="<?php echo esc_attr( (string) $suv_limits[0] ); ?>"<?php echo ( $show_suv_rows || $show_row_choice ) ? '' : ' disabled'; ?><?php echo $editing['id'] ? '' : ' data-apd-typing-default="1"'; ?>>
 						</label>
 						<label class="apd-metric"><?php esc_html_e( 'Second row maximum', 'auto-plate-designer' ); ?>
-							<input type="number" id="apd_format_row_2_max" name="apd_format[max_chars_row_2]" min="1" max="<?php echo esc_attr( (string) APD_Security::ABSOLUTE_MAX_CHARS ); ?>" value="<?php echo esc_attr( (string) $suv_limits[1] ); ?>"<?php echo ( $show_suv_rows || $show_row_choice ) ? '' : ' disabled'; ?>>
+							<input type="number" id="apd_format_row_2_max" name="apd_format[max_chars_row_2]" min="1" max="<?php echo esc_attr( (string) APD_Security::ABSOLUTE_MAX_CHARS ); ?>" value="<?php echo esc_attr( (string) $suv_limits[1] ); ?>"<?php echo ( $show_suv_rows || $show_row_choice ) ? '' : ' disabled'; ?><?php echo $editing['id'] ? '' : ' data-apd-typing-default="1"'; ?>>
 						</label>
 					</div>
+				</td>
+			</tr>
+			<tr data-apd-format-details data-apd-embossed-rows<?php echo $show_embossed_rows ? '' : ' hidden'; // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped ?>>
+				<th><?php esc_html_e( 'Embossed up to', 'auto-plate-designer' ); ?></th>
+				<td>
+					<div class="apd-metric-grid">
+						<label class="apd-metric"><?php esc_html_e( 'First row embossed', 'auto-plate-designer' ); ?>
+							<input type="number" id="apd_format_embossed_row_1" name="apd_format[embossed_row_1]" min="1" max="<?php echo esc_attr( (string) APD_Security::ABSOLUTE_MAX_CHARS ); ?>" value="<?php echo esc_attr( (string) ( $embossed_limits[0] > 0 ? $embossed_limits[0] : APD_Formats::EMBOSSED_ROW_1 ) ); ?>"<?php disabled( ! $show_embossed_rows ); ?>>
+						</label>
+						<label class="apd-metric"><?php esc_html_e( 'Second row embossed', 'auto-plate-designer' ); ?>
+							<input type="number" id="apd_format_embossed_row_2" name="apd_format[embossed_row_2]" min="1" max="<?php echo esc_attr( (string) APD_Security::ABSOLUTE_MAX_CHARS ); ?>" value="<?php echo esc_attr( (string) ( $embossed_limits[1] > 0 ? $embossed_limits[1] : APD_Formats::EMBOSSED_ROW_2 ) ); ?>"<?php disabled( ! $show_embossed_rows ); ?>>
+						</label>
+					</div>
+					<p class="description"><?php esc_html_e( 'Letters past this count are printed digitally. The frame stays embossed. The space counts.', 'auto-plate-designer' ); ?></p>
 				</td>
 			</tr>
 			<tr data-apd-format-details data-apd-max-fr data-apd-fr-max="1"<?php echo $show_fr_first ? '' : ' hidden'; // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped ?>>
@@ -519,6 +578,7 @@ $details_hidden  = $has_type ? '' : ' hidden';
 					$apd_plate_width          = (int) $editing['width'];
 					$apd_plate_height         = (int) $editing['height'];
 					$apd_two_rows             = $has_type && APD_Formats::format_uses_two_rows( $editing );
+					$apd_text_box_design      = false;
 					$apd_split_ui             = true;
 					$apd_split_on             = $show_us_split;
 					$apd_split_name           = 'apd_format[split_text]';
@@ -580,6 +640,20 @@ $details_hidden  = $has_type ? '' : ' hidden';
 			?>
 			<div class="apd-format-palettes" data-apd-format-palettes data-apd-format-details<?php echo $details_hidden; // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped ?>>
 				<h3><?php esc_html_e( 'Colors for this format', 'auto-plate-designer' ); ?></h3>
+				<?php $show_digital_palette = $has_type && APD_Formats::offers_digital_palette( $format_type ); ?>
+				<p data-apd-digital-palette<?php echo $show_digital_palette ? '' : ' hidden'; ?>>
+					<label for="apd_format_digital_palette"><?php esc_html_e( 'Digital letters and frame', 'auto-plate-designer' ); ?></label><br>
+					<select id="apd_format_digital_palette" name="apd_format[digital_palette_id]" <?php disabled( ! $show_digital_palette ); ?>>
+						<option value=""><?php esc_html_e( 'Choose a palette', 'auto-plate-designer' ); ?></option>
+						<?php
+						$digital_selected = isset( $editing['digital_palette_id'] ) ? (string) $editing['digital_palette_id'] : '';
+						foreach ( $active_palettes as $palette ) :
+							?>
+							<option value="<?php echo esc_attr( $palette['id'] ); ?>" <?php selected( $digital_selected, $palette['id'] ); ?>><?php echo esc_html( $palette['name'] ); ?></option>
+						<?php endforeach; ?>
+					</select>
+					<span class="description"><?php esc_html_e( 'One color paints the letters and the frame when the letters are digital. Until you choose one, the frame uses the letter color.', 'auto-plate-designer' ); ?></span>
+				</p>
 				<p class="description" data-apd-palette-slot-help<?php echo ( $use_slots && 'us' !== $format_type && ! APD_Formats::is_english( $format_type ) ) ? '' : ' hidden'; ?>><?php esc_html_e( 'Choose one palette for the text, the plate, and the frame. Every active palette is listed with its name and colors.', 'auto-plate-designer' ); ?></p>
 				<p class="description" data-apd-palette-uk-help<?php echo ( $use_slots && APD_Formats::is_english( $format_type ) ) ? '' : ' hidden'; ?>><?php esc_html_e( 'Choose one palette for the number, the plate, the frame, and the slogan.', 'auto-plate-designer' ); ?></p>
 				<p class="description" data-apd-palette-us-help<?php echo ( $use_slots && 'us' === $format_type ) ? '' : ' hidden'; ?>><?php esc_html_e( 'Choose a palette for the text. Every active palette is listed with its name and colors.', 'auto-plate-designer' ); ?></p>

@@ -159,6 +159,23 @@ if ( $apd_text_box_studio ) {
 			</label>
 			<span class="description"><?php esc_html_e( 'The two boxes share a height and move together. Each width and the gap between them are set separately.', 'auto-plate-designer' ); ?></span>
 		</p>
+		<?php if ( $apd_text_box_design && '' !== $apd_side_left_name && '' !== $apd_side_right_name ) : ?>
+			<div class="apd-side-max" data-apd-split-panel<?php echo $apd_split_on ? '' : ' hidden'; ?>>
+				<p class="apd-metric-heading"><?php esc_html_e( 'Maximum characters', 'auto-plate-designer' ); ?></p>
+				<div class="apd-metric-grid">
+					<label class="apd-metric"><?php echo esc_html__( 'Left maximum', 'auto-plate-designer' ); ?>
+						<span class="apd-metric__control">
+							<input type="number" name="<?php echo esc_attr( $apd_side_left_name ); ?>" min="1" max="<?php echo esc_attr( (string) APD_Security::ABSOLUTE_MAX_CHARS ); ?>" value="<?php echo esc_attr( (string) $apd_side_left_max ); ?>">
+						</span>
+					</label>
+					<label class="apd-metric"><?php echo esc_html__( 'Right maximum', 'auto-plate-designer' ); ?>
+						<span class="apd-metric__control">
+							<input type="number" name="<?php echo esc_attr( $apd_side_right_name ); ?>" min="1" max="<?php echo esc_attr( (string) APD_Security::ABSOLUTE_MAX_CHARS ); ?>" value="<?php echo esc_attr( (string) $apd_side_right_max ); ?>">
+						</span>
+					</label>
+				</div>
+			</div>
+		<?php endif; ?>
 	<?php endif; ?>
 	<div class="apd-text-box-wrap<?php echo $apd_text_box_studio ? ' apd-text-box-wrap--studio' : ''; ?>" data-apd-text-box-wrap <?php echo $apd_text_box_show_stage ? '' : 'hidden'; ?>>
 		<?php
@@ -342,6 +359,9 @@ if ( $apd_text_box_studio ) {
 			</span>
 		</label>
 	</div>
+	<p class="apd-text-box-actions">
+		<button type="button" class="button" data-apd-center-band><?php esc_html_e( 'Center preset vertically', 'auto-plate-designer' ); ?></button>
+	</p>
 	</div>
 <?php endif; ?>
 <?php if ( $apd_show_metric_labels ) : ?>
@@ -486,12 +506,6 @@ if ( $apd_text_box_studio ) {
 				<option value="right" <?php selected( $apd_text_box_right['align'], 'right' ); ?>><?php esc_html_e( 'Right', 'auto-plate-designer' ); ?></option>
 			</select>
 		</span>
-	</label>
-	<label class="apd-metric"><?php echo esc_html__( 'Left maximum', 'auto-plate-designer' ); ?>
-		<input type="number" name="<?php echo esc_attr( $apd_side_left_name ); ?>" min="1" max="<?php echo esc_attr( (string) APD_Security::ABSOLUTE_MAX_CHARS ); ?>" value="<?php echo esc_attr( (string) $apd_side_left_max ); ?>">
-	</label>
-	<label class="apd-metric"><?php echo esc_html__( 'Right maximum', 'auto-plate-designer' ); ?>
-		<input type="number" name="<?php echo esc_attr( $apd_side_right_name ); ?>" min="1" max="<?php echo esc_attr( (string) APD_Security::ABSOLUTE_MAX_CHARS ); ?>" value="<?php echo esc_attr( (string) $apd_side_right_max ); ?>">
 	</label>
 	<input type="hidden" name="<?php echo esc_attr( $apd_right_box_name ); ?>[y]" value="<?php echo esc_attr( (string) $apd_text_box_right['y'] ); ?>" data-apd-text-box-right-input="y">
 	<input type="hidden" name="<?php echo esc_attr( $apd_right_box_name ); ?>[height]" value="<?php echo esc_attr( (string) $apd_text_box_right['height'] ); ?>" data-apd-text-box-right-input="height">

@@ -83,8 +83,8 @@ foreach ( $tabs as $tab ) {
 
 	echo 'TAB_OK ' . $tab . ' len=' . strlen( $html ) . PHP_EOL;
 
-	if ( 'limits' === $tab && ( false === strpos( $html, 'name="apd_limits[layouts][holder][max_chars]"' ) || false === strpos( $html, 'value="' . APD_Formats::HOLDER_TEXT_MAX . '"' ) ) ) {
-		fwrite( STDERR, "HOLDER_LAYOUT_LIMIT_FAIL\n" );
+	if ( 'limits' === $tab && ( false === strpos( $html, 'name="apd_limits[min_font_size]"' ) || false === strpos( $html, 'name="apd_limits[wrap_lines]"' ) || false === strpos( $html, 'name="apd_limits[char_whitelist]"' ) || false !== strpos( $html, 'apd_limits[layouts]' ) || false !== strpos( $html, 'name="apd_limits[max_lines]"' ) ) ) {
+		fwrite( STDERR, "LIMITS_TAB_FAIL\n" );
 		exit( 1 );
 	}
 }

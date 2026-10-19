@@ -119,7 +119,7 @@ ob_start();
 include APD_PLUGIN_DIR . 'templates/product-configurator.php';
 $html = ob_get_clean();
 
-if ( false === strpos( $html, 'name="apd_frame"' ) || false === strpos( $html, 'checked' ) ) {
+if ( false !== strpos( $html, 'name="apd_frame"' ) || false === strpos( $html, 'name="apd_frame_plain"' ) || false === strpos( $html, 'name="apd_border_color"' ) ) {
 	fwrite( STDERR, "SHOP_FRAME_CHOICE_MISSING\n" );
 	exit( 1 );
 }
@@ -150,6 +150,109 @@ if ( APD_Formats::sample_plate_text( 'eu' ) !== 'CA 0909 BX' || APD_Formats::sam
 }
 
 echo 'SHOP_PRODUCT_INITIAL_TEXT_OK' . PHP_EOL;
+
+$inscription_label = __( 'Inscription language', 'auto-plate-designer' );
+$inscription_hint  = __( 'For Cyrillic text, or Latin text longer than 10 characters, the letters are made digitally while the plate frame stays classic and embossed.', 'auto-plate-designer' );
+$latin_only_hint   = __( 'This plate is written in Latin letters.', 'auto-plate-designer' );
+$apd_payload['scripts']                 = array( 'latin', 'cyrillic' );
+$apd_payload['default_text']            = 'CA 7777 KK';
+$apd_payload['default_text_cyrillic']   = 'КИРИЛИЦА';
+unset( $apd_payload['cart_restore'] );
+ob_start();
+include APD_PLUGIN_DIR . 'templates/product-configurator.php';
+$mixed_html = ob_get_clean();
+
+$mixed_dom = new DOMDocument();
+libxml_use_internal_errors( true );
+$mixed_dom->loadHTML( '<?xml encoding="utf-8" ?>' . $mixed_html );
+libxml_clear_errors();
+$mixed_xp = new DOMXPath( $mixed_dom );
+
+$script_fields = $mixed_xp->query( '//fieldset[contains(concat(" ", normalize-space(@class), " "), " apd-script ")]' );
+$hint_nodes    = $mixed_xp->query( '//span[@class="apd-font-hint"]' );
+$language_hint = null;
+if ( $hint_nodes ) {
+	foreach ( $hint_nodes as $hint_node ) {
+		if ( $inscription_hint === trim( $hint_node->textContent ) ) {
+			$language_hint = $hint_node;
+			break;
+		}
+	}
+}
+$hint_parent_is_fieldset = $language_hint && 'fieldset' === $language_hint->parentNode->nodeName;
+$fieldset_contains_hint  = false;
+if ( $script_fields && $script_fields->length ) {
+	foreach ( $mixed_xp->query( './/span[@class="apd-font-hint"]', $script_fields->item( 0 ) ) as $inside ) {
+		if ( $inscription_hint === trim( $inside->textContent ) ) {
+			$fieldset_contains_hint = true;
+		}
+	}
+}
+$previous = $language_hint ? $language_hint->previousSibling : null;
+while ( $previous && XML_ELEMENT_NODE !== $previous->nodeType ) {
+	$previous = $previous->previousSibling;
+}
+$following = $language_hint ? $language_hint->nextSibling : null;
+while ( $following && XML_ELEMENT_NODE !== $following->nodeType ) {
+	$following = $following->nextSibling;
+}
+$latin_radio    = $mixed_xp->query( '//fieldset[contains(concat(" ", normalize-space(@class), " "), " apd-script ")]//input[@name="apd_script" and @value="latin"]' );
+$cyrillic_radio = $mixed_xp->query( '//fieldset[contains(concat(" ", normalize-space(@class), " "), " apd-script ")]//input[@name="apd_script" and @value="cyrillic"]' );
+$screen_legend  = $mixed_xp->query( '//fieldset[contains(concat(" ", normalize-space(@class), " "), " apd-script ")]/legend[contains(concat(" ", normalize-space(@class), " "), " screen-reader-text ")]' );
+$plate_input    = $mixed_xp->query( '//input[@name="apd_text"]' );
+$allowed_hint   = $mixed_xp->query( '//span[@class="apd-font-hint"][contains(., "digits, letters") or contains(., "Позволените символи")]' );
+
+if (
+	! $language_hint
+	|| $hint_parent_is_fieldset
+	|| $fieldset_contains_hint
+	|| ! $previous
+	|| 'label' !== $previous->nodeName
+	|| $inscription_label !== trim( $previous->textContent )
+	|| ! $following
+	|| 'fieldset' !== $following->nodeName
+	|| false === strpos( $following->getAttribute( 'class' ), 'apd-script' )
+	|| ! $script_fields
+	|| 1 !== $script_fields->length
+	|| ! $latin_radio
+	|| 1 !== $latin_radio->length
+	|| ! $cyrillic_radio
+	|| 1 !== $cyrillic_radio->length
+	|| ! $screen_legend
+	|| 1 !== $screen_legend->length
+	|| $inscription_label !== trim( $screen_legend->item( 0 )->textContent )
+	|| ! $plate_input
+	|| 1 !== $plate_input->length
+	|| 'CA 7777 KK' !== $plate_input->item( 0 )->getAttribute( 'value' )
+	|| ! $allowed_hint
+	|| 0 === $allowed_hint->length
+) {
+	fwrite( STDERR, "SHOP_INSCRIPTION_MARKUP_FAIL\n" );
+	exit( 1 );
+}
+
+$apd_payload['cart_restore'] = array( 'script' => 'cyrillic' );
+ob_start();
+include APD_PLUGIN_DIR . 'templates/product-configurator.php';
+$cyr_html = ob_get_clean();
+unset( $apd_payload['cart_restore'] );
+if ( false === strpos( $cyr_html, 'value="КИРИЛИЦА"' ) || false !== strpos( $cyr_html, 'value="CA 7777 KK"' ) ) {
+	fwrite( STDERR, "SHOP_CYRILLIC_INITIAL_TEXT_FAIL\n" );
+	exit( 1 );
+}
+
+$apd_payload['scripts'] = array( 'latin' );
+unset( $apd_payload['default_text_cyrillic'] );
+ob_start();
+include APD_PLUGIN_DIR . 'templates/product-configurator.php';
+$latin_only_html = ob_get_clean();
+unset( $apd_payload['scripts'] );
+if ( false !== strpos( $latin_only_html, $inscription_hint ) || false !== strpos( $latin_only_html, 'class="apd-script"' ) || false === strpos( $latin_only_html, $latin_only_hint ) ) {
+	fwrite( STDERR, "SHOP_SINGLE_SCRIPT_HINT_FAIL\n" );
+	exit( 1 );
+}
+
+echo 'SHOP_INSCRIPTION_MARKUP_OK' . PHP_EOL;
 
 if ( false === strpos( $html, 'name="apd_border_color"' ) ) {
 	fwrite( STDERR, "SHOP_BORDER_SWATCH_MISSING\n" );
@@ -269,6 +372,7 @@ $apd_payload['cart_restore'] = array(
 	'text_color' => '#ff0000',
 	'no_frame'   => true,
 );
+$apd_payload['cart_item_key'] = 'cartkey123';
 ob_start();
 include APD_PLUGIN_DIR . 'templates/product-configurator.php';
 $restore_html = ob_get_clean();
@@ -282,6 +386,13 @@ if ( false === strpos( $restore_html, 'value="#ff0000"' ) || ! preg_match( '/dat
 	fwrite( STDERR, "SHOP_CART_RESTORE_STYLE_FAIL\n" );
 	exit( 1 );
 }
+
+if ( false !== strpos( $html, 'name="apd_cart_item"' ) || false === strpos( $restore_html, 'name="apd_cart_item"' ) || false === strpos( $restore_html, 'value="cartkey123"' ) ) {
+	fwrite( STDERR, "SHOP_CART_EDIT_FIELD_FAIL\n" );
+	exit( 1 );
+}
+
+unset( $apd_payload['cart_item_key'] );
 
 $legacy_rows = APD_Formats::suv_plate_rows( 'CA 0909 BX' );
 $typed_rows  = APD_Formats::suv_plate_rows( "AA 00\n1234" );
@@ -677,6 +788,10 @@ if (
 	|| false !== strpos( $uk_html, 'name="apd_frame"' )
 	|| false === strpos( $shop_js_uk, 'function drawEnglishPlate' )
 	|| false === strpos( $shop_js_uk, 'cfg.format.slogan_box' )
+	|| false === strpos( $shop_js_uk, 'percentBoxes([cfg.format.text_box]' )
+	|| false !== strpos( $uk_html, 'data-apd-country-open' )
+	|| false === strpos( $uk_html, 'name="apd_preset_id"' )
+	|| false === strpos( $shop_js_uk, 'function offersCountryPicker' )
 	|| false === strpos( $shop_js_uk, 'function strokeEnglishRim' )
 	|| false === strpos( $uk_html, 'apd-english-plate' )
 	|| false !== strpos( $mini_html, 'apd-english-plate' )
@@ -693,6 +808,25 @@ if (
 }
 
 echo 'SHOP_UK_MINI_OK' . PHP_EOL;
+
+$uk_two_ui = $uk_ui;
+$uk_two_ui['presets'][] = array(
+	'id'           => 'preset-ro',
+	'name'         => 'Romania',
+	'country_code' => 'RO',
+	'image_url'    => '',
+	'side'         => 'left',
+	'band_ratio'   => 0.08,
+);
+$apd_payload['format'] = $uk_two_ui;
+ob_start();
+include APD_PLUGIN_DIR . 'templates/product-configurator.php';
+$uk_two_html = ob_get_clean();
+if ( false === strpos( $uk_two_html, 'data-apd-country-open' ) || false === strpos( $uk_two_html, 'Country band' ) ) {
+	fwrite( STDERR, "SHOP_COUNTRY_PICKER_FAIL\n" );
+	exit( 1 );
+}
+echo 'SHOP_COUNTRY_PICKER_OK' . PHP_EOL;
 
 if (
 	false === strpos( $shop_js_uk, 'function drawLegalRegistration' )
@@ -872,12 +1006,18 @@ ob_start();
 include APD_PLUGIN_DIR . 'templates/product-configurator.php';
 $holder_html = ob_get_clean();
 
-if ( false === strpos( $holder_html, 'name="apd_holder_color"' ) || false === strpos( $holder_html, '>Holder color<' ) || false === strpos( $holder_html, 'name="apd_background_color"' ) || false === strpos( $holder_html, '>Strip color<' ) || false === strpos( $holder_html, 'data-apd-plain' ) || false === strpos( $holder_html, 'name="apd_plain"' ) || false === strpos( $holder_html, '>Holder inscription<' ) || false === strpos( $holder_html, 'title="Ink"' ) || strpos( $holder_html, 'name="apd_holder_color"' ) > strpos( $holder_html, 'name="apd_background_color"' ) || false !== strpos( $holder_html, 'PlateTextDecoy' ) || false !== strpos( $holder_html, 'PlateFillDecoy' ) || false !== strpos( $holder_html, 'name="apd_border_color"' ) || false !== strpos( $holder_html, 'name="apd_frame"' ) ) {
+if ( false === strpos( $holder_html, 'name="apd_holder_color"' ) || false === strpos( $holder_html, '>Holder color<' ) || false === strpos( $holder_html, 'name="apd_background_color"' ) || false === strpos( $holder_html, '>Strip color<' ) || false === strpos( $holder_html, 'data-apd-plain' ) || false === strpos( $holder_html, 'name="apd_plain"' ) || false === strpos( $holder_html, '>Holder inscription<' ) || false === strpos( $holder_html, 'title="Ink"' ) || strpos( $holder_html, 'name="apd_holder_color"' ) > strpos( $holder_html, 'name="apd_background_color"' ) || false !== strpos( $holder_html, 'PlateTextDecoy' ) || false !== strpos( $holder_html, 'PlateFillDecoy' ) || false !== strpos( $holder_html, 'name="apd_border_color"' ) || false !== strpos( $holder_html, 'name="apd_frame"' ) || false !== strpos( $holder_html, 'apd-round-plate' ) ) {
 	fwrite( STDERR, "SHOP_HOLDER_COLORS_FAIL\n" );
 	exit( 1 );
 }
 
 $shop_css = file_get_contents( APD_PLUGIN_DIR . 'assets/css/configurator.css' );
+$canvas_rule = strpos( $shop_css, '.apd-canvas-frame {' );
+$canvas_shadow = strpos( $shop_css, 'filter: drop-shadow(0 3px 5px rgba(0, 0, 0, 0.28));' );
+if ( false === $canvas_rule || false === $canvas_shadow || $canvas_shadow < $canvas_rule || false !== strpos( $shop_css, '.apd-canvas-frame.apd-english-plate' ) ) {
+	fwrite( STDERR, "SHOP_CANVAS_SHADOW_FAIL\n" );
+	exit( 1 );
+}
 if ( false === strpos( $shop_css, '.apd-row-fields,' ) || false === strpos( $shop_css, 'flex-direction: column' ) || false === strpos( $shop_css, 'padding-bottom: 5px' ) || false !== strpos( $shop_css, 'grid-template-columns: 1fr 1fr' ) ) {
 	fwrite( STDERR, "SHOP_FIELD_STACK_CSS_FAIL\n" );
 	exit( 1 );
@@ -923,13 +1063,14 @@ if ( false === strpos( $split_html, 'class="apd-side-fields"' ) || false === str
 }
 
 $editor = file_get_contents( APD_PLUGIN_DIR . 'templates/admin/partials/text-box-editor.php' );
-if ( false === strpos( $editor, 'Left maximum' ) || false === strpos( $editor, 'Right maximum' ) || false === strpos( $editor, '$apd_side_left_name' ) || false === strpos( $editor, '$apd_side_right_name' ) ) {
+$format_form = file_get_contents( APD_PLUGIN_DIR . 'templates/admin/formats-tab.php' );
+if ( false === strpos( $editor, 'Left maximum' ) || false === strpos( $editor, 'Right maximum' ) || false === strpos( $editor, '$apd_side_left_name' ) || false === strpos( $editor, '$apd_side_right_name' ) || false === strpos( $format_form, 'data-apd-max-sides' ) || false === strpos( $format_form, 'apd_format[max_chars_left]' ) || false === strpos( $format_form, 'apd_format[max_chars_right]' ) ) {
 	fwrite( STDERR, "ADMIN_SIDE_MAX_FIELDS_FAIL\n" );
 	exit( 1 );
 }
 
 $shop_js = file_get_contents( APD_PLUGIN_DIR . 'assets/js/configurator.js' );
-if ( false === strpos( $shop_js, 'groups.join' ) || false === strpos( $shop_js, 'bindStayOnProduct' ) || false === strpos( $shop_js, 'function resetConfigurator' ) || false === strpos( $shop_js, 'data-apd-initial' ) || false === strpos( $shop_js, 'function openKadenceCart' ) || false === strpos( $shop_js, '.header-cart-button' ) || false === strpos( $shop_js, "format.type === 'us'" ) || false === strpos( $shop_js, "new CustomEvent('wc-blocks_added_to_cart', { bubbles: true })" ) || false === strpos( $shop_js, 'placeBandInsideFrame' ) || false === strpos( $shop_js, 'apd-band-layer' ) || false === strpos( $shop_js, 'plateSnapshot' ) || false === strpos( $shop_js, 'drawImageCover' ) || false === strpos( $shop_js, 'drawPlateArtwork' ) || false === strpos( $shop_js, 'artworkSourceBox' ) || false === strpos( $shop_js, 'design.text_box' ) || false === strpos( $shop_js, 'rowsForPlate' ) || false === strpos( $shop_js, 'syncSuvRows' ) || false === strpos( $shop_js, 'rowLimit' ) || false === strpos( $shop_js, 'plateGlyphs' ) || false === strpos( $shop_js, 'glyphInkScale' ) || false === strpos( $shop_js, 'wrapLines' ) || false === strpos( $shop_js, 'clampBoxInsideFrame' ) || false === strpos( $shop_js, 'paintHolderBody' ) || false === strpos( $shop_js, "source-in" ) || false === strpos( $shop_js, 'function upperPlateFields' ) || false === strpos( $shop_js, 'function applyPlainHolder' ) || false === strpos( $shop_js, "toLocaleUpperCase('bg')" ) || false === strpos( $shop_js, 'cfg.format.allow_empty' ) ) {
+if ( false === strpos( $shop_js, 'groups.join' ) || false === strpos( $shop_js, 'bindStayOnProduct' ) || false === strpos( $shop_js, 'showCartNotice(root, null)' ) || false === strpos( $shop_js, 'data-apd-initial' ) || false === strpos( $shop_js, 'function openKadenceCart' ) || false === strpos( $shop_js, '.header-cart-button' ) || false === strpos( $shop_js, "format.type === 'us'" ) || false === strpos( $shop_js, "new CustomEvent('wc-blocks_added_to_cart', { bubbles: true })" ) || false === strpos( $shop_js, 'placeBandInsideFrame' ) || false === strpos( $shop_js, 'apd-band-layer' ) || false === strpos( $shop_js, 'plateSnapshot' ) || false === strpos( $shop_js, 'drawImageCover' ) || false === strpos( $shop_js, 'drawPlateArtwork' ) || false === strpos( $shop_js, 'artworkSourceBox' ) || false === strpos( $shop_js, 'design.text_box' ) || false === strpos( $shop_js, 'rowsForPlate' ) || false === strpos( $shop_js, 'syncSuvRows' ) || false === strpos( $shop_js, 'rowLimit' ) || false === strpos( $shop_js, 'plateGlyphs' ) || false === strpos( $shop_js, 'glyphInkScale' ) || false === strpos( $shop_js, 'wrapLines' ) || false === strpos( $shop_js, 'clampBoxInsideFrame' ) || false === strpos( $shop_js, 'paintHolderBody' ) || false === strpos( $shop_js, "source-in" ) || false === strpos( $shop_js, 'function upperPlateFields' ) || false === strpos( $shop_js, 'function applyPlainHolder' ) || false === strpos( $shop_js, "toLocaleUpperCase('bg')" ) || false === strpos( $shop_js, 'cfg.format.allow_empty' ) ) {
 	fwrite( STDERR, "SHOP_JS_RULES_FAIL\n" );
 	exit( 1 );
 }
@@ -940,7 +1081,18 @@ if ( false !== strpos( $shop_js, "'100 900'" ) || false === strpos( $shop_js, "w
 	exit( 1 );
 }
 
-$label_ui           = APD_Formats::frontend_payload( $format );
+$label_format = APD_Formats::sanitize(
+	array(
+		'id'   => 'ui-font-label',
+		'name' => 'Font label',
+		'type' => 'eu',
+	)
+);
+if ( is_wp_error( $label_format ) ) {
+	fwrite( STDERR, 'SHOP_FONT_LABEL_FORMAT_FAIL ' . $label_format->get_error_message() . PHP_EOL );
+	exit( 1 );
+}
+$label_ui           = APD_Formats::frontend_payload( $label_format );
 $label_ui['fonts']  = array(
 	array(
 		'id'     => 'font-note',
@@ -978,6 +1130,36 @@ if ( false === strpos( $label_html, '>Oswald — кирилица<' ) || false =
 }
 
 echo "SHOP_FONT_LABEL_OK\n";
+
+$font_hint_types = array( 'uk', 'uk_plain', 'us', 'austria', 'fr', 'fr_ww', 'fr_region' );
+foreach ( $font_hint_types as $hint_type ) {
+	$hint_format = APD_Formats::sanitize(
+		array(
+			'id'   => 'ui-hint-' . $hint_type,
+			'name' => 'Hint plate',
+			'type' => $hint_type,
+		)
+	);
+	if ( is_wp_error( $hint_format ) ) {
+		fwrite( STDERR, 'SHOP_FONT_HINT_FORMAT_FAIL ' . $hint_type . ' ' . $hint_format->get_error_message() . PHP_EOL );
+		exit( 1 );
+	}
+	$hint_ui            = APD_Formats::frontend_payload( $hint_format );
+	$hint_ui['fonts']   = $label_ui['fonts'];
+	$hint_ui['presets'] = array();
+	$hint_ui['designs'] = array();
+	$apd_payload['format'] = $hint_ui;
+	unset( $apd_payload['cart_restore'] );
+	ob_start();
+	include APD_PLUGIN_DIR . 'templates/product-configurator.php';
+	$hint_html = ob_get_clean();
+	if ( false !== strpos( $hint_html, 'За перфектна визия изберете шрифт' ) || false === strpos( $hint_html, 'name="apd_font_id"' ) ) {
+		fwrite( STDERR, "SHOP_FONT_HINT_HIDDEN_FAIL {$hint_type}\n" );
+		exit( 1 );
+	}
+}
+
+echo "SHOP_FONT_HINT_HIDDEN_OK\n";
 
 if (
 	false === strpos( $shop_css, 'table.variations th' )

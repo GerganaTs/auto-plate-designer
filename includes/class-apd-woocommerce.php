@@ -36,6 +36,13 @@ final class APD_WooCommerce {
 	private $stale_toasts = array();
 
 	/**
+	 * Cart line to replace after a successful add from an edit visit.
+	 *
+	 * @var array{key: string, product_id: int, quantity: int}|null
+	 */
+	private $pending_cart_edit = null;
+
+	/**
 	 * Singleton instance.
 	 *
 	 * @var APD_WooCommerce|null
@@ -72,7 +79,9 @@ final class APD_WooCommerce {
 		add_filter( 'woocommerce_product_supports', array( $this, 'disable_ajax_add_to_cart' ), 10, 3 );
 		add_filter( 'woocommerce_add_to_cart_validation', array( $this, 'validate_add_to_cart' ), 10, 3 );
 		add_filter( 'woocommerce_add_cart_item_data', array( $this, 'add_cart_item_data' ), 10, 2 );
+		add_action( 'woocommerce_add_to_cart', array( $this, 'replace_edited_cart_line' ), 10, 6 );
 		add_filter( 'woocommerce_get_item_data', array( $this, 'display_cart_item_data' ), 10, 2 );
+		add_filter( 'woocommerce_cart_item_permalink', array( $this, 'cart_item_permalink' ), 10, 3 );
 		add_action( 'woocommerce_checkout_create_order_line_item', array( $this, 'add_order_item_meta' ), 10, 4 );
 		add_filter( 'woocommerce_hidden_order_itemmeta', array( $this, 'hide_order_item_meta' ) );
 		add_filter( 'woocommerce_cart_item_thumbnail', array( $this, 'cart_item_thumbnail' ), 10, 2 );
@@ -409,6 +418,8 @@ final class APD_WooCommerce {
 	public function validate_add_to_cart( $passed, $product_id, $quantity ) {
 		unset( $quantity );
 
+		$this->pending_cart_edit = null;
+
 		if ( ! $passed || ! self::is_enabled( $product_id ) ) {
 			return $passed;
 		}
@@ -443,6 +454,7 @@ final class APD_WooCommerce {
 
 		$cart_item_data[ self::CART_KEY ] = $parsed;
 		$cart_item_data['apd_hash']       = md5( (string) wp_json_encode( $parsed ) );
+		$this->pending_cart_edit         = $this->pending_edit_for_product( $product_id );
 
 		return $cart_item_data;
 	}
@@ -464,6 +476,64 @@ final class APD_WooCommerce {
 		}
 
 		return $item_data;
+	}
+
+	/**
+	 * Name and thumbnail of a configured line open that same cart line.
+	 *
+	 * Classic cart, classic mini-cart, and the Store API cart all read this filter.
+	 * Order screens and emails do not.
+	 *
+	 * @param string               $permalink     Product URL.
+	 * @param array<string, mixed> $cart_item     Cart line.
+	 * @param string               $cart_item_key Cart key.
+	 * @return string
+	 */
+	public function cart_item_permalink( $permalink, $cart_item, $cart_item_key ) {
+		if ( empty( $cart_item[ self::CART_KEY ] ) || ! is_array( $cart_item[ self::CART_KEY ] ) || '' === (string) $cart_item_key ) {
+			return $permalink;
+		}
+
+		$product = isset( $cart_item['data'] ) && $cart_item['data'] instanceof WC_Product
+			? $cart_item['data']
+			: wc_get_product( isset( $cart_item['product_id'] ) ? (int) $cart_item['product_id'] : 0 );
+		$url     = self::cart_edit_url( $product, (string) $cart_item_key );
+
+		return '' === $url ? $permalink : $url;
+	}
+
+	/**
+	 * Replace the cart line that this visit was opened from.
+	 *
+	 * A matching configuration stays on the same WooCommerce line and keeps its quantity.
+	 * A changed configuration is added, then the previous line is removed and the new line
+	 * keeps that quantity. Other cart lines are left as they are.
+	 *
+	 * @param string               $cart_item_key  New cart key.
+	 * @param int                  $product_id     Product ID.
+	 * @param int                  $quantity       Posted quantity.
+	 * @param int                  $variation_id   Variation ID.
+	 * @param array<string, mixed> $variation      Variation attributes.
+	 * @param array<string, mixed> $cart_item_data Cart item data.
+	 */
+	public function replace_edited_cart_line( $cart_item_key, $product_id, $quantity, $variation_id, $variation, $cart_item_data ) {
+		unset( $quantity, $variation_id, $variation, $cart_item_data );
+
+		$pending                  = $this->pending_cart_edit;
+		$this->pending_cart_edit = null;
+
+		if ( ! is_array( $pending ) || (int) $pending['product_id'] !== (int) $product_id || ! function_exists( 'WC' ) || ! WC()->cart ) {
+			return;
+		}
+
+		$old_key = (string) $pending['key'];
+		$old_qty = max( 1, (int) $pending['quantity'] );
+
+		if ( $old_key !== $cart_item_key && WC()->cart->get_cart_item( $old_key ) ) {
+			WC()->cart->remove_cart_item( $old_key );
+		}
+
+		WC()->cart->set_quantity( $cart_item_key, $old_qty, true );
 	}
 
 	/**
@@ -1195,6 +1265,189 @@ final class APD_WooCommerce {
 	}
 
 	/**
+	 * Cart line opened from an edit link, or an empty visit when the key is missing or gone.
+	 *
+	 * @param int $product_id Product ID.
+	 * @return array{key: string, restore: array<string, mixed>}
+	 */
+	public static function requested_cart_edit( $product_id ) {
+		$raw = isset( $_GET['apd_cart_item'] ) ? sanitize_text_field( wp_unslash( $_GET['apd_cart_item'] ) ) : '';
+
+		return self::cart_edit_from_key( $product_id, $raw );
+	}
+
+	/**
+	 * Configurator fields stored on one cart line for this product.
+	 *
+	 * @param int    $product_id Product ID.
+	 * @param string $key        Cart item key.
+	 * @return array{key: string, restore: array<string, mixed>}
+	 */
+	public static function cart_edit_from_key( $product_id, $key ) {
+		$empty = array(
+			'key'     => '',
+			'restore' => array(),
+		);
+		$key   = is_string( $key ) ? $key : '';
+
+		if ( '' === $key || ! function_exists( 'WC' ) || ! WC()->cart ) {
+			return $empty;
+		}
+
+		$item = WC()->cart->get_cart_item( $key );
+
+		if ( ! is_array( $item ) || (int) ( $item['product_id'] ?? 0 ) !== (int) $product_id ) {
+			return $empty;
+		}
+
+		if ( empty( $item[ self::CART_KEY ] ) || ! is_array( $item[ self::CART_KEY ] ) ) {
+			return $empty;
+		}
+
+		return array(
+			'key'     => $key,
+			'restore' => self::cart_restore_fields( $item[ self::CART_KEY ] ),
+		);
+	}
+
+	/**
+	 * Product URL that reopens one configured cart line.
+	 *
+	 * @param WC_Product $product       Product.
+	 * @param string     $cart_item_key Cart key.
+	 * @return string
+	 */
+	public static function cart_edit_url( $product, $cart_item_key ) {
+		if ( ! $product instanceof WC_Product ) {
+			return '';
+		}
+
+		$permalink = $product->get_permalink();
+
+		if ( ! is_string( $permalink ) || '' === $permalink || '' === $cart_item_key ) {
+			return '';
+		}
+
+		return add_query_arg( 'apd_cart_item', $cart_item_key, $permalink );
+	}
+
+	/**
+	 * Fields the product form can paint. Price and checkout data stay on the cart line.
+	 *
+	 * @param array<string, mixed> $config Stored cart configuration.
+	 * @return array<string, mixed>
+	 */
+	private static function cart_restore_fields( $config ) {
+		$keys   = array(
+			'text',
+			'font_id',
+			'preset_id',
+			'design_id',
+			'no_frame',
+			'text_color',
+			'holder_color',
+			'background_color',
+			'border_color',
+			'slogan_color',
+			'fr_month',
+			'fr_year',
+			'fr_region',
+			'slogan',
+			'unstyled',
+			'comment',
+			'script',
+			'frame_plain',
+		);
+		$restore = array();
+
+		foreach ( $keys as $key ) {
+			if ( array_key_exists( $key, $config ) ) {
+				$restore[ $key ] = $config[ $key ];
+			}
+		}
+
+		return $restore;
+	}
+
+	/**
+	 * Cart line posted with this add, when it still belongs to this product.
+	 *
+	 * Quantity is read before WooCommerce merges or adds a line.
+	 *
+	 * @param int $product_id Product ID.
+	 * @return array{key: string, product_id: int, quantity: int}|null
+	 */
+	private function pending_edit_for_product( $product_id ) {
+		if ( ! isset( $_POST['apd_cart_item'] ) || ! function_exists( 'WC' ) || ! WC()->cart ) {
+			return null;
+		}
+
+		$key  = sanitize_text_field( wp_unslash( $_POST['apd_cart_item'] ) );
+		$edit = self::cart_edit_from_key( $product_id, $key );
+
+		if ( '' === $edit['key'] ) {
+			return null;
+		}
+
+		$item = WC()->cart->get_cart_item( $edit['key'] );
+
+		return array(
+			'key'        => $edit['key'],
+			'product_id' => (int) $product_id,
+			'quantity'   => isset( $item['quantity'] ) ? max( 1, (int) $item['quantity'] ) : 1,
+		);
+	}
+
+	/**
+	 * Keep the fonts each alphabet on this product is allowed to use.
+	 *
+	 * @param array<string, mixed> $payload Format payload.
+	 * @param array<string, mixed> $state   Script state.
+	 * @return array<string, mixed>
+	 */
+	private static function filter_payload_fonts( $payload, $state ) {
+		$scripts = isset( $state['scripts'] ) && is_array( $state['scripts'] ) ? $state['scripts'] : array();
+
+		if ( empty( $scripts ) || empty( $payload['fonts'] ) || ! is_array( $payload['fonts'] ) ) {
+			return $payload;
+		}
+
+		$latin_ids = isset( $state['latin_fonts'] ) && is_array( $state['latin_fonts'] ) ? $state['latin_fonts'] : array();
+		$cyr_ids   = isset( $state['cyrillic_fonts'] ) && is_array( $state['cyrillic_fonts'] ) ? $state['cyrillic_fonts'] : array();
+		$fonts     = array();
+
+		foreach ( $payload['fonts'] as $font ) {
+			if ( ! is_array( $font ) || empty( $font['id'] ) ) {
+				continue;
+			}
+
+			$font_scripts = array();
+			$font_id      = (string) $font['id'];
+
+			if ( in_array( 'latin', $scripts, true ) && ( empty( $latin_ids ) || in_array( $font_id, $latin_ids, true ) ) ) {
+				$font_scripts[] = 'latin';
+			}
+
+			if ( in_array( 'cyrillic', $scripts, true ) && in_array( $font_id, $cyr_ids, true ) ) {
+				$font_scripts[] = 'cyrillic';
+			}
+
+			if ( empty( $font_scripts ) ) {
+				continue;
+			}
+
+			$font['scripts'] = $font_scripts;
+			$fonts[]         = $font;
+		}
+
+		if ( ! empty( $fonts ) ) {
+			$payload['fonts'] = $fonts;
+		}
+
+		return $payload;
+	}
+
+	/**
 	 * Payload for JS and the PHP template.
 	 *
 	 * @param int $product_id Product ID.
@@ -1216,16 +1469,23 @@ final class APD_WooCommerce {
 
 		$limits = APD_Plugin::get_settings();
 		$min    = isset( $limits['limits']['min_font_size'] ) ? (int) $limits['limits']['min_font_size'] : 12;
+		$edit   = self::requested_cart_edit( $product_id );
+		$format_payload = APD_Admin_Settings::locked_design_payload( $product_id, APD_Formats::frontend_payload( $format ) );
+		$script_state   = APD_Admin_Settings::product_script_state( $product_id, $format );
+		$format_payload = self::filter_payload_fonts( $format_payload, $script_state );
 
 		return array(
-			'format'       => APD_Admin_Settings::locked_design_payload( $product_id, APD_Formats::frontend_payload( $format ) ),
+			'format'       => $format_payload,
+			'scripts'      => $script_state['scripts'],
 			'layouts'      => $layouts,
 			'color_fields' => APD_Admin_Settings::product_color_fields( $product_id ),
 			'palettes'     => APD_Admin_Settings::product_offered_colors( $product_id ),
 			'default_text'   => APD_Admin_Settings::product_initial_text( $product_id, $format ),
+			'default_text_cyrillic' => APD_Admin_Settings::product_cyrillic_text( $product_id ),
 			'default_slogan' => APD_Admin_Settings::product_initial_slogan( $product_id, $format ),
-			'region_text'  => APD_Admin_Settings::product_region_text( $product_id ),
-			'cart_restore' => array(),
+			'region_text'    => APD_Admin_Settings::product_region_text( $product_id ),
+			'cart_restore'   => $edit['restore'],
+			'cart_item_key'  => $edit['key'],
 			'rules'    => APD_Security::frontend_text_rules(),
 			'minFont'  => $min,
 			'i18n'     => array(
@@ -1237,6 +1497,7 @@ final class APD_WooCommerce {
 				'closeDialog'   => __( 'Close', 'auto-plate-designer' ),
 				'bandHint'      => __( 'Click the country band to change country', 'auto-plate-designer' ),
 				'textColor'     => __( 'Text color', 'auto-plate-designer' ),
+				'inkFrameColor' => __( 'Text and frame color', 'auto-plate-designer' ),
 				'borderColor'   => __( 'Border color', 'auto-plate-designer' ),
 				'plateColor'    => __( 'Plate color', 'auto-plate-designer' ),
 				'sloganColor'   => __( 'Slogan color', 'auto-plate-designer' ),
@@ -1246,6 +1507,11 @@ final class APD_WooCommerce {
 				'frameLabel'    => __( 'Add frame', 'auto-plate-designer' ),
 				'chars'         => __( '%1$s / %2$s characters', 'auto-plate-designer' ),
 				'invalid'       => __( 'Please enter valid plate text before adding to cart.', 'auto-plate-designer' ),
+				'digitalNotice' => __( 'Past the standard character count the letters are printed digitally. The frame stays embossed.', 'auto-plate-designer' ),
+				'cyrillicNotice' => __( 'The plate letters are printed digitally and the frame stays embossed.', 'auto-plate-designer' ),
+				'miniDigital'   => __( 'The letters are printed digitally.', 'auto-plate-designer' ),
+				'latinOnly'     => __( 'Cyrillic letters are not allowed when Latin is selected.', 'auto-plate-designer' ),
+				'cyrillicOnly'  => __( 'Latin letters are not allowed when Cyrillic is selected.', 'auto-plate-designer' ),
 			),
 		);
 	}
@@ -1430,17 +1696,40 @@ final class APD_WooCommerce {
 			$length_limit = $max_chars;
 		}
 
+		$script_state  = APD_Admin_Settings::product_script_state( $product_id, $format );
+		$script        = '';
+		$posted_script = isset( $_POST['apd_script'] ) ? sanitize_key( wp_unslash( $_POST['apd_script'] ) ) : '';
+
+		if ( ! empty( $script_state['scripts'] ) ) {
+			$script = in_array( $posted_script, $script_state['scripts'], true ) ? $posted_script : (string) $script_state['scripts'][0];
+		}
+
 		$text_check = APD_Security::validate_plate_text(
 			$text,
 			array(
-				'max_length'  => $length_limit,
-				'multiline'   => $multiline,
-				'allow_empty' => $allow_empty,
+				'max_length'       => $length_limit,
+				'multiline'        => $multiline,
+				'allow_empty'      => $allow_empty,
+				'skip_admin_regex' => 'cyrillic' === $script,
 			)
 		);
 
 		if ( is_wp_error( $text_check ) ) {
 			return $text_check;
+		}
+
+		$script_check = APD_Security::validate_plate_script( $text, $script );
+
+		if ( is_wp_error( $script_check ) ) {
+			return $script_check;
+		}
+
+		$comment = isset( $_POST['apd_comment'] ) ? sanitize_textarea_field( wp_unslash( $_POST['apd_comment'] ) ) : '';
+
+		if ( function_exists( 'mb_substr' ) ) {
+			$comment = mb_substr( $comment, 0, APD_Formats::COMMENT_MAX, 'UTF-8' );
+		} else {
+			$comment = substr( $comment, 0, APD_Formats::COMMENT_MAX );
 		}
 
 		$font_id    = isset( $_POST['apd_font_id'] ) ? sanitize_text_field( wp_unslash( $_POST['apd_font_id'] ) ) : '';
@@ -1450,6 +1739,40 @@ final class APD_WooCommerce {
 			if ( $font['id'] === $font_id ) {
 				$font_label = APD_Formats::font_shop_label( $font );
 				break;
+			}
+		}
+
+		if ( '' !== $script && ! empty( $payload['fonts'] ) ) {
+			$script_fonts = array();
+
+			foreach ( $payload['fonts'] as $font ) {
+				$font_id_row = isset( $font['id'] ) ? (string) $font['id'] : '';
+				$allowed     = 'cyrillic' === $script ? $script_state['cyrillic_fonts'] : $script_state['latin_fonts'];
+				$matches     = 'cyrillic' === $script
+					? in_array( $font_id_row, $allowed, true )
+					: ( empty( $allowed ) || in_array( $font_id_row, $allowed, true ) );
+
+				if ( $matches ) {
+					$script_fonts[] = $font;
+				}
+			}
+
+			if ( ! empty( $script_fonts ) ) {
+				$found_script_font = false;
+
+				foreach ( $script_fonts as $font ) {
+					if ( isset( $font['id'] ) && (string) $font['id'] === $font_id ) {
+						$found_script_font = true;
+						$font_label        = APD_Formats::font_shop_label( $font );
+						break;
+					}
+				}
+
+				if ( ! $found_script_font ) {
+					$font_id    = '';
+					$font_label = '';
+					$payload['fonts'] = $script_fonts;
+				}
 			}
 		}
 
@@ -1516,8 +1839,27 @@ final class APD_WooCommerce {
 			}
 		}
 
-		$color_fields  = APD_Admin_Settings::product_color_fields( $product_id );
-		$frame_chosen  = APD_Formats::offers_frame_choice( $type ) && isset( $_POST['apd_frame'] ) && '1' === sanitize_text_field( wp_unslash( $_POST['apd_frame'] ) );
+		$color_fields   = APD_Admin_Settings::product_color_fields( $product_id );
+		$plain_family   = APD_Formats::offers_uncolored_frame( $type );
+		$format_framed  = empty( $format['no_frame'] ) && ( isset( $format['border_width'] ) ? (int) $format['border_width'] : 0 ) > 0;
+		$letters        = '';
+		$frame_plain    = null;
+
+		if ( '' !== APD_Formats::letter_rule( $type ) ) {
+			$letters = APD_Formats::letters_are_digital( $format, $script, $text ) ? 'digital' : 'embossed';
+		}
+
+		if ( $plain_family && $format_framed && ( 'color' === $type || 'embossed' === $letters || 'cyrillic' === $script ) ) {
+			$frame_plain = isset( $_POST['apd_frame_plain'] ) && '1' === sanitize_text_field( wp_unslash( $_POST['apd_frame_plain'] ) );
+		} elseif ( $plain_family && $format_framed && 'digital' === $letters ) {
+			$frame_plain = false;
+		}
+
+		$legacy_no_frame = $plain_family && isset( $_POST['apd_legacy_no_frame'] ) && '1' === sanitize_text_field( wp_unslash( $_POST['apd_legacy_no_frame'] ) );
+		$frame_chosen    = $legacy_no_frame ? false : ( $plain_family ? $format_framed : ( APD_Formats::offers_frame_choice( $type ) && isset( $_POST['apd_frame'] ) && '1' === sanitize_text_field( wp_unslash( $_POST['apd_frame'] ) ) ) );
+		if ( $legacy_no_frame ) {
+			$frame_plain = null;
+		}
 		$english_frame = APD_Formats::is_english( $type );
 		$admin_border  = isset( $format['border_width'] ) ? (int) $format['border_width'] : 0;
 		$offered       = APD_Admin_Settings::product_offered_colors( $product_id );
@@ -1529,6 +1871,16 @@ final class APD_WooCommerce {
 
 		if ( $frame_chosen && '' === $border_color['hex'] && isset( $format['border_color'] ) ) {
 			$border_color['hex'] = (string) $format['border_color'];
+		}
+
+		$shared_ink = 'digital' === $letters && APD_Formats::letters_follow_count( $type ) && ! APD_Formats::is_mini( $type );
+
+		if ( true === $frame_plain ) {
+			$border_color['hex']   = '' !== $fill_color['hex'] ? $fill_color['hex'] : '#FFFFFF';
+			$border_color['label'] = '';
+		} elseif ( $shared_ink && '' !== $text_color['hex'] ) {
+			$border_color['hex']   = $text_color['hex'];
+			$border_color['label'] = $text_color['label'];
 		}
 
 		$posted_preview = isset( $_POST['apd_preview'] ) ? (string) wp_unslash( $_POST['apd_preview'] ) : ''; // phpcs:ignore WordPress.Security.ValidatedSanitizedInput.InputNotSanitized
@@ -1558,6 +1910,10 @@ final class APD_WooCommerce {
 			'text_box'               => $design_box,
 			'color_fields'           => $color_fields,
 			'no_frame'               => ! $frame_chosen,
+			'script'                 => $script,
+			'comment'                => $comment,
+			'letters'                => $letters,
+			'frame_plain'            => $frame_plain,
 			'text_color'             => $text_color['hex'],
 			'text_color_label'       => $text_color['label'],
 			'border_color'           => $border_color['hex'],
@@ -1689,10 +2045,31 @@ final class APD_WooCommerce {
 			);
 		}
 
-		if ( APD_Formats::offers_frame_choice( $type ) ) {
+		if ( APD_Formats::offers_frame_choice( $type ) && ( ! array_key_exists( 'frame_plain', $config ) || null === $config['frame_plain'] ) ) {
 			$rows[] = array(
 				'key'   => __( 'Frame', 'auto-plate-designer' ),
 				'value' => ! empty( $config['no_frame'] ) ? __( 'Without frame', 'auto-plate-designer' ) : __( 'With frame', 'auto-plate-designer' ),
+			);
+		}
+
+		if ( ! empty( $config['letters'] ) ) {
+			$rows[] = array(
+				'key'   => __( 'Letters', 'auto-plate-designer' ),
+				'value' => 'digital' === $config['letters'] ? __( 'Digital print', 'auto-plate-designer' ) : __( 'Embossed letters', 'auto-plate-designer' ),
+			);
+		}
+
+		if ( array_key_exists( 'frame_plain', $config ) && null !== $config['frame_plain'] && APD_Formats::offers_uncolored_frame( $type ) && empty( $config['no_frame'] ) ) {
+			$rows[] = array(
+				'key'   => __( 'Frame', 'auto-plate-designer' ),
+				'value' => ! empty( $config['frame_plain'] ) ? __( 'Embossed, without color', 'auto-plate-designer' ) : __( 'Embossed frame', 'auto-plate-designer' ),
+			);
+		}
+
+		if ( ! empty( $config['comment'] ) ) {
+			$rows[] = array(
+				'key'   => __( 'Comment', 'auto-plate-designer' ),
+				'value' => (string) $config['comment'],
 			);
 		}
 
