@@ -6,6 +6,7 @@
  */
 
 $candidates = array(
+	dirname( __DIR__, 4 ) . '/wp-load.php',
 	dirname( __DIR__, 3 ) . '/wp-load.php',
 	dirname( __DIR__, 2 ) . '/plate-designer/wp-load.php',
 );
@@ -281,7 +282,7 @@ if ( 5 !== (int) $moto['max_chars_row_1'] || 4 !== (int) $moto['max_chars_row_2'
 echo 'MOTO_TYPE_OK' . PHP_EOL;
 
 $two_row_types = array( 'moto', 'moto_240', 'moto_plain', 'moto_plain_240', 'suv', 'suv_340', 'suv_eu', 'suv_eu_340', 'eu_300' );
-$single_types  = array( 'eu', 'eu_plain', 'us', 'color', 'custom', 'holder', 'holder_moto', 'holder_d', 'atyp_300', 'fr', 'fr_ww', 'fr_region', 'austria', 'uk', 'uk_plain', 'mini', 'mini_plain' );
+$single_types  = array( 'eu', 'eu_plain', 'us', 'color', 'custom', 'holder', 'holder_moto', 'holder_d', 'atyp_300', 'fr', 'fr_ww', 'fr_region', 'austria', 'uk', 'uk_plain', 'mini', 'mini_plain', 'super_mini', 'super_mini_plain' );
 
 foreach ( $two_row_types as $two_type ) {
 	if ( ! APD_Formats::uses_two_rows( $two_type ) ) {
@@ -970,6 +971,10 @@ if (
 	500 !== APD_Formats::preview_frame_width( 'moto', 199 )
 	|| 500 !== APD_Formats::preview_frame_width( 'suv_eu', 280 )
 	|| 500 !== APD_Formats::preview_frame_width( 'eu', 520 )
+	|| 327 !== APD_Formats::preview_frame_width( 'mini', 340 )
+	|| 327 !== APD_Formats::preview_frame_width( 'mini_plain', 340 )
+	|| 192 !== APD_Formats::preview_frame_width( 'super_mini', 200 )
+	|| 192 !== APD_Formats::preview_frame_width( 'super_mini_plain', 200 )
 	|| 754 !== APD_Formats::preview_frame_width( 'eu_300', 300 )
 	|| 754 !== APD_Formats::preview_frame_width( 'atyp_300', 300 )
 	|| 500 !== APD_Formats::preview_frame_width( 'fr', 520 )
@@ -1080,6 +1085,8 @@ $locked_sizes = array(
 	'uk_plain'   => array( 520, 110 ),
 	'mini'       => array( 340, 90 ),
 	'mini_plain' => array( 340, 90 ),
+	'super_mini' => array( 200, 90 ),
+	'super_mini_plain' => array( 200, 90 ),
 	'holder'      => array( 520, 260 ),
 	'holder_moto' => array( 199, 199 ),
 	'holder_d'    => array( 280, 159 ),
@@ -1429,9 +1436,9 @@ if (
 	|| APD_Formats::offers_country_choice( 'mini_plain' )
 	|| '' !== APD_Formats::locked_country_code( 'uk' )
 	|| APD_Formats::offers_frame_choice( 'uk' )
-	|| APD_Formats::offers_frame_choice( 'mini' )
+	|| ! APD_Formats::offers_frame_choice( 'mini' )
 	|| array( 'text', 'border', 'background', 'slogan' ) !== APD_Formats::color_field_capabilities( 'uk' )
-	|| array() !== APD_Formats::color_field_capabilities( 'mini' )
+	|| array( 'text', 'border', 'background' ) !== APD_Formats::color_field_capabilities( 'mini' )
 	|| 'LKOO FDN' !== APD_Formats::sample_plate_text( 'uk' )
 	|| 'GUNTHER' !== APD_Formats::sample_plate_text( 'mini' )
 	|| 340 !== (int) $mini['width']
@@ -1449,6 +1456,51 @@ if (
 }
 
 echo 'UK_MINI_OK' . PHP_EOL;
+
+$super = APD_Formats::sanitize(
+	array(
+		'name'   => 'Super mini plate',
+		'type'   => 'super_mini',
+		'width'  => 340,
+		'height' => 90,
+	)
+);
+$super_plain = APD_Formats::sanitize(
+	array(
+		'name' => 'Super mini plain',
+		'type' => 'super_mini_plain',
+	)
+);
+if (
+	is_wp_error( $super )
+	|| is_wp_error( $super_plain )
+	|| 200 !== (int) $super['width']
+	|| 90 !== (int) $super['height']
+	|| 200 !== (int) $super_plain['width']
+	|| 90 !== (int) $super_plain['height']
+	|| ! APD_Formats::uses_country_band( 'super_mini' )
+	|| APD_Formats::uses_country_band( 'super_mini_plain' )
+	|| ! APD_Formats::offers_country_choice( 'super_mini' )
+	|| APD_Formats::offers_country_choice( 'super_mini_plain' )
+	|| ! empty( $super['no_frame'] )
+	|| 8 !== (int) $super['border_width']
+	|| ! empty( $mini['no_frame'] )
+	|| 8 !== (int) $mini['border_width']
+	|| isset( $super['slogan_box'] )
+	|| 'FDN' !== APD_Formats::sample_plate_text( 'super_mini' )
+	|| 'mini' !== APD_Formats::catalog_kind( 'mini_plain' )
+	|| 'super_mini' !== APD_Formats::catalog_kind( 'super_mini_plain' )
+	|| array( 'text', 'border', 'background' ) !== APD_Formats::color_field_capabilities( 'super_mini_plain' )
+	|| ! APD_Formats::uses_palette_slots( 'mini_plain' )
+	|| ! APD_Formats::uses_palette_slots( 'super_mini_plain' )
+	|| APD_Formats::uses_palette_slots( 'mini' )
+	|| APD_Formats::uses_palette_slots( 'super_mini' )
+) {
+	fwrite( STDERR, 'SUPER_MINI_FAIL ' . ( is_wp_error( $super ) ? $super->get_error_message() : wp_json_encode( $super ) ) . PHP_EOL );
+	exit( 1 );
+}
+
+echo 'SUPER_MINI_OK' . PHP_EOL;
 
 $at = APD_Formats::sanitize(
 	array(
@@ -1612,11 +1664,274 @@ if ( count( $active_ids ) > 1 ) {
 		! is_array( $preset_lead )
 		|| ! isset( $preset_lead['default_preset_id'] )
 		|| (string) $preset_lead['default_preset_id'] !== (string) $active_ids[1]
-		|| $preset_lead_first !== (string) $active_ids[1]
+		|| $preset_lead_first !== (string) $active_ids[0]
+		|| (string) $active_ids[1] !== APD_Formats::opening_preset_id( $preset_lead_payload['presets'], (string) $preset_lead['default_preset_id'] )
 	) {
 		fwrite( STDERR, 'PRESET_DEFAULT_FAIL ' . wp_json_encode( array( $preset_lead, $preset_lead_first ) ) . PHP_EOL );
 		exit( 1 );
 	}
+	$preset_offer_order = APD_Formats::presets_with_default_first( $preset_lead_payload['presets'], (string) $preset_lead['default_preset_id'] );
+	$preset_offer_first = isset( $preset_offer_order[0]['id'] ) ? (string) $preset_offer_order[0]['id'] : '';
+	if ( $preset_offer_first !== (string) $active_ids[1] ) {
+		fwrite( STDERR, 'PRESET_OFFER_ORDER_FAIL ' . $preset_offer_first . PHP_EOL );
+		exit( 1 );
+	}
 	echo 'PRESET_DEFAULT_OK' . PHP_EOL;
 }
+if ( 10.0 !== APD_Formats::plate_corner_radius_mm( 110 ) || abs( APD_Formats::plate_corner_radius_mm( 40 ) - 4.8 ) > 0.001 || 10.0 !== APD_Formats::plate_corner_radius_mm( 90 ) ) {
+	fwrite( STDERR, 'PLATE_CORNER_RADIUS_FAIL' . PHP_EOL );
+	exit( 1 );
+}
+$template = (string) file_get_contents( dirname( __DIR__ ) . '/templates/product-configurator.php' );
+if ( false === strpos( $template, 'plate_corner_radius_mm' ) || false !== strpos( $template, '10 / max( 1, (int) $format[\'width\'] )' ) || false === strpos( $template, 'opening_preset_id' ) ) {
+	fwrite( STDERR, 'PLATE_CORNER_TEMPLATE_FAIL' . PHP_EOL );
+	exit( 1 );
+}
+$preset_rows = array(
+	array( 'id' => 'a', 'name' => 'A' ),
+	array( 'id' => 'b', 'name' => 'B' ),
+	array( 'id' => 'c', 'name' => 'C' ),
+);
+$preset_moved = APD_Presets::ordered_rows( $preset_rows, array( 'c', 'missing', 'a', 'c' ) );
+$preset_moved_ids = array();
+foreach ( $preset_moved as $preset_moved_row ) {
+	$preset_moved_ids[] = (string) $preset_moved_row['id'];
+}
+$preset_open_sample = array(
+	array( 'id' => 'a' ),
+	array( 'id' => 'b' ),
+);
+if (
+	array( 'c', 'a', 'b' ) !== $preset_moved_ids
+	|| 'b' !== APD_Formats::opening_preset_id( $preset_open_sample, 'b' )
+	|| 'a' !== APD_Formats::opening_preset_id( $preset_open_sample, 'missing' )
+	|| 'a' !== APD_Formats::opening_preset_id( $preset_open_sample, '' )
+) {
+	fwrite( STDERR, 'PRESET_ORDER_FAIL ' . wp_json_encode( $preset_moved_ids ) . PHP_EOL );
+	exit( 1 );
+}
+$admin_preset_tab = (string) file_get_contents( dirname( __DIR__ ) . '/templates/admin/presets-tab.php' );
+$admin_product    = (string) file_get_contents( dirname( __DIR__ ) . '/includes/class-apd-admin-settings.php' );
+$admin_preset_js  = (string) file_get_contents( dirname( __DIR__ ) . '/assets/js/admin-settings.js' );
+if (
+	false === strpos( $admin_preset_tab, 'reorder_presets' )
+	|| false === strpos( $admin_preset_tab, 'data-apd-preset-sortable' )
+	|| false === strpos( $admin_product, 'META_DEFAULT_PRESET' )
+	|| false === strpos( $admin_preset_js, 'bindPresetOrder' )
+	|| false === strpos( $admin_preset_js, 'toggleProductPreset' )
+) {
+	fwrite( STDERR, "PRESET_ADMIN_ORDER_FAIL\n" );
+	exit( 1 );
+}
+echo 'PRESET_ORDER_OK' . PHP_EOL;
+
+$format_arranged = APD_Formats::arrange(
+	array(
+		array( 'id' => 'format-a1', 'name' => 'Alpha' ),
+		array( 'id' => 'format-b2', 'name' => 'Beta' ),
+		array( 'id' => 'format-c3', 'name' => 'Gamma' ),
+	),
+	array( 'format:format-c3', 'separator:sep-line1', 'format:format-a1', 'format:missing-id', 'separator:sep-line1' )
+);
+$format_arranged_ids = array();
+foreach ( $format_arranged['formats'] as $format_arranged_row ) {
+	$format_arranged_ids[] = (string) $format_arranged_row['id'];
+}
+$format_layout_types = array();
+foreach ( $format_arranged['layout'] as $format_layout_row ) {
+	$format_layout_types[] = $format_layout_row['type'] . ':' . $format_layout_row['id'];
+}
+$format_layout_kept = APD_Formats::layout_without_format( $format_arranged['layout'], 'format-c3' );
+$format_tab = (string) file_get_contents( dirname( __DIR__ ) . '/templates/admin/formats-tab.php' );
+$format_product = (string) file_get_contents( dirname( __DIR__ ) . '/includes/class-apd-admin-settings.php' );
+if (
+	array( 'format-c3', 'format-a1', 'format-b2' ) !== $format_arranged_ids
+	|| 'Gamma' !== $format_arranged['formats'][0]['name']
+	|| array( 'separator:sep-line1', 'format:format-a1', 'format:format-b2' ) !== array(
+		$format_layout_kept[0]['type'] . ':' . $format_layout_kept[0]['id'],
+		$format_layout_kept[1]['type'] . ':' . $format_layout_kept[1]['id'],
+		$format_layout_kept[2]['type'] . ':' . $format_layout_kept[2]['id'],
+	)
+	|| array( 'format:format-c3', 'separator:sep-line1', 'format:format-a1', 'format:format-b2' ) !== $format_layout_types
+	|| false === strpos( $format_tab, 'data-apd-format-sortable' )
+	|| false === strpos( $format_tab, 'apd-format-separator' )
+	|| false === strpos( $format_tab, 'add_format_separator' )
+	|| false === strpos( $format_tab, 'shop_product_counts_by_format' )
+	|| false === strpos( $format_tab, 'data-apd-format-products' )
+	|| false === strpos( $format_tab, 'colspan="8"' )
+	|| false === strpos( $format_tab, 'colspan="7"' )
+	|| false === strpos( $format_product, 'reorder_formats' )
+	|| false === strpos( $format_product, 'function shop_product_counts_by_format' )
+) {
+	fwrite( STDERR, 'FORMAT_ORDER_FAIL ' . wp_json_encode( array( $format_arranged_ids, $format_layout_types ) ) . PHP_EOL );
+	exit( 1 );
+}
+echo 'FORMAT_ORDER_OK' . PHP_EOL;
+
+if ( count( $active_ids ) >= 1 ) {
+	$product_format = APD_Formats::save(
+		array(
+			'name'              => 'APD product opening preset',
+			'type'              => 'eu',
+			'preset_mode'       => 'selected',
+			'preset_ids'        => array( $active_ids[0] ),
+			'default_preset_id' => $active_ids[0],
+		)
+	);
+	$product_post = 0;
+	$product_saved = '';
+	$product_cleared = 'kept';
+	$product_html = '';
+	$product_lock_untouched = 'missing';
+	$product_lock_on = '';
+	$product_lock_cleared = 'kept';
+	$product_hide_untouched = 'missing';
+	$product_hide_on = '';
+	$product_hide_cleared = 'kept';
+	if ( ! is_wp_error( $product_format ) ) {
+		$product_post = wp_insert_post(
+			array(
+				'post_type'   => 'product',
+				'post_status' => 'draft',
+				'post_title'  => 'APD product opening preset',
+			)
+		);
+		if ( $product_post && ! is_wp_error( $product_post ) ) {
+			update_post_meta( $product_post, APD_Admin_Settings::META_ENABLED, 'yes' );
+			update_post_meta( $product_post, APD_Admin_Settings::META_FORMAT, $product_format['id'] );
+			ob_start();
+			APD_Admin_Settings::instance()->render_product_meta_box( get_post( $product_post ) );
+			$product_html = ob_get_clean();
+			$admin_users = get_users(
+				array(
+					'role'   => 'administrator',
+					'number' => 1,
+				)
+			);
+			if ( ! empty( $admin_users ) ) {
+				wp_set_current_user( (int) $admin_users[0]->ID );
+				$_POST['apd_product_nonce']     = wp_create_nonce( APD_Admin_Settings::PRODUCT_NONCE_ACTION );
+				$_POST['apd_enabled']           = '1';
+				$_POST['apd_format_id']         = $product_format['id'];
+				$_POST['apd_default_preset_id'] = (string) $active_ids[0];
+				APD_Admin_Settings::instance()->save_product_meta( $product_post );
+				$product_saved = (string) get_post_meta( $product_post, APD_Admin_Settings::META_DEFAULT_PRESET, true );
+				$_POST['apd_product_nonce']     = wp_create_nonce( APD_Admin_Settings::PRODUCT_NONCE_ACTION );
+				$_POST['apd_default_preset_id'] = 'not-a-preset';
+				APD_Admin_Settings::instance()->save_product_meta( $product_post );
+				$product_cleared = (string) get_post_meta( $product_post, APD_Admin_Settings::META_DEFAULT_PRESET, true );
+				$product_lock_untouched = (string) get_post_meta( $product_post, APD_Admin_Settings::META_LOCK_COLORS, true );
+				$product_hide_untouched = (string) get_post_meta( $product_post, APD_Admin_Settings::META_HIDE_PLAIN_FRAME, true );
+				$_POST['apd_product_nonce'] = wp_create_nonce( APD_Admin_Settings::PRODUCT_NONCE_ACTION );
+				$_POST['apd_lock_colors']   = '1';
+				APD_Admin_Settings::instance()->save_product_meta( $product_post );
+				$product_lock_on = (string) get_post_meta( $product_post, APD_Admin_Settings::META_LOCK_COLORS, true );
+				unset( $_POST['apd_lock_colors'] );
+				$_POST['apd_product_nonce'] = wp_create_nonce( APD_Admin_Settings::PRODUCT_NONCE_ACTION );
+				APD_Admin_Settings::instance()->save_product_meta( $product_post );
+				$product_lock_cleared = (string) get_post_meta( $product_post, APD_Admin_Settings::META_LOCK_COLORS, true );
+				$_POST['apd_product_nonce']    = wp_create_nonce( APD_Admin_Settings::PRODUCT_NONCE_ACTION );
+				$_POST['apd_hide_plain_frame'] = '1';
+				APD_Admin_Settings::instance()->save_product_meta( $product_post );
+				$product_hide_on = (string) get_post_meta( $product_post, APD_Admin_Settings::META_HIDE_PLAIN_FRAME, true );
+				unset( $_POST['apd_hide_plain_frame'] );
+				$_POST['apd_product_nonce'] = wp_create_nonce( APD_Admin_Settings::PRODUCT_NONCE_ACTION );
+				APD_Admin_Settings::instance()->save_product_meta( $product_post );
+				$product_hide_cleared = (string) get_post_meta( $product_post, APD_Admin_Settings::META_HIDE_PLAIN_FRAME, true );
+				unset( $_POST['apd_product_nonce'], $_POST['apd_enabled'], $_POST['apd_format_id'], $_POST['apd_default_preset_id'] );
+			}
+			wp_delete_post( $product_post, true );
+		}
+		APD_Formats::delete( $product_format['id'] );
+	}
+	if (
+		is_wp_error( $product_format )
+		|| ! $product_post
+		|| false === strpos( $product_html, 'name="apd_default_preset_id"' )
+		|| false === strpos( $product_html, 'name="apd_lock_colors"' )
+		|| false !== strpos( $product_html, 'name="apd_lock_colors" value="1" checked' )
+		|| false === strpos( $product_html, 'name="apd_hide_plain_frame"' )
+		|| false !== strpos( $product_html, 'name="apd_hide_plain_frame" value="1" checked' )
+		|| $product_saved !== (string) $active_ids[0]
+		|| '' !== $product_cleared
+		|| '' !== $product_lock_untouched
+		|| 'yes' !== $product_lock_on
+		|| '' !== $product_lock_cleared
+		|| '' !== $product_hide_untouched
+		|| 'yes' !== $product_hide_on
+		|| '' !== $product_hide_cleared
+	) {
+		fwrite( STDERR, 'PRODUCT_PRESET_FAIL ' . wp_json_encode( array( $product_format, $product_saved, $product_cleared ) ) . PHP_EOL );
+		exit( 1 );
+	}
+	echo 'PRODUCT_PRESET_OK' . PHP_EOL;
+}
+
+$usage_format = APD_Formats::save(
+	array(
+		'name' => 'APD shop usage',
+		'type' => 'eu',
+	)
+);
+$usage_other = APD_Formats::save(
+	array(
+		'name' => 'APD shop usage other',
+		'type' => 'eu',
+	)
+);
+$usage_posts = array();
+$usage_insert = static function ( $status, $format_id ) use ( &$usage_posts ) {
+	$post_id = wp_insert_post(
+		array(
+			'post_type'   => 'product',
+			'post_status' => $status,
+			'post_title'  => 'APD shop usage ' . $status,
+		)
+	);
+
+	if ( ! $post_id || is_wp_error( $post_id ) ) {
+		return 0;
+	}
+
+	$usage_posts[] = (int) $post_id;
+	update_post_meta( (int) $post_id, APD_Admin_Settings::META_FORMAT, $format_id );
+
+	return (int) $post_id;
+};
+
+if ( ! is_wp_error( $usage_format ) && ! is_wp_error( $usage_other ) ) {
+	$usage_insert( 'publish', $usage_format['id'] );
+	$usage_insert( 'publish', $usage_format['id'] );
+	$usage_insert( 'draft', $usage_format['id'] );
+	$usage_insert( 'private', $usage_format['id'] );
+	$usage_trashed = $usage_insert( 'publish', $usage_format['id'] );
+	if ( $usage_trashed ) {
+		wp_trash_post( $usage_trashed );
+	}
+	$usage_insert( 'publish', $usage_other['id'] );
+}
+
+$usage_counts = APD_Admin_Settings::shop_product_counts_by_format();
+$usage_count  = ( ! is_wp_error( $usage_format ) && isset( $usage_counts[ $usage_format['id'] ] ) ) ? (int) $usage_counts[ $usage_format['id'] ] : 0;
+$other_count  = ( ! is_wp_error( $usage_other ) && isset( $usage_counts[ $usage_other['id'] ] ) ) ? (int) $usage_counts[ $usage_other['id'] ] : 0;
+
+foreach ( $usage_posts as $usage_post ) {
+	wp_delete_post( $usage_post, true );
+}
+
+if ( ! is_wp_error( $usage_format ) ) {
+	APD_Formats::delete( $usage_format['id'] );
+}
+
+if ( ! is_wp_error( $usage_other ) ) {
+	APD_Formats::delete( $usage_other['id'] );
+}
+
+if ( is_wp_error( $usage_format ) || is_wp_error( $usage_other ) || 2 !== $usage_count || 1 !== $other_count ) {
+	fwrite( STDERR, 'FORMAT_USAGE_FAIL ' . wp_json_encode( array( $usage_count, $other_count ) ) . PHP_EOL );
+	exit( 1 );
+}
+
+echo 'FORMAT_USAGE_OK' . PHP_EOL;
+
 echo 'ALL_OK' . PHP_EOL;

@@ -6,6 +6,7 @@
  */
 
 $candidates = array(
+	dirname( __DIR__, 4 ) . '/wp-load.php',
 	dirname( __DIR__, 3 ) . '/wp-load.php',
 	dirname( __DIR__, 2 ) . '/plate-designer/wp-load.php',
 );
@@ -121,6 +122,83 @@ $html = ob_get_clean();
 
 if ( false !== strpos( $html, 'name="apd_frame"' ) || false === strpos( $html, 'name="apd_frame_plain"' ) || false === strpos( $html, 'name="apd_border_color"' ) ) {
 	fwrite( STDERR, "SHOP_FRAME_CHOICE_MISSING\n" );
+	exit( 1 );
+}
+
+$open_shop_payload = $apd_payload;
+$apd_payload['lock_colors']  = true;
+$apd_payload['color_fields'] = array( 'text', 'background', 'border' );
+$apd_payload['palettes']     = array(
+	'text'       => array(
+		array( 'id' => 'ink', 'hex' => '#000000', 'label' => 'Black' ),
+		array( 'id' => 'red', 'hex' => '#C41E3A', 'label' => 'Red' ),
+	),
+	'background' => array(
+		array( 'id' => 'white', 'hex' => '#FFFFFF', 'label' => 'White' ),
+		array( 'id' => 'red', 'hex' => '#C41E3A', 'label' => 'Red' ),
+	),
+	'border'     => array(
+		array( 'id' => 'frame', 'hex' => '#000000', 'label' => 'Black' ),
+		array( 'id' => 'red', 'hex' => '#C41E3A', 'label' => 'Red' ),
+	),
+);
+$apd_payload['cart_restore'] = array(
+	'text_color'       => '#C41E3A',
+	'background_color' => '#C41E3A',
+	'border_color'     => '#C41E3A',
+);
+ob_start();
+include APD_PLUGIN_DIR . 'templates/product-configurator.php';
+$locked_html = ob_get_clean();
+$apd_payload['lock_colors'] = false;
+ob_start();
+include APD_PLUGIN_DIR . 'templates/product-configurator.php';
+$unlocked_colors_html = ob_get_clean();
+$apd_payload = $open_shop_payload;
+
+if (
+	false !== strpos( $locked_html, 'data-apd-swatch="apd_text_color"' )
+	|| false !== strpos( $locked_html, 'data-apd-swatch="apd_background_color"' )
+	|| false !== strpos( $locked_html, 'data-apd-swatch="apd_border_color"' )
+	|| false !== strpos( $locked_html, '#C41E3A' )
+	|| false === strpos( $locked_html, 'name="apd_text_color" value="#000000"' )
+	|| false === strpos( $locked_html, 'name="apd_background_color" value="#FFFFFF"' )
+	|| false === strpos( $locked_html, 'name="apd_border_color" value="#000000"' )
+	|| false === strpos( $locked_html, 'name="apd_frame_plain"' )
+	|| false !== strpos( $locked_html, 'name="apd_frame" value' )
+	|| false === strpos( $unlocked_colors_html, 'data-apd-swatch="apd_text_color"' )
+	|| false === strpos( $unlocked_colors_html, 'data-apd-swatch="apd_background_color"' )
+	|| false === strpos( $unlocked_colors_html, 'data-apd-swatch="apd_border_color"' )
+	|| false === strpos( $unlocked_colors_html, '#C41E3A' )
+) {
+	fwrite( STDERR, "SHOP_LOCK_COLORS_FAIL\n" );
+	exit( 1 );
+}
+
+$apd_payload = $open_shop_payload;
+$apd_payload['hide_plain_frame'] = true;
+$apd_payload['cart_restore'] = array(
+	'frame_plain' => true,
+	'no_frame'    => true,
+);
+ob_start();
+include APD_PLUGIN_DIR . 'templates/product-configurator.php';
+$hidden_plain_html = ob_get_clean();
+$apd_payload['lock_colors'] = true;
+ob_start();
+include APD_PLUGIN_DIR . 'templates/product-configurator.php';
+$hidden_locked_html = ob_get_clean();
+$apd_payload = $open_shop_payload;
+
+if (
+	false !== strpos( $hidden_plain_html, 'name="apd_frame_plain"' )
+	|| false !== strpos( $hidden_plain_html, 'data-apd-legacy-no-frame' )
+	|| false === strpos( $hidden_plain_html, 'name="apd_border_color"' )
+	|| false !== strpos( $hidden_locked_html, 'name="apd_frame_plain"' )
+	|| false !== strpos( $hidden_locked_html, 'data-apd-swatch="apd_border_color"' )
+	|| false === strpos( $hidden_locked_html, 'name="apd_border_color" value="#000000"' )
+) {
+	fwrite( STDERR, "SHOP_HIDE_PLAIN_FRAME_FAIL\n" );
 	exit( 1 );
 }
 
@@ -249,6 +327,32 @@ $latin_only_html = ob_get_clean();
 unset( $apd_payload['scripts'] );
 if ( false !== strpos( $latin_only_html, $inscription_hint ) || false !== strpos( $latin_only_html, 'class="apd-script"' ) || false === strpos( $latin_only_html, $latin_only_hint ) ) {
 	fwrite( STDERR, "SHOP_SINGLE_SCRIPT_HINT_FAIL\n" );
+	exit( 1 );
+}
+
+$digital_format                         = $apd_payload['format'];
+$apd_payload['format']['type']          = 'moto_plain_240';
+$apd_payload['format']['capabilities']['two_row'] = true;
+$apd_payload['format']['row_max_chars'] = array( 12, 12 );
+$apd_payload['format']['max_chars']     = 24;
+$apd_payload['scripts']                 = array( 'latin', 'cyrillic' );
+$apd_payload['default_text']            = "P PP\n6987";
+$apd_payload['default_text_cyrillic']   = "МНОГО\nВЪРВИ";
+$apd_payload['digital_only']            = true;
+ob_start();
+include APD_PLUGIN_DIR . 'templates/product-configurator.php';
+$digital_html = ob_get_clean();
+$apd_payload['format'] = $digital_format;
+unset( $apd_payload['scripts'], $apd_payload['default_text_cyrillic'], $apd_payload['digital_only'] );
+if (
+	false !== strpos( $digital_html, $inscription_hint )
+	|| false === strpos( $digital_html, 'class="apd-script"' )
+	|| false === strpos( $digital_html, 'name="apd_text_row_1"' )
+	|| false === strpos( $digital_html, 'maxlength="12"' )
+	|| false !== strpos( $digital_html, 'maxlength="5"' )
+	|| false !== strpos( $digital_html, 'maxlength="4"' )
+) {
+	fwrite( STDERR, "SHOP_DIGITAL_ONLY_HINT_FAIL\n" );
 	exit( 1 );
 }
 
@@ -714,12 +818,66 @@ $mini_format = APD_Formats::sanitize(
 		'type' => 'mini',
 	)
 );
-if ( is_wp_error( $uk_format ) || is_wp_error( $mini_format ) ) {
-	fwrite( STDERR, 'SHOP_UK_FORMAT_ERR ' . ( is_wp_error( $uk_format ) ? $uk_format->get_error_message() : $mini_format->get_error_message() ) . PHP_EOL );
+$uk_fill = APD_Formats::sanitize(
+	array(
+		'id'            => 'ui-uk',
+		'name'          => 'English plate',
+		'type'          => 'uk',
+		'slogan_max'    => 24,
+		'initial_fill'  => '1',
+		'palette_slots' => array(
+			'text'       => $uk_ids['text'],
+			'background' => $uk_ids['background'],
+			'border'     => $uk_ids['border'],
+			'slogan'     => $uk_ids['slogan'],
+		),
+	)
+);
+$mini_fill = APD_Formats::sanitize(
+	array(
+		'id'           => 'ui-mini',
+		'name'         => 'Mini plate',
+		'type'         => 'mini',
+		'initial_fill' => '1',
+	)
+);
+if (
+	is_wp_error( $uk_format )
+	|| is_wp_error( $mini_format )
+	|| is_wp_error( $uk_fill )
+	|| is_wp_error( $mini_fill )
+	|| ! empty( $uk_format['initial_fill'] )
+	|| empty( $uk_fill['initial_fill'] )
+	|| empty( $mini_fill['initial_fill'] )
+	|| ! APD_Formats::offers_initial_fill( 'uk' )
+	|| ! APD_Formats::offers_initial_fill( 'color' )
+	|| ! APD_Formats::offers_initial_fill( 'mini' )
+	|| APD_Formats::offers_initial_fill( 'fr' )
+	|| APD_Formats::offers_initial_fill( 'us' )
+	|| APD_Formats::offers_initial_fill( 'holder' )
+) {
+	fwrite( STDERR, 'SHOP_UK_FORMAT_ERR ' . ( is_wp_error( $uk_format ) ? $uk_format->get_error_message() : ( is_wp_error( $mini_format ) ? $mini_format->get_error_message() : 'fill flag' ) ) . PHP_EOL );
 	exit( 1 );
 }
 $uk_ui = APD_Formats::frontend_payload( $uk_format );
-$uk_ui['fonts']   = array();
+$uk_ui['fonts']   = array(
+	array(
+		'id'     => 'font-uk',
+		'family' => 'UK Mandatory',
+		'note'   => '',
+		'weight' => 400,
+		'style'  => 'normal',
+		'url'    => '',
+	),
+	array(
+		'id'     => 'font-slogan',
+		'family' => 'Slogan Script',
+		'note'   => '',
+		'weight' => 400,
+		'style'  => 'normal',
+		'url'    => '',
+	),
+);
 $uk_ui['presets'] = array(
 	array(
 		'id'           => 'preset-f',
@@ -756,6 +914,39 @@ unset( $apd_payload['cart_restore'] );
 ob_start();
 include APD_PLUGIN_DIR . 'templates/product-configurator.php';
 $uk_html = ob_get_clean();
+$apd_payload['default_fill'] = '#F5D90A';
+ob_start();
+include APD_PLUGIN_DIR . 'templates/product-configurator.php';
+$yellow_html = ob_get_clean();
+$apd_payload['cart_restore'] = array( 'background_color' => '#FFFFFF' );
+ob_start();
+include APD_PLUGIN_DIR . 'templates/product-configurator.php';
+$fill_restore_html = ob_get_clean();
+unset( $apd_payload['default_fill'], $apd_payload['cart_restore'] );
+$apd_payload['lock_colors']  = true;
+$apd_payload['cart_restore'] = array(
+	'text_color'       => '#C41E3A',
+	'background_color' => '#C41E3A',
+	'border_color'     => '#111111',
+	'slogan_color'     => '#000000',
+);
+ob_start();
+include APD_PLUGIN_DIR . 'templates/product-configurator.php';
+$uk_locked_html = ob_get_clean();
+unset( $apd_payload['lock_colors'], $apd_payload['cart_restore'] );
+if (
+	false !== strpos( $uk_locked_html, 'data-apd-swatch="apd_text_color"' )
+	|| false !== strpos( $uk_locked_html, 'data-apd-swatch="apd_background_color"' )
+	|| false !== strpos( $uk_locked_html, 'data-apd-swatch="apd_border_color"' )
+	|| false === strpos( $uk_locked_html, 'data-apd-swatch="apd_slogan_color"' )
+	|| false === strpos( $uk_locked_html, 'name="apd_border_color" value="#000000"' )
+	|| false === strpos( $uk_locked_html, 'name="apd_text_color" value="#000000"' )
+	|| false !== strpos( $uk_locked_html, '#C41E3A' )
+	|| false !== strpos( $uk_locked_html, 'value="#111111"' )
+) {
+	fwrite( STDERR, "SHOP_LOCK_SLOGAN_FAIL\n" );
+	exit( 1 );
+}
 $mini_ui = APD_Formats::frontend_payload( $mini_format );
 $mini_ui['fonts']   = array();
 $mini_ui['presets'] = $uk_ui['presets'];
@@ -778,18 +969,40 @@ if (
 	|| ! empty( $uk_ui['capabilities']['country_locked'] )
 	|| false === strpos( $uk_html, 'name="apd_text"' )
 	|| false === strpos( $uk_html, 'value="LKOO FDN"' )
+	|| false === strpos( $uk_html, 'data-apd-plate-group' )
+	|| false === strpos( $uk_html, 'data-apd-slogan-group' )
+	|| false === strpos( $uk_html, 'name="apd_font_id"' )
 	|| false === strpos( $uk_html, 'name="apd_slogan"' )
+	|| false === strpos( $uk_html, 'name="apd_slogan_font_id"' )
 	|| false === strpos( $uk_html, 'value="Your slogan here"' )
+	|| strpos( $uk_html, 'data-apd-plate-group' ) > strpos( $uk_html, 'name="apd_font_id"' )
+	|| strpos( $uk_html, 'name="apd_font_id"' ) > strpos( $uk_html, 'name="apd_text_color"' )
+	|| strpos( $uk_html, 'name="apd_text_color"' ) > strpos( $uk_html, 'data-apd-slogan-group' )
+	|| strpos( $uk_html, 'data-apd-slogan-group' ) > strpos( $uk_html, 'name="apd_slogan_font_id"' )
+	|| strpos( $uk_html, 'name="apd_slogan_font_id"' ) > strpos( $uk_html, 'name="apd_slogan_color"' )
+	|| 1 !== substr_count( $uk_html, 'name="apd_text_color"' )
+	|| 1 !== substr_count( $uk_html, 'name="apd_slogan_color"' )
 	|| false === strpos( $uk_html, 'maxlength="24"' )
 	|| false === strpos( $uk_html, 'name="apd_slogan_color"' )
 	|| false === strpos( $uk_html, 'name="apd_background_color"' )
+	|| false === strpos( $uk_html, 'name="apd_background_color" value="#FFFFFF"' )
+	|| false === strpos( $yellow_html, 'name="apd_background_color" value="#F5D90A"' )
+	|| false === strpos( $yellow_html, 'data-apd-hex="#F5D90A" aria-pressed="true"' )
+	|| false === strpos( $yellow_html, 'data-apd-hex="#FFFFFF" aria-pressed="false"' )
+	|| false === strpos( $fill_restore_html, 'name="apd_background_color" value="#FFFFFF"' )
+	|| false === strpos( $fill_restore_html, 'data-apd-hex="#F5D90A" aria-pressed="false"' )
 	|| false === strpos( $uk_html, 'name="apd_border_color"' )
 	|| false === strpos( $uk_html, 'apd-round-plate' )
 	|| false !== strpos( $uk_html, 'name="apd_frame"' )
 	|| false === strpos( $shop_js_uk, 'function drawEnglishPlate' )
+	|| false === strpos( $shop_js_uk, 'function currentSloganFont' )
 	|| false === strpos( $shop_js_uk, 'cfg.format.slogan_box' )
+	|| false !== strpos( $shop_js_uk, 'Arial, "Helvetica Neue"' )
 	|| false === strpos( $shop_js_uk, 'percentBoxes([cfg.format.text_box]' )
 	|| false !== strpos( $uk_html, 'data-apd-country-open' )
+	|| false !== strpos( $uk_html, 'apd-country-change' )
+	|| false !== strpos( $uk_html, 'apd-country-current' )
+	|| false !== strpos( $uk_html, 'Country band' )
 	|| false === strpos( $uk_html, 'name="apd_preset_id"' )
 	|| false === strpos( $shop_js_uk, 'function offersCountryPicker' )
 	|| false === strpos( $shop_js_uk, 'function strokeEnglishRim' )
@@ -798,9 +1011,13 @@ if (
 	|| false === strpos( $shop_js_uk, 'function drawMiniPlate' )
 	|| 340 !== (int) $mini_ui['width']
 	|| 90 !== (int) $mini_ui['height']
+	|| false === strpos( $mini_html, '--apd-frame-w: 327px' )
 	|| false === strpos( $mini_html, 'value="GUNTHER"' )
 	|| false !== strpos( $mini_html, 'name="apd_slogan"' )
-	|| false !== strpos( $mini_html, 'name="apd_frame"' )
+	|| false !== strpos( $mini_html, 'name="apd_slogan_font_id"' )
+	|| false !== strpos( $mini_html, 'data-apd-plate-group' )
+	|| false !== strpos( $mini_html, 'name="apd_frame" value' )
+	|| false === strpos( $mini_html, 'name="apd_frame_plain"' )
 	|| empty( $mini_ui['capabilities']['country_band'] )
 ) {
 	fwrite( STDERR, "SHOP_UK_MINI_FAIL\n" );
@@ -808,6 +1025,39 @@ if (
 }
 
 echo 'SHOP_UK_MINI_OK' . PHP_EOL;
+
+$uk_rows = APD_WooCommerce::config_display_rows(
+	array(
+		'format_type'        => 'uk',
+		'slogan'             => 'FAST',
+		'slogan_font_label'  => 'Slogan Script',
+		'font_label'         => 'UK Mandatory',
+	)
+);
+$uk_plain_rows = APD_WooCommerce::config_display_rows(
+	array(
+		'format_type'       => 'uk_plain',
+		'slogan'            => 'SLOW',
+		'slogan_font_label' => 'UK Mandatory',
+	)
+);
+$mini_rows = APD_WooCommerce::config_display_rows(
+	array(
+		'format_type'       => 'mini',
+		'slogan'            => 'FAST',
+		'slogan_font_label' => 'Slogan Script',
+		'font_label'        => 'UK Mandatory',
+	)
+);
+$uk_values    = array_column( $uk_rows, 'value' );
+$plain_values = array_column( $uk_plain_rows, 'value' );
+$mini_values  = array_column( $mini_rows, 'value' );
+if ( ! in_array( 'FAST', $uk_values, true ) || ! in_array( 'Slogan Script', $uk_values, true ) || ! in_array( 'SLOW', $plain_values, true ) || ! in_array( 'UK Mandatory', $plain_values, true ) || in_array( 'FAST', $mini_values, true ) || in_array( 'Slogan Script', $mini_values, true ) ) {
+	fwrite( STDERR, "SHOP_SLOGAN_FONT_ROW_FAIL\n" );
+	exit( 1 );
+}
+
+echo 'SHOP_SLOGAN_FONT_ROW_OK' . PHP_EOL;
 
 $uk_two_ui = $uk_ui;
 $uk_two_ui['presets'][] = array(
@@ -1011,7 +1261,100 @@ if ( false === strpos( $holder_html, 'name="apd_holder_color"' ) || false === st
 	exit( 1 );
 }
 
+$apd_payload = $holder_payload;
+$apd_payload['lock_colors']  = true;
+$apd_payload['cart_restore'] = array(
+	'text_color'       => '#C41E3A',
+	'background_color' => '#C41E3A',
+	'holder_color'     => '#000000',
+);
+ob_start();
+include APD_PLUGIN_DIR . 'templates/product-configurator.php';
+$holder_locked_html = ob_get_clean();
+if (
+	false !== strpos( $holder_locked_html, '>Holder inscription<' )
+	|| false !== strpos( $holder_locked_html, '>Strip color<' )
+	|| false !== strpos( $holder_locked_html, 'data-apd-swatch="apd_text_color"' )
+	|| false !== strpos( $holder_locked_html, 'data-apd-swatch="apd_background_color"' )
+	|| false !== strpos( $holder_locked_html, '#C41E3A' )
+	|| false !== strpos( $holder_locked_html, 'name="apd_border_color"' )
+	|| false === strpos( $holder_locked_html, '>Holder color<' )
+	|| false === strpos( $holder_locked_html, 'data-apd-swatch="apd_holder_color"' )
+	|| false === strpos( $holder_locked_html, 'name="apd_text_color"' )
+	|| false === strpos( $holder_locked_html, 'name="apd_background_color"' )
+) {
+	fwrite( STDERR, "SHOP_LOCK_HOLDER_FAIL\n" );
+	exit( 1 );
+}
+
+$apd_payload = $holder_payload;
+$apd_payload['scripts'] = array( 'latin' );
+ob_start();
+include APD_PLUGIN_DIR . 'templates/product-configurator.php';
+$holder_latin_html = ob_get_clean();
+$apd_payload = $holder_payload;
+$apd_payload['scripts'] = array( 'latin', 'cyrillic', 'combined' );
+$apd_payload['default_text_combined'] = 'AB ВГ';
+$apd_payload['format']['fonts'] = array(
+	array(
+		'id'      => 'lat',
+		'family'  => 'Oswald',
+		'weight'  => 400,
+		'style'   => 'normal',
+		'url'     => 'https://example.test/a.woff',
+		'scripts' => array( 'latin' ),
+	),
+	array(
+		'id'      => 'cyr',
+		'family'  => 'Roboto',
+		'weight'  => 400,
+		'style'   => 'normal',
+		'url'     => 'https://example.test/b.woff',
+		'scripts' => array( 'cyrillic' ),
+	),
+);
+ob_start();
+include APD_PLUGIN_DIR . 'templates/product-configurator.php';
+$holder_script_html = ob_get_clean();
+$apd_payload = $holder_payload;
+if (
+	false !== strpos( $holder_latin_html, $latin_only_hint )
+	|| false !== strpos( $holder_latin_html, $inscription_hint )
+	|| false !== strpos( $holder_script_html, $inscription_hint )
+	|| false !== strpos( $holder_script_html, $latin_only_hint )
+	|| false === strpos( $holder_script_html, 'value="combined"' )
+	|| ( false === strpos( $holder_script_html, 'Комбиниран шрифт - кирилица и латиница' ) && false === strpos( $holder_script_html, 'Combined font, Cyrillic and Latin' ) )
+	|| false === strpos( $holder_script_html, 'name="apd_font_id_cyr"' )
+	|| false === strpos( $holder_script_html, '<select id="apd_font_id_cyr"' )
+	|| false !== strpos( $holder_script_html, 'type="hidden" id="apd_font_id_cyr"' )
+	|| false === strpos( $holder_script_html, 'data-apd-font-cyr hidden' )
+	|| false === strpos( $holder_script_html, 'data-apd-font-for="cyrillic"' )
+	|| false !== strpos( $holder_script_html, 'data-apd-font-for="combined"' )
+) {
+	fwrite( STDERR, "SHOP_HOLDER_SCRIPT_FAIL\n" );
+	exit( 1 );
+}
+
+$admin_source = file_get_contents( APD_PLUGIN_DIR . 'includes/class-apd-admin-settings.php' );
+$admin_js     = file_get_contents( APD_PLUGIN_DIR . 'assets/js/admin-settings.js' );
+if (
+	false === strpos( $admin_source, 'name="apd_holder_script"' )
+	|| false === strpos( $admin_source, 'data-apd-script-font-block="latin"' )
+	|| false === strpos( $admin_source, 'data-apd-script-font-block="cyrillic"' )
+	|| false === strpos( $admin_source, 'name="apd_script_latin"' )
+	|| false !== strpos( $admin_source, 'name="apd_font_ids_combined[]"' )
+	|| false === strpos( $admin_js, 'data-apd-script-font-block' )
+	|| false === strpos( $admin_js, 'apd_holder_script' )
+) {
+	fwrite( STDERR, "ADMIN_HOLDER_FONT_LISTS_FAIL\n" );
+	exit( 1 );
+}
+
 $shop_css = file_get_contents( APD_PLUGIN_DIR . 'assets/css/configurator.css' );
+if ( false === strpos( $shop_css, '.apd-country-current [data-apd-country-thumb][hidden]' ) || false === strpos( $shop_css, '.apd-country-option img[hidden]' ) ) {
+	fwrite( STDERR, "SHOP_PRESET_HIDDEN_FAIL\n" );
+	exit( 1 );
+}
 $canvas_rule = strpos( $shop_css, '.apd-canvas-frame {' );
 $canvas_shadow = strpos( $shop_css, 'filter: drop-shadow(0 3px 5px rgba(0, 0, 0, 0.28));' );
 if ( false === $canvas_rule || false === $canvas_shadow || $canvas_shadow < $canvas_rule || false !== strpos( $shop_css, '.apd-canvas-frame.apd-english-plate' ) ) {
@@ -1020,6 +1363,21 @@ if ( false === $canvas_rule || false === $canvas_shadow || $canvas_shadow < $can
 }
 if ( false === strpos( $shop_css, '.apd-row-fields,' ) || false === strpos( $shop_css, 'flex-direction: column' ) || false === strpos( $shop_css, 'padding-bottom: 5px' ) || false !== strpos( $shop_css, 'grid-template-columns: 1fr 1fr' ) ) {
 	fwrite( STDERR, "SHOP_FIELD_STACK_CSS_FAIL\n" );
+	exit( 1 );
+}
+$band_rule = strpos( $shop_css, '.apd-band-layer {' );
+$band_next = false === $band_rule ? false : strpos( $shop_css, '}', $band_rule );
+$band_css  = ( false === $band_rule || false === $band_next ) ? '' : substr( $shop_css, $band_rule, $band_next - $band_rule );
+if ( false === strpos( $band_css, 'object-fit: contain;' ) || false !== strpos( $band_css, 'object-fit: cover' ) ) {
+	fwrite( STDERR, "SHOP_BAND_CONTAIN_FAIL\n" );
+	exit( 1 );
+}
+$admin_css = file_get_contents( APD_PLUGIN_DIR . 'assets/css/admin-settings.css' );
+$admin_band = strpos( $admin_css, '.apd-band-box img,' );
+$admin_next = false === $admin_band ? false : strpos( $admin_css, '}', $admin_band );
+$admin_band_css = ( false === $admin_band || false === $admin_next ) ? '' : substr( $admin_css, $admin_band, $admin_next - $admin_band );
+if ( false === strpos( $admin_band_css, 'object-fit: contain;' ) || false !== strpos( $admin_band_css, 'object-fit: cover' ) ) {
+	fwrite( STDERR, "ADMIN_BAND_CONTAIN_FAIL\n" );
 	exit( 1 );
 }
 

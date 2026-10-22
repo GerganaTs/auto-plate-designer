@@ -293,17 +293,24 @@ $palette_url    = $apd_admin->tab_url( 'palette' );
 					</div>
 					<div class="apd-field apd-field--span">
 						<span class="apd-field__label"><?php esc_html_e( 'Colors in this palette', 'auto-plate-designer' ); ?></span>
+						<p class="apd-field__hint"><?php esc_html_e( 'The shop shows checked colors in this order.', 'auto-plate-designer' ); ?></p>
 						<?php if ( empty( $library ) ) : ?>
 							<p class="description"><?php esc_html_e( 'Add colors to the library first.', 'auto-plate-designer' ); ?></p>
 						<?php else : ?>
 							<div class="apd-palette-color-picks">
-								<?php foreach ( $library as $color ) : ?>
-									<label class="apd-choice">
-										<input type="checkbox" name="apd_palette[color_ids][]" value="<?php echo esc_attr( $color['id'] ); ?>" <?php checked( in_array( $color['id'], $editing_colors, true ) ); ?>>
-										<span class="apd-swatch" style="background: <?php echo esc_attr( $color['hex'] ); ?>"></span>
-										<?php echo esc_html( $color['label'] ); ?>
-										<code><?php echo esc_html( $color['hex'] ); ?></code>
-									</label>
+								<?php foreach ( APD_Color_Palettes::editor_color_rows( $editing_colors ) as $color ) : ?>
+									<div class="apd-palette-color-row" data-apd-color-row>
+										<label class="apd-choice">
+											<input type="checkbox" name="apd_palette[color_ids][]" value="<?php echo esc_attr( $color['id'] ); ?>" <?php checked( in_array( $color['id'], $editing_colors, true ) ); ?>>
+											<span class="apd-swatch" style="background: <?php echo esc_attr( $color['hex'] ); ?>"></span>
+											<?php echo esc_html( $color['label'] ); ?>
+											<code><?php echo esc_html( $color['hex'] ); ?></code>
+										</label>
+										<span class="apd-palette-color-moves">
+											<button type="button" class="button button-small" data-apd-color-move="up"><?php esc_html_e( 'Move up', 'auto-plate-designer' ); ?></button>
+											<button type="button" class="button button-small" data-apd-color-move="down"><?php esc_html_e( 'Move down', 'auto-plate-designer' ); ?></button>
+										</span>
+									</div>
 								<?php endforeach; ?>
 							</div>
 						<?php endif; ?>

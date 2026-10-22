@@ -6,6 +6,7 @@
  */
 
 $candidates = array(
+	dirname( __DIR__, 4 ) . '/wp-load.php',
 	dirname( __DIR__, 3 ) . '/wp-load.php',
 	dirname( __DIR__, 2 ) . '/plate-designer/wp-load.php',
 );
@@ -466,7 +467,9 @@ if ( is_file( $file ) ) {
 
 $shop_css = file_get_contents( APD_PLUGIN_DIR . 'assets/css/configurator.css' );
 
-if ( false === strpos( $shop_css, 'img[src*="apd-previews"]' ) || false === strpos( $shop_css, 'img.apd-config-preview' ) ) {
+$edge_at   = strpos( $shop_css, '.apd-config-preview,' );
+$edge_rule = false === $edge_at ? '' : substr( $shop_css, $edge_at, 320 );
+if ( false === strpos( $shop_css, 'img[src*="apd-previews"]' ) || false === strpos( $edge_rule, 'border: 1px solid #d0d0d0' ) || false === strpos( $edge_rule, 'box-sizing: content-box' ) || false !== strpos( $edge_rule, 'box-sizing: border-box' ) || false === strpos( $thumb, 'border:1px solid #d0d0d0' ) || false === strpos( $thumb, 'box-sizing:content-box' ) ) {
 	fwrite( STDERR, "PREVIEW_CSS_FAIL\n" );
 	exit( 1 );
 }
@@ -556,7 +559,10 @@ $_GET['apd_cart_item'] = 'missing-key';
 $missing               = APD_WooCommerce::requested_cart_edit( $edit_id );
 $_GET['apd_cart_item'] = $first_key;
 $wrong_product         = APD_WooCommerce::requested_cart_edit( $extra_id );
+$back_label   = __( 'Back to cart', 'auto-plate-designer' );
+$edit_button  = APD_WooCommerce::instance()->single_button_text( 'Add to cart', $edit_product );
 unset( $_GET['apd_cart_item'] );
+$plain_button = APD_WooCommerce::instance()->single_button_text( 'Add to cart', $edit_product );
 
 $first_item = WC()->cart->get_cart_item( $first_key );
 $plain_item = array(
@@ -589,6 +595,8 @@ if (
 	|| false !== strpos( $mini_link, 'apd-cart-edit' )
 	|| false !== strpos( $mini_link, 'apd_cart_item' )
 	|| in_array( 'apd-edit', $display_keys, true )
+	|| $back_label !== $edit_button
+	|| 'Add to cart' !== $plain_button
 ) {
 	fwrite( STDERR, "CART_EDIT_RESTORE_FAIL\n" );
 	$apd_cart_edit_cleanup();

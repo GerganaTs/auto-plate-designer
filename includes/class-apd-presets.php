@@ -130,6 +130,95 @@ final class APD_Presets {
 	}
 
 	/**
+	 * Reorder stored presets without dropping any row.
+	 *
+	 * Ids that are not stored are ignored. A stored preset missing from the
+	 * posted list stays at the end, in its previous order.
+	 *
+	 * @param array<int, array<string, mixed>> $presets Stored preset rows.
+	 * @param array<int, string>               $ids     Preset ids in the new order.
+	 * @return array<int, array<string, mixed>>
+	 */
+	public static function ordered_rows( $presets, $ids ) {
+		if ( ! is_array( $presets ) ) {
+			return array();
+		}
+
+		$by_id = array();
+		$order = array();
+
+		foreach ( $presets as $preset ) {
+			if ( ! is_array( $preset ) || empty( $preset['id'] ) ) {
+				continue;
+			}
+
+			$id = (string) $preset['id'];
+
+			if ( isset( $by_id[ $id ] ) ) {
+				continue;
+			}
+
+			$by_id[ $id ] = $preset;
+			$order[]      = $id;
+		}
+
+		$next = array();
+		$seen = array();
+
+		foreach ( (array) $ids as $id ) {
+			$id = sanitize_text_field( (string) $id );
+
+			if ( '' === $id || isset( $seen[ $id ] ) || ! isset( $by_id[ $id ] ) ) {
+				continue;
+			}
+
+			$next[]      = $by_id[ $id ];
+			$seen[ $id ] = true;
+		}
+
+		foreach ( $order as $id ) {
+			if ( ! isset( $seen[ $id ] ) ) {
+				$next[] = $by_id[ $id ];
+			}
+		}
+
+		return $next;
+	}
+
+	/**
+	 * Save a new preset order.
+	 *
+	 * @param array<int, string> $ids Preset ids in the new order.
+	 * @return true
+	 */
+	public static function reorder( $ids ) {
+		$settings = APD_Plugin::get_settings();
+		$current  = isset( $settings['presets'] ) && is_array( $settings['presets'] ) ? $settings['presets'] : array();
+		$next     = self::ordered_rows( $current, $ids );
+		$before   = array();
+		$after    = array();
+
+		foreach ( $current as $preset ) {
+			if ( is_array( $preset ) && ! empty( $preset['id'] ) ) {
+				$before[] = (string) $preset['id'];
+			}
+		}
+
+		foreach ( $next as $preset ) {
+			$after[] = (string) $preset['id'];
+		}
+
+		if ( $before === $after ) {
+			return true;
+		}
+
+		$settings['presets'] = $next;
+		APD_Plugin::save_settings( $settings );
+
+		return true;
+	}
+
+	/**
 	 * Delete a preset by ID.
 	 *
 	 * @param string $id Preset ID.

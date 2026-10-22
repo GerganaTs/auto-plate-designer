@@ -70,12 +70,15 @@ a.apd-cart-edit {
 	border: 0;
 }
 
-.apd-config-preview {
+.apd-config-preview,
+img[src*="apd-previews"] {
 	display: block;
 	width: 180px;
 	max-width: 100%;
 	height: auto;
 	background: #fff;
+	border: 1px solid #d0d0d0;
+	box-sizing: content-box;
 }
 
 /* Block cart, mini-cart, and checkout crop wide plates into a square thumbnail. */
@@ -289,7 +292,7 @@ body.apd-configurator-product:not(:has(.apd-product-layout)) :is(
 	overscroll-behavior: none;
 	touch-action: none;
 	pointer-events: none;
-	object-fit: cover;
+	object-fit: contain;
 	object-position: center;
 	background: #003399;
 }
@@ -553,6 +556,28 @@ body.apd-configurator-product form.cart .wp-element-button {
 	min-inline-size: 0;
 }
 
+.apd-configurator fieldset.apd-group {
+	display: flex;
+	flex-direction: column;
+	align-items: stretch;
+	gap: 0.75rem;
+	width: 100%;
+	margin: 0 0 1rem;
+	padding: 0.85rem 0.9rem 0.9rem;
+	border: 1px solid #dcdcde;
+	border-radius: 8px;
+	min-inline-size: 0;
+	background: #fff;
+}
+
+.apd-configurator fieldset.apd-group > legend {
+	padding: 0 0.35rem;
+}
+
+.apd-configurator fieldset.apd-group > .apd-field {
+	margin: 0;
+}
+
 .apd-country-current {
 	display: inline-flex;
 	align-items: stretch;
@@ -570,8 +595,18 @@ body.apd-configurator-product form.cart .wp-element-button {
 	border-color: #2271b1;
 }
 
+.apd-country-current:not([data-apd-country-open]) {
+	cursor: default;
+}
+
+.apd-country-current:not([data-apd-country-open]):hover,
+.apd-country-current:not([data-apd-country-open]):focus-visible {
+	border-color: #dcdcde;
+}
+
 .apd-country-current [data-apd-country-thumb],
-.apd-country-option img {
+.apd-country-option img,
+.apd-country-option canvas.apd-country-thumb {
 	display: block;
 	flex: 0 0 auto;
 	width: auto;
@@ -579,6 +614,11 @@ body.apd-configurator-product form.cart .wp-element-button {
 	object-fit: contain;
 	object-position: center;
 	background: #003399;
+}
+
+.apd-country-current [data-apd-country-thumb][hidden],
+.apd-country-option img[hidden] {
+	display: none !important;
 }
 
 .apd-country-current canvas.apd-country-thumb {
@@ -593,6 +633,7 @@ body.apd-configurator-product form.cart .wp-element-button {
 
 .apd-country-current [data-apd-country-code] {
 	margin-left: 0.15rem;
+	font-weight: 700;
 }
 
 .apd-country-current .apd-country-change {

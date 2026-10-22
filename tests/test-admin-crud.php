@@ -6,6 +6,7 @@
  */
 
 $candidates = array(
+	dirname( __DIR__, 4 ) . '/wp-load.php',
 	dirname( __DIR__, 3 ) . '/wp-load.php',
 	dirname( __DIR__, 2 ) . '/plate-designer/wp-load.php',
 );
@@ -873,6 +874,26 @@ if ( '#FFFFFF' !== strtoupper( APD_Plugin::palette_preferred_hex( 'background', 
 	exit( 1 );
 }
 
+$palette_library = APD_Color_Palettes::library();
+if ( count( $palette_library ) >= 2 ) {
+	$first_id  = (string) $palette_library[0]['id'];
+	$second_id = (string) $palette_library[1]['id'];
+	$editor_rows = APD_Color_Palettes::editor_color_rows( array( $second_id, $first_id ) );
+	$editor_ids  = array();
+	foreach ( $editor_rows as $editor_row ) {
+		$editor_ids[] = (string) $editor_row['id'];
+	}
+	$resolved = APD_Color_Palettes::palette_colors(
+		array(
+			'color_ids' => array( $second_id, $first_id ),
+		)
+	);
+	if ( $second_id !== $editor_ids[0] || $first_id !== $editor_ids[1] || $second_id !== (string) $resolved[0]['id'] || $first_id !== (string) $resolved[1]['id'] ) {
+		fwrite( STDERR, "PALETTE_COLOR_ORDER_FAIL\n" );
+		exit( 1 );
+	}
+}
+
 echo 'PALETTE_WHITE_OK' . PHP_EOL;
 
 $eu_caps = APD_Formats::color_field_capabilities( 'eu' );
@@ -1090,10 +1111,48 @@ if ( is_array( $holder_row ) ) {
 	$holder_hex    = isset( $holder_colors[0]['hex'] ) ? strtoupper( (string) $holder_colors[0]['hex'] ) : '';
 }
 
-if ( '' === $holder_hex || $holder_hex !== $slot_text || array( 'text', 'background', 'border' ) !== $slot_fields || ! empty( $slot_offered['holder'] ) ) {
+if ( '' === $holder_hex || $holder_hex !== $slot_text || array( 'text', 'background' ) !== $slot_fields || ! empty( $slot_offered['border'] ) || ! empty( $slot_offered['holder'] ) ) {
 	fwrite( STDERR, "PALETTE_SLOT_SHOP_FAIL\n" );
 	exit( 1 );
 }
+
+$split_slot = APD_Formats::sanitize(
+	array(
+		'name'                => 'Street split colors',
+		'type'                => 'custom',
+		'width'               => 340,
+		'height'              => 200,
+		'separate_text_frame' => '1',
+		'palette_slots'       => array(
+			'text'       => $slot_ids['holder'],
+			'background' => $slot_ids['color_background'],
+			'border'     => $slot_ids['border'],
+		),
+	)
+);
+$saved_split = is_wp_error( $split_slot ) ? $split_slot : APD_Formats::save( $split_slot );
+$split_product = 0;
+$split_fields  = array();
+
+if ( ! is_wp_error( $saved_split ) ) {
+	$split_product = wp_insert_post(
+		array(
+			'post_type'   => 'product',
+			'post_status' => 'draft',
+			'post_title'  => 'Street split probe',
+		)
+	);
+	update_post_meta( $split_product, APD_Admin_Settings::META_FORMAT, $saved_split['id'] );
+	$split_fields = APD_Admin_Settings::product_color_fields( $split_product );
+}
+
+if ( is_wp_error( $saved_split ) || array( 'text', 'background', 'border' ) !== $split_fields || empty( $saved_split['separate_text_frame'] ) || APD_Formats::shares_text_frame_color( 'custom', $saved_split ) ) {
+	fwrite( STDERR, "PALETTE_SLOT_SPLIT_FAIL\n" );
+	exit( 1 );
+}
+
+wp_delete_post( $split_product, true );
+APD_Formats::delete( $saved_split['id'] );
 
 wp_delete_post( $slot_product, true );
 APD_Formats::delete( $saved_slot_format['id'] );

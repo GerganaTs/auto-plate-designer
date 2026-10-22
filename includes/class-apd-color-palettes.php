@@ -305,6 +305,45 @@ final class APD_Color_Palettes {
 	}
 
 	/**
+	 * Library rows for the palette editor.
+	 *
+	 * Selected colors stay in their saved order. The other library colors follow in the library order.
+	 *
+	 * @param array<int, string> $selected_ids Saved color IDs.
+	 * @return array<int, array<string, string>>
+	 */
+	public static function editor_color_rows( $selected_ids ) {
+		$by_id = array();
+
+		foreach ( self::library() as $color ) {
+			if ( ! is_array( $color ) || empty( $color['id'] ) ) {
+				continue;
+			}
+
+			$by_id[ (string) $color['id'] ] = $color;
+		}
+
+		$rows = array();
+
+		foreach ( (array) $selected_ids as $id ) {
+			$id = (string) $id;
+
+			if ( ! isset( $by_id[ $id ] ) ) {
+				continue;
+			}
+
+			$rows[] = $by_id[ $id ];
+			unset( $by_id[ $id ] );
+		}
+
+		foreach ( $by_id as $color ) {
+			$rows[] = $color;
+		}
+
+		return $rows;
+	}
+
+	/**
 	 * Colors offered by selected palettes for one purpose.
 	 *
 	 * @param array<int, string> $palette_ids Product palette IDs.
@@ -1211,7 +1250,6 @@ final class APD_Color_Palettes {
 			'color_text'       => 'Color plate text',
 			'color_border'     => 'Color plate frame',
 			'color_background' => 'Color plate fill',
-			'slogan'           => 'Frame inscription',
 		);
 
 		foreach ( $names as $purpose => $name ) {

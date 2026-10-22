@@ -123,12 +123,18 @@ $details_hidden  = $has_type ? '' : ' hidden';
 ?>
 <div class="apd-tab">
 	<h2><?php esc_html_e( 'Formats', 'auto-plate-designer' ); ?></h2>
+	<p class="description"><?php esc_html_e( 'Drag the rows, then save. This order is the Formats tab and the format menu on the product. A line is only a divider in this list.', 'auto-plate-designer' ); ?></p>
 
+	<?php $format_rows = APD_Formats::display_rows(); ?>
+	<?php $format_product_counts = APD_Admin_Settings::shop_product_counts_by_format(); ?>
+	<?php if ( empty( $format_rows ) ) : ?>
 	<div class="apd-table-scroll">
 	<table class="widefat striped">
 		<thead>
 			<tr>
+				<th class="apd-preset-handle"><span class="screen-reader-text"><?php esc_html_e( 'Order', 'auto-plate-designer' ); ?></span></th>
 				<th><?php esc_html_e( 'Name', 'auto-plate-designer' ); ?></th>
+				<th class="apd-format-products" title="<?php esc_attr_e( 'Published products in the shop that use this format.', 'auto-plate-designer' ); ?>"><?php esc_html_e( 'Shop products', 'auto-plate-designer' ); ?></th>
 				<th><?php esc_html_e( 'Type', 'auto-plate-designer' ); ?></th>
 				<th><?php esc_html_e( 'Size (W×H)', 'auto-plate-designer' ); ?></th>
 				<th><?php esc_html_e( 'Max characters', 'auto-plate-designer' ); ?></th>
@@ -137,31 +143,71 @@ $details_hidden  = $has_type ? '' : ' hidden';
 			</tr>
 		</thead>
 		<tbody>
-			<?php if ( empty( $formats ) ) : ?>
-				<tr><td colspan="6"><?php esc_html_e( 'No formats yet.', 'auto-plate-designer' ); ?></td></tr>
-			<?php else : ?>
-				<?php foreach ( $formats as $format ) : ?>
-					<tr>
-						<td><?php echo esc_html( $format['name'] ); ?></td>
-						<td><?php echo esc_html( APD_Formats::type_label( $format['type'] ) ); ?></td>
-						<td><?php echo esc_html( APD_Formats::format_size_label( $format ) ); ?></td>
-						<td><?php echo esc_html( APD_Formats::max_chars_label( $format ) ); ?></td>
-						<td><?php echo esc_html( (string) $format['price_adjustment'] ); ?></td>
-						<td>
-							<a href="<?php echo esc_url( add_query_arg( 'edit', $format['id'], $apd_admin->tab_url( 'formats' ) ) ); ?>"><?php esc_html_e( 'Edit', 'auto-plate-designer' ); ?></a>
-							|
-							<a href="<?php echo esc_url( $apd_admin->duplicate_url( $format['id'] ) ); ?>"><?php esc_html_e( 'Duplicate', 'auto-plate-designer' ); ?></a>
-							|
-							<a href="<?php echo esc_url( add_query_arg( 'apd_format', $format['id'], $new_product_url ) ); ?>"><?php esc_html_e( 'Create product', 'auto-plate-designer' ); ?></a>
-							|
-							<a class="apd-js-confirm" href="<?php echo esc_url( $apd_admin->delete_url( 'formats', $format['id'] ) ); ?>"><?php esc_html_e( 'Delete', 'auto-plate-designer' ); ?></a>
-						</td>
-					</tr>
-				<?php endforeach; ?>
-			<?php endif; ?>
+			<tr><td colspan="8"><?php esc_html_e( 'No formats yet.', 'auto-plate-designer' ); ?></td></tr>
 		</tbody>
 	</table>
 	</div>
+	<?php else : ?>
+	<form method="post" action="<?php echo esc_url( $apd_admin->tab_url( 'formats' ) ); ?>" class="apd-format-order">
+		<?php wp_nonce_field( 'apd_save_settings', 'apd_settings_nonce' ); ?>
+		<input type="hidden" name="apd_settings_action" value="reorder_formats">
+		<div class="apd-table-scroll">
+		<table class="widefat striped">
+			<thead>
+				<tr>
+					<th class="apd-preset-handle"><span class="screen-reader-text"><?php esc_html_e( 'Order', 'auto-plate-designer' ); ?></span></th>
+					<th><?php esc_html_e( 'Name', 'auto-plate-designer' ); ?></th>
+					<th class="apd-format-products" title="<?php esc_attr_e( 'Published products in the shop that use this format.', 'auto-plate-designer' ); ?>"><?php esc_html_e( 'Shop products', 'auto-plate-designer' ); ?></th>
+					<th><?php esc_html_e( 'Type', 'auto-plate-designer' ); ?></th>
+					<th><?php esc_html_e( 'Size (W×H)', 'auto-plate-designer' ); ?></th>
+					<th><?php esc_html_e( 'Max characters', 'auto-plate-designer' ); ?></th>
+					<th><?php esc_html_e( 'Extra price adjustment', 'auto-plate-designer' ); ?></th>
+					<th><?php esc_html_e( 'Actions', 'auto-plate-designer' ); ?></th>
+				</tr>
+			</thead>
+			<tbody data-apd-format-sortable>
+				<?php foreach ( $format_rows as $format_row ) : ?>
+					<?php if ( 'separator' === $format_row['type'] ) : ?>
+						<tr class="apd-format-separator">
+							<td class="apd-preset-handle" title="<?php esc_attr_e( 'Order', 'auto-plate-designer' ); ?>"><span class="dashicons dashicons-menu" aria-hidden="true"></span><input type="hidden" name="apd_format_order[]" value="<?php echo esc_attr( 'separator:' . $format_row['id'] ); ?>"></td>
+							<td colspan="7">
+								<span class="apd-format-rule" role="separator"></span>
+								<a class="apd-js-confirm" href="<?php echo esc_url( $apd_admin->delete_url( 'format_separator', $format_row['id'] ) ); ?>"><?php esc_html_e( 'Remove separator', 'auto-plate-designer' ); ?></a>
+							</td>
+						</tr>
+					<?php else : ?>
+						<?php $format = $format_row['format']; ?>
+						<tr>
+							<td class="apd-preset-handle" title="<?php esc_attr_e( 'Order', 'auto-plate-designer' ); ?>"><span class="dashicons dashicons-menu" aria-hidden="true"></span><input type="hidden" name="apd_format_order[]" value="<?php echo esc_attr( 'format:' . $format['id'] ); ?>"></td>
+							<td><?php echo esc_html( $format['name'] ); ?></td>
+							<td class="apd-format-products" data-apd-format-products="<?php echo esc_attr( $format['id'] ); ?>"><?php echo esc_html( number_format_i18n( isset( $format_product_counts[ $format['id'] ] ) ? (int) $format_product_counts[ $format['id'] ] : 0 ) ); ?></td>
+							<td><?php echo esc_html( APD_Formats::type_label( $format['type'] ) ); ?></td>
+							<td><?php echo esc_html( APD_Formats::format_size_label( $format ) ); ?></td>
+							<td><?php echo esc_html( APD_Formats::max_chars_label( $format ) ); ?></td>
+							<td><?php echo esc_html( (string) $format['price_adjustment'] ); ?></td>
+							<td>
+								<a href="<?php echo esc_url( add_query_arg( 'edit', $format['id'], $apd_admin->tab_url( 'formats' ) ) ); ?>"><?php esc_html_e( 'Edit', 'auto-plate-designer' ); ?></a>
+								|
+								<a href="<?php echo esc_url( $apd_admin->duplicate_url( $format['id'] ) ); ?>"><?php esc_html_e( 'Duplicate', 'auto-plate-designer' ); ?></a>
+								|
+								<a href="<?php echo esc_url( add_query_arg( 'apd_format', $format['id'], $new_product_url ) ); ?>"><?php esc_html_e( 'Create product', 'auto-plate-designer' ); ?></a>
+								|
+								<a class="apd-js-confirm" href="<?php echo esc_url( $apd_admin->delete_url( 'formats', $format['id'] ) ); ?>"><?php esc_html_e( 'Delete', 'auto-plate-designer' ); ?></a>
+							</td>
+						</tr>
+					<?php endif; ?>
+				<?php endforeach; ?>
+			</tbody>
+		</table>
+		</div>
+		<?php submit_button( __( 'Save format order', 'auto-plate-designer' ) ); ?>
+	</form>
+	<form method="post" action="<?php echo esc_url( $apd_admin->tab_url( 'formats' ) ); ?>" class="apd-format-separator-add">
+		<?php wp_nonce_field( 'apd_save_settings', 'apd_settings_nonce' ); ?>
+		<input type="hidden" name="apd_settings_action" value="add_format_separator">
+		<?php submit_button( __( 'Add separator', 'auto-plate-designer' ), 'secondary', 'submit', false ); ?>
+	</form>
+	<?php endif; ?>
 
 	<?php if ( ! $show_form ) : ?>
 		<p>
@@ -282,6 +328,16 @@ $details_hidden  = $has_type ? '' : ' hidden';
 				<th><label for="apd_format_slogan_max"><?php esc_html_e( 'Slogan characters', 'auto-plate-designer' ); ?></label></th>
 				<td>
 					<input type="number" id="apd_format_slogan_max" name="apd_format[slogan_max]" min="1" max="<?php echo esc_attr( (string) APD_Security::ABSOLUTE_MAX_CHARS ); ?>" value="<?php echo esc_attr( (string) ( isset( $editing['slogan_max'] ) ? (int) $editing['slogan_max'] : APD_Formats::UK_SLOGAN_MAX ) ); ?>" <?php disabled( ! APD_Formats::is_english( $format_type ) ); ?>>
+				</td>
+			</tr>
+			<tr data-apd-format-details data-apd-initial-fill-row<?php echo ( $has_type && APD_Formats::offers_initial_fill( $format_type ) ) ? '' : ' hidden'; // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped ?>>
+				<th><?php esc_html_e( 'Initial plate color', 'auto-plate-designer' ); ?></th>
+				<td>
+					<label class="apd-choice">
+						<input type="checkbox" name="apd_format[initial_fill]" value="1" <?php checked( ! empty( $editing['initial_fill'] ) ); ?> <?php disabled( ! ( $has_type && APD_Formats::offers_initial_fill( $format_type ) ) ); ?>>
+						<?php esc_html_e( 'Let each product open on a plate color', 'auto-plate-designer' ); ?>
+					</label>
+					<p class="description"><?php esc_html_e( 'Products on this format can choose the color the plate opens with. The customer can still change it.', 'auto-plate-designer' ); ?></p>
 				</td>
 			</tr>
 			<tr data-apd-format-details data-apd-max-single<?php echo $show_single_max ? '' : ' hidden'; // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped ?>>
@@ -410,23 +466,23 @@ $details_hidden  = $has_type ? '' : ' hidden';
 					<?php endif; ?>
 				</td>
 			</tr>
-			<tr class="apd-border-fields" data-apd-format-details<?php echo ( $has_type && ! APD_Formats::is_holder( $format_type ) && ! APD_Formats::is_fixed_euro( $format_type ) && ! APD_Formats::is_english( $format_type ) && ! APD_Formats::is_mini( $format_type ) ) ? '' : ' hidden'; ?>>
+			<tr class="apd-border-fields" data-apd-format-details<?php echo ( $has_type && ! APD_Formats::is_holder( $format_type ) && ! APD_Formats::is_fixed_euro( $format_type ) && ! APD_Formats::is_english( $format_type ) ) ? '' : ' hidden'; ?>>
 				<th><?php esc_html_e( 'Border', 'auto-plate-designer' ); ?></th>
 				<td>
 					<label class="apd-choice">
-						<input type="checkbox" name="apd_format[no_frame]" value="1" data-apd-no-frame <?php checked( ! empty( $editing['no_frame'] ) ); ?> <?php disabled( ! $has_type || APD_Formats::is_holder( $format_type ) || APD_Formats::is_fixed_euro( $format_type ) || APD_Formats::is_english( $format_type ) || APD_Formats::is_mini( $format_type ) ); ?>>
+						<input type="checkbox" name="apd_format[no_frame]" value="1" data-apd-no-frame <?php checked( ! empty( $editing['no_frame'] ) ); ?> <?php disabled( ! $has_type || APD_Formats::is_holder( $format_type ) || APD_Formats::is_fixed_euro( $format_type ) || APD_Formats::is_english( $format_type ) ); ?>>
 						<?php esc_html_e( 'Without frame', 'auto-plate-designer' ); ?>
 					</label>
 					<div class="apd-metric-grid" data-apd-frame-controls>
 						<label class="apd-metric"><?php echo esc_html__( 'Width', 'auto-plate-designer' ); ?>
 							<span class="apd-metric__control">
-								<input type="number" name="apd_format[border_width]" value="<?php echo esc_attr( (string) $editing['border_width'] ); ?>" min="0" max="40" data-apd-border-width <?php disabled( ! $has_type || APD_Formats::is_holder( $format_type ) || APD_Formats::is_fixed_euro( $format_type ) || APD_Formats::is_english( $format_type ) || APD_Formats::is_mini( $format_type ) ); ?>>
+								<input type="number" name="apd_format[border_width]" value="<?php echo esc_attr( (string) $editing['border_width'] ); ?>" min="0" max="40" data-apd-border-width <?php disabled( ! $has_type || APD_Formats::is_holder( $format_type ) || APD_Formats::is_fixed_euro( $format_type ) || APD_Formats::is_english( $format_type ) ); ?>>
 								<span class="apd-metric__unit">mm</span>
 							</span>
 						</label>
 						<label class="apd-metric"><?php echo esc_html__( 'Default color', 'auto-plate-designer' ); ?>
 							<span class="apd-metric__control">
-								<input type="text" name="apd_format[border_color]" value="<?php echo esc_attr( $editing['border_color'] ); ?>" pattern="^#([A-Fa-f0-9]{6}|[A-Fa-f0-9]{3})$" data-apd-border-color <?php disabled( ! $has_type || APD_Formats::is_holder( $format_type ) || APD_Formats::is_fixed_euro( $format_type ) || APD_Formats::is_english( $format_type ) || APD_Formats::is_mini( $format_type ) ); ?>>
+								<input type="text" name="apd_format[border_color]" value="<?php echo esc_attr( $editing['border_color'] ); ?>" pattern="^#([A-Fa-f0-9]{6}|[A-Fa-f0-9]{3})$" data-apd-border-color <?php disabled( ! $has_type || APD_Formats::is_holder( $format_type ) || APD_Formats::is_fixed_euro( $format_type ) || APD_Formats::is_english( $format_type ) ); ?>>
 							</span>
 						</label>
 					</div>
@@ -620,6 +676,10 @@ $details_hidden  = $has_type ? '' : ' hidden';
 			$named_palettes = APD_Color_Palettes::all();
 			$active_palettes = APD_Color_Palettes::active();
 			$use_slots       = $has_type && APD_Formats::uses_palette_slots( $format_type );
+			$can_share       = $has_type && APD_Formats::can_share_text_frame( $format_type );
+			$has_frame       = $can_share && APD_Formats::format_has_assigned_frame( $editing );
+			$separate        = $has_frame && APD_Formats::format_splits_text_frame( $editing );
+			$share_colors    = $has_frame && ! $separate;
 			$photo_holder    = $has_type && APD_Formats::is_photo_holder( $format_type );
 			$slot_values     = APD_Formats::palette_slots_for_editor( $is_edit ? $editing : array(), $format_palette_ids );
 			$slot_labels     = array(
@@ -640,7 +700,14 @@ $details_hidden  = $has_type ? '' : ' hidden';
 			?>
 			<div class="apd-format-palettes" data-apd-format-palettes data-apd-format-details<?php echo $details_hidden; // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped ?>>
 				<h3><?php esc_html_e( 'Colors for this format', 'auto-plate-designer' ); ?></h3>
-				<?php $show_digital_palette = $has_type && APD_Formats::offers_digital_palette( $format_type ); ?>
+				<p data-apd-separate-text-frame-row<?php echo $has_frame ? '' : ' hidden'; ?>>
+					<label>
+						<input type="checkbox" name="apd_format[separate_text_frame]" value="1" data-apd-separate-text-frame <?php checked( $separate ); ?> <?php disabled( ! $has_frame ); ?>>
+						<?php esc_html_e( 'Text and frame use different colors', 'auto-plate-designer' ); ?>
+					</label>
+					<span class="description"><?php esc_html_e( 'Leave this off and the letters and the frame stay one color. Turn it on to choose a frame palette. The shop then offers those colors separately, including when the letters are digital or Cyrillic.', 'auto-plate-designer' ); ?></span>
+				</p>
+				<?php $show_digital_palette = $has_type && APD_Formats::offers_digital_palette( $format_type ) && ! $share_colors; ?>
 				<p data-apd-digital-palette<?php echo $show_digital_palette ? '' : ' hidden'; ?>>
 					<label for="apd_format_digital_palette"><?php esc_html_e( 'Digital letters and frame', 'auto-plate-designer' ); ?></label><br>
 					<select id="apd_format_digital_palette" name="apd_format[digital_palette_id]" <?php disabled( ! $show_digital_palette ); ?>>
@@ -654,21 +721,24 @@ $details_hidden  = $has_type ? '' : ' hidden';
 					</select>
 					<span class="description"><?php esc_html_e( 'One color paints the letters and the frame when the letters are digital. Until you choose one, the frame uses the letter color.', 'auto-plate-designer' ); ?></span>
 				</p>
-				<p class="description" data-apd-palette-slot-help<?php echo ( $use_slots && 'us' !== $format_type && ! APD_Formats::is_english( $format_type ) ) ? '' : ' hidden'; ?>><?php esc_html_e( 'Choose one palette for the text, the plate, and the frame. Every active palette is listed with its name and colors.', 'auto-plate-designer' ); ?></p>
+				<p class="description" data-apd-palette-slot-help<?php echo ( $use_slots && 'us' !== $format_type && ! APD_Formats::is_english( $format_type ) && ( ! $can_share || $separate ) ) ? '' : ' hidden'; ?>><?php esc_html_e( 'Choose one palette for the text, the plate, and the frame. Every active palette is listed with its name and colors.', 'auto-plate-designer' ); ?></p>
+				<p class="description" data-apd-palette-share-help<?php echo ( $use_slots && $share_colors ) ? '' : ' hidden'; ?>><?php esc_html_e( 'Choose one palette for the text and frame, and one for the plate. Every active palette is listed with its name and colors.', 'auto-plate-designer' ); ?></p>
 				<p class="description" data-apd-palette-uk-help<?php echo ( $use_slots && APD_Formats::is_english( $format_type ) ) ? '' : ' hidden'; ?>><?php esc_html_e( 'Choose one palette for the number, the plate, the frame, and the slogan.', 'auto-plate-designer' ); ?></p>
 				<p class="description" data-apd-palette-us-help<?php echo ( $use_slots && 'us' === $format_type ) ? '' : ' hidden'; ?>><?php esc_html_e( 'Choose a palette for the text. Every active palette is listed with its name and colors.', 'auto-plate-designer' ); ?></p>
 				<p class="description" data-apd-palette-check-help<?php echo ( $use_slots || $photo_holder ) ? ' hidden' : ''; ?>><?php esc_html_e( 'Pick the palettes shoppers can use. The name and colors of each palette are shown here. A product only chooses this format.', 'auto-plate-designer' ); ?></p>
 				<p class="description" data-apd-palette-photo-help<?php echo $photo_holder ? '' : ' hidden'; ?>><?php esc_html_e( 'The strip and the letters use the same palettes. The strip starts white and the letters start black.', 'auto-plate-designer' ); ?></p>
-				<p class="description" data-apd-palette-slot-error hidden><?php esc_html_e( 'Choose a palette for the text, the plate, and the frame.', 'auto-plate-designer' ); ?></p>
+				<p class="description" data-apd-palette-slot-error hidden data-apd-error-slots="<?php echo esc_attr__( 'Choose a palette for the text, the plate, and the frame.', 'auto-plate-designer' ); ?>" data-apd-error-share="<?php echo esc_attr__( 'Choose a palette for the text and frame, and for the plate.', 'auto-plate-designer' ); ?>"><?php echo esc_html( $share_colors ? __( 'Choose a palette for the text and frame, and for the plate.', 'auto-plate-designer' ) : __( 'Choose a palette for the text, the plate, and the frame.', 'auto-plate-designer' ) ); ?></p>
 				<div data-apd-palette-slots<?php echo $use_slots ? '' : ' hidden'; ?>>
 					<?php foreach ( $slot_labels as $slot => $slot_label ) : ?>
 						<?php
-						$selected_id = isset( $slot_values[ $slot ] ) ? (string) $slot_values[ $slot ] : '';
-						$selected    = '' !== $selected_id ? APD_Color_Palettes::get( $selected_id ) : null;
+						$selected_id  = isset( $slot_values[ $slot ] ) ? (string) $slot_values[ $slot ] : '';
+						$selected     = '' !== $selected_id ? APD_Color_Palettes::get( $selected_id ) : null;
+						$slot_on      = in_array( $slot, APD_Formats::palette_slot_keys_for( $format_type, $editing ), true );
+						$slot_heading = ( $share_colors && 'text' === $slot ) ? __( 'Text and frame color', 'auto-plate-designer' ) : $slot_label;
 						?>
-						<div class="apd-palette-menu" data-apd-palette-menu data-apd-palette-slot="<?php echo esc_attr( $slot ); ?>"<?php echo ( $use_slots && ! in_array( $slot, APD_Formats::palette_slot_keys_for( $format_type ), true ) ) ? ' hidden' : ''; ?>>
-							<label class="apd-palette-menu__heading" id="apd-palette-slot-<?php echo esc_attr( $slot ); ?>"><?php echo esc_html( $slot_label ); ?></label>
-							<input type="hidden" name="apd_format[palette_slots][<?php echo esc_attr( $slot ); ?>]" value="<?php echo esc_attr( $selected_id ); ?>" data-apd-palette-slot-input <?php disabled( ! $use_slots ); ?>>
+						<div class="apd-palette-menu" data-apd-palette-menu data-apd-palette-slot="<?php echo esc_attr( $slot ); ?>"<?php echo ( $use_slots && ! $slot_on ) ? ' hidden' : ''; ?>>
+							<label class="apd-palette-menu__heading" id="apd-palette-slot-<?php echo esc_attr( $slot ); ?>" data-apd-label="<?php echo esc_attr( $slot_label ); ?>"><?php echo esc_html( $slot_heading ); ?></label>
+							<input type="hidden" name="apd_format[palette_slots][<?php echo esc_attr( $slot ); ?>]" value="<?php echo esc_attr( $selected_id ); ?>" data-apd-palette-slot-input <?php disabled( ! $use_slots || ! $slot_on ); ?>>
 							<button type="button" class="apd-palette-menu__button" aria-haspopup="listbox" aria-expanded="false" aria-labelledby="apd-palette-slot-<?php echo esc_attr( $slot ); ?>">
 								<span class="apd-palette-menu__current">
 									<?php if ( is_array( $selected ) ) : ?>
@@ -719,8 +789,12 @@ $details_hidden  = $has_type ? '' : ' hidden';
 					?>
 				</div>
 				<?php foreach ( $purpose_labels as $purpose => $purpose_label ) : ?>
-					<div data-apd-color-cap="<?php echo esc_attr( $purpose ); ?>">
-						<p><strong><?php echo esc_html( $purpose_label ); ?></strong></p>
+					<?php
+					$cap_label   = ( $share_colors && 'text' === $purpose ) ? __( 'Text and frame color', 'auto-plate-designer' ) : $purpose_label;
+					$hide_border = $can_share && ! $separate && in_array( $purpose, array( 'border', 'color_border' ), true );
+					?>
+					<div data-apd-color-cap="<?php echo esc_attr( $purpose ); ?>"<?php echo $hide_border ? ' hidden' : ''; ?>>
+						<p><strong data-apd-label="<?php echo esc_attr( $purpose_label ); ?>"><?php echo esc_html( $cap_label ); ?></strong></p>
 						<?php
 						$found_palette = false;
 						echo '<div class="apd-choice-list">';
@@ -734,9 +808,10 @@ $details_hidden  = $has_type ? '' : ' hidden';
 								$chips .= '<span class="apd-palette-chip" style="background:' . esc_attr( $chip['hex'] ) . ';" title="' . esc_attr( $chip['label'] ) . '"></span>';
 							}
 							printf(
-								'<label class="apd-choice apd-palette-choice"><input type="checkbox" name="apd_format[palette_ids][]" value="%1$s" %2$s><span class="apd-palette-choice__name">%3$s</span><span class="apd-palette-choice__colors">%4$s</span></label>',
+								'<label class="apd-choice apd-palette-choice"><input type="checkbox" name="apd_format[palette_ids][]" value="%1$s" %2$s %3$s><span class="apd-palette-choice__name">%4$s</span><span class="apd-palette-choice__colors">%5$s</span></label>',
 								esc_attr( $palette['id'] ),
 								checked( in_array( $palette['id'], $format_palette_ids, true ), true, false ),
+								disabled( $hide_border, true, false ),
 								esc_html( $palette['name'] ),
 								$chips // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- hex and label escaped above.
 							);

@@ -356,7 +356,13 @@ final class APD_WooCommerce {
 	 * @return string
 	 */
 	public function single_button_text( $text, $product ) {
-		unset( $product );
+		if ( $product instanceof WC_Product ) {
+			$edit = self::requested_cart_edit( $product->get_id() );
+
+			if ( '' !== $edit['key'] ) {
+				return __( 'Back to cart', 'auto-plate-designer' );
+			}
+		}
 
 		return $text;
 	}
@@ -703,7 +709,7 @@ final class APD_WooCommerce {
 	 * @return string
 	 */
 	public static function preview_img_html( $url ) {
-		return '<img class="apd-config-preview" src="' . esc_url( $url ) . '" alt="" width="180" style="display:block;width:180px;max-width:100%;height:auto;background:#fff;" />';
+		return '<img class="apd-config-preview" src="' . esc_url( $url ) . '" alt="" width="180" style="display:block;width:180px;max-width:100%;height:auto;background:#fff;border:1px solid #d0d0d0;box-sizing:content-box;" />';
 	}
 
 	/**
@@ -1102,6 +1108,11 @@ final class APD_WooCommerce {
 			}
 		}
 
+		$presets = APD_Formats::presets_with_default_first(
+			$presets,
+			isset( $format['default_preset_id'] ) ? (string) $format['default_preset_id'] : ''
+		);
+
 		$fingerprint = array(
 			'enabled'          => true,
 			'format_id'        => isset( $format['id'] ) ? (string) $format['id'] : '',
@@ -1174,6 +1185,14 @@ final class APD_WooCommerce {
 			$fingerprint['at_groups']  = isset( $payload['at_groups'] ) && is_array( $payload['at_groups'] ) ? $payload['at_groups'] : APD_Formats::austria_limits( $format );
 			$fingerprint['at_region']  = isset( $payload['at_region'] ) && is_array( $payload['at_region'] ) ? $payload['at_region'] : APD_Formats::default_region_box( $format );
 			$fingerprint['text_boxes'] = isset( $payload['text_boxes'] ) && is_array( $payload['text_boxes'] ) ? $payload['text_boxes'] : APD_Formats::stored_group_boxes( $format, 2 );
+		}
+
+		if ( APD_Admin_Settings::product_locks_colors( $product_id ) ) {
+			$fingerprint['lock_colors'] = true;
+		}
+
+		if ( APD_Admin_Settings::product_hides_plain_frame( $product_id ) ) {
+			$fingerprint['hide_plain_frame'] = true;
 		}
 
 		return $fingerprint;
@@ -1341,6 +1360,7 @@ final class APD_WooCommerce {
 		$keys   = array(
 			'text',
 			'font_id',
+			'font_id_cyrillic',
 			'preset_id',
 			'design_id',
 			'no_frame',
@@ -1353,6 +1373,7 @@ final class APD_WooCommerce {
 			'fr_year',
 			'fr_region',
 			'slogan',
+			'slogan_font_id',
 			'unstyled',
 			'comment',
 			'script',
@@ -1399,6 +1420,88 @@ final class APD_WooCommerce {
 	}
 
 	/**
+	 * Add ticked holder fonts that are not already on the format.
+	 *
+	 * An empty Latin list still uses the format fonts. Cyrillic and combined
+	 * lists can name any font uploaded in the plugin.
+	 *
+	 * @param array<string, mixed> $payload Format payload.
+	 * @param array<string, mixed> $state   Script state.
+	 * @return array<string, mixed>
+	 */
+	private static function include_holder_script_fonts( $payload, $state ) {
+		$type = isset( $payload['type'] ) ? (string) $payload['type'] : '';
+
+		if ( ! APD_Formats::is_holder( $type ) ) {
+			return $payload;
+		}
+
+		$wanted = array();
+
+		foreach ( array( 'latin_fonts', 'cyrillic_fonts', 'combined_fonts' ) as $key ) {
+			if ( empty( $state[ $key ] ) || ! is_array( $state[ $key ] ) ) {
+				continue;
+			}
+
+			foreach ( $state[ $key ] as $font_id ) {
+				$font_id = (string) $font_id;
+
+				if ( '' !== $font_id ) {
+					$wanted[ $font_id ] = true;
+				}
+			}
+		}
+
+		if ( empty( $wanted ) ) {
+			return $payload;
+		}
+
+		if ( empty( $payload['fonts'] ) || ! is_array( $payload['fonts'] ) ) {
+			$payload['fonts'] = array();
+		}
+
+		$have = array();
+
+		foreach ( $payload['fonts'] as $font ) {
+			if ( ! empty( $font['id'] ) ) {
+				$have[ (string) $font['id'] ] = true;
+			}
+		}
+
+		$settings = APD_Plugin::get_settings();
+		$library  = isset( $settings['fonts'] ) && is_array( $settings['fonts'] ) ? $settings['fonts'] : array();
+
+		foreach ( $library as $font ) {
+			if ( empty( $font['id'] ) ) {
+				continue;
+			}
+
+			$font_id = (string) $font['id'];
+
+			if ( empty( $wanted[ $font_id ] ) || isset( $have[ $font_id ] ) ) {
+				continue;
+			}
+
+			$url = isset( $font['attachment_id'] ) ? wp_get_attachment_url( absint( $font['attachment_id'] ) ) : '';
+
+			if ( ! $url ) {
+				continue;
+			}
+
+			$payload['fonts'][] = array(
+				'id'     => $font_id,
+				'family' => isset( $font['family'] ) ? (string) $font['family'] : '',
+				'note'   => isset( $font['note'] ) ? (string) $font['note'] : '',
+				'weight' => isset( $font['weight'] ) ? (int) $font['weight'] : 400,
+				'style'  => isset( $font['style'] ) ? (string) $font['style'] : 'normal',
+				'url'    => $url,
+			);
+		}
+
+		return $payload;
+	}
+
+	/**
 	 * Keep the fonts each alphabet on this product is allowed to use.
 	 *
 	 * @param array<string, mixed> $payload Format payload.
@@ -1423,12 +1526,13 @@ final class APD_WooCommerce {
 
 			$font_scripts = array();
 			$font_id      = (string) $font['id'];
+			$combined     = in_array( 'combined', $scripts, true );
 
-			if ( in_array( 'latin', $scripts, true ) && ( empty( $latin_ids ) || in_array( $font_id, $latin_ids, true ) ) ) {
+			if ( ( in_array( 'latin', $scripts, true ) && ( empty( $latin_ids ) || in_array( $font_id, $latin_ids, true ) ) ) || ( $combined && in_array( $font_id, $latin_ids, true ) ) ) {
 				$font_scripts[] = 'latin';
 			}
 
-			if ( in_array( 'cyrillic', $scripts, true ) && in_array( $font_id, $cyr_ids, true ) ) {
+			if ( ( in_array( 'cyrillic', $scripts, true ) || $combined ) && in_array( $font_id, $cyr_ids, true ) ) {
 				$font_scripts[] = 'cyrillic';
 			}
 
@@ -1445,6 +1549,25 @@ final class APD_WooCommerce {
 		}
 
 		return $payload;
+	}
+
+	/**
+	 * A product whose badge is digital and not also embossed.
+	 *
+	 * The shop badges are the product tags `digital` and `embossed`. A product
+	 * with both tags keeps the embossed character count and the relief notice.
+	 *
+	 * @param int $product_id Product ID.
+	 * @return bool
+	 */
+	public static function product_is_digital_only( $product_id ) {
+		$product_id = (int) $product_id;
+
+		if ( $product_id < 1 || ! taxonomy_exists( 'product_tag' ) ) {
+			return false;
+		}
+
+		return has_term( 'digital', 'product_tag', $product_id ) && ! has_term( 'embossed', 'product_tag', $product_id );
 	}
 
 	/**
@@ -1472,6 +1595,7 @@ final class APD_WooCommerce {
 		$edit   = self::requested_cart_edit( $product_id );
 		$format_payload = APD_Admin_Settings::locked_design_payload( $product_id, APD_Formats::frontend_payload( $format ) );
 		$script_state   = APD_Admin_Settings::product_script_state( $product_id, $format );
+		$format_payload = self::include_holder_script_fonts( $format_payload, $script_state );
 		$format_payload = self::filter_payload_fonts( $format_payload, $script_state );
 
 		return array(
@@ -1482,12 +1606,19 @@ final class APD_WooCommerce {
 			'palettes'     => APD_Admin_Settings::product_offered_colors( $product_id ),
 			'default_text'   => APD_Admin_Settings::product_initial_text( $product_id, $format ),
 			'default_text_cyrillic' => APD_Admin_Settings::product_cyrillic_text( $product_id ),
+			'default_text_combined' => APD_Admin_Settings::product_combined_text( $product_id ),
 			'default_slogan' => APD_Admin_Settings::product_initial_slogan( $product_id, $format ),
+			'default_fill'   => APD_Admin_Settings::product_initial_fill( $product_id, $format ),
+			'default_preset_id' => (string) get_post_meta( $product_id, APD_Admin_Settings::META_DEFAULT_PRESET, true ),
+			'lock_colors'    => APD_Admin_Settings::product_locks_colors( $product_id ),
+			'hide_plain_frame' => APD_Admin_Settings::product_hides_plain_frame( $product_id ),
 			'region_text'    => APD_Admin_Settings::product_region_text( $product_id ),
 			'cart_restore'   => $edit['restore'],
 			'cart_item_key'  => $edit['key'],
+			'cart_url'       => function_exists( 'wc_get_cart_url' ) ? wc_get_cart_url() : '',
 			'rules'    => APD_Security::frontend_text_rules(),
 			'minFont'  => $min,
+			'digital_only' => self::product_is_digital_only( $product_id ),
 			'i18n'     => array(
 				'textLabel'     => __( 'Text', 'auto-plate-designer' ),
 				'fontLabel'     => __( 'Font', 'auto-plate-designer' ),
@@ -1510,8 +1641,11 @@ final class APD_WooCommerce {
 				'digitalNotice' => __( 'Past the standard character count the letters are printed digitally. The frame stays embossed.', 'auto-plate-designer' ),
 				'cyrillicNotice' => __( 'The plate letters are printed digitally and the frame stays embossed.', 'auto-plate-designer' ),
 				'miniDigital'   => __( 'The letters are printed digitally.', 'auto-plate-designer' ),
+				'colorNotice'   => __( 'The letters on a color plate are printed digitally, without relief, and the frame stays embossed.', 'auto-plate-designer' ),
 				'latinOnly'     => __( 'Cyrillic letters are not allowed when Latin is selected.', 'auto-plate-designer' ),
 				'cyrillicOnly'  => __( 'Latin letters are not allowed when Cyrillic is selected.', 'auto-plate-designer' ),
+				'backToCart'    => __( 'Back to cart', 'auto-plate-designer' ),
+				'refreshCart'   => __( 'Refresh the cart', 'auto-plate-designer' ),
 			),
 		);
 	}
@@ -1542,7 +1676,11 @@ final class APD_WooCommerce {
 		$allow_empty = ! empty( $payload['allow_empty'] );
 		$multiline   = ! empty( $payload['multiline'] );
 		$format_type = isset( $format['type'] ) ? (string) $format['type'] : '';
-		$text        = isset( $_POST['apd_text'] ) ? APD_Security::uppercase_plate_text( (string) wp_unslash( $_POST['apd_text'] ) ) : ''; // phpcs:ignore WordPress.Security.ValidatedSanitizedInput.InputNotSanitized
+		$text = isset( $_POST['apd_text'] ) ? (string) wp_unslash( $_POST['apd_text'] ) : ''; // phpcs:ignore WordPress.Security.ValidatedSanitizedInput.InputNotSanitized
+
+		if ( ! APD_Formats::is_holder( $format_type ) ) {
+			$text = APD_Security::uppercase_plate_text( $text );
+		}
 		$length_limit = $max_chars;
 
 		if ( APD_Formats::format_uses_two_rows( $format ) && ( isset( $_POST['apd_text_row_1'] ) || isset( $_POST['apd_text_row_2'] ) ) ) {
@@ -1710,7 +1848,7 @@ final class APD_WooCommerce {
 				'max_length'       => $length_limit,
 				'multiline'        => $multiline,
 				'allow_empty'      => $allow_empty,
-				'skip_admin_regex' => 'cyrillic' === $script,
+				'skip_admin_regex' => 'cyrillic' === $script || 'combined' === $script,
 			)
 		);
 
@@ -1732,8 +1870,10 @@ final class APD_WooCommerce {
 			$comment = substr( $comment, 0, APD_Formats::COMMENT_MAX );
 		}
 
-		$font_id    = isset( $_POST['apd_font_id'] ) ? sanitize_text_field( wp_unslash( $_POST['apd_font_id'] ) ) : '';
-		$font_label = '';
+		$font_id        = isset( $_POST['apd_font_id'] ) ? sanitize_text_field( wp_unslash( $_POST['apd_font_id'] ) ) : '';
+		$font_label     = '';
+		$font_id_cyr    = '';
+		$font_label_cyr = '';
 
 		foreach ( $payload['fonts'] as $font ) {
 			if ( $font['id'] === $font_id ) {
@@ -1742,7 +1882,57 @@ final class APD_WooCommerce {
 			}
 		}
 
-		if ( '' !== $script && ! empty( $payload['fonts'] ) ) {
+		$pick_listed_font = static function ( $wanted, $pool ) {
+			$wanted = (string) $wanted;
+
+			foreach ( $pool as $font ) {
+				if ( isset( $font['id'] ) && (string) $font['id'] === $wanted ) {
+					return array( (string) $font['id'], APD_Formats::font_shop_label( $font ) );
+				}
+			}
+
+			if ( ! empty( $pool[0]['id'] ) ) {
+				return array( (string) $pool[0]['id'], APD_Formats::font_shop_label( $pool[0] ) );
+			}
+
+			return array( '', '' );
+		};
+
+		if ( 'combined' === $script && ! empty( $payload['fonts'] ) ) {
+			$latin_allowed = isset( $script_state['latin_fonts'] ) && is_array( $script_state['latin_fonts'] ) ? $script_state['latin_fonts'] : array();
+			$cyr_allowed   = isset( $script_state['cyrillic_fonts'] ) && is_array( $script_state['cyrillic_fonts'] ) ? $script_state['cyrillic_fonts'] : array();
+			$latin_pool    = array();
+			$cyr_pool      = array();
+
+			foreach ( $payload['fonts'] as $font ) {
+				$row_id = isset( $font['id'] ) ? (string) $font['id'] : '';
+
+				if ( '' === $row_id ) {
+					continue;
+				}
+
+				if ( in_array( $row_id, $latin_allowed, true ) ) {
+					$latin_pool[] = $font;
+				}
+
+				if ( in_array( $row_id, $cyr_allowed, true ) ) {
+					$cyr_pool[] = $font;
+				}
+			}
+
+			if ( ! empty( $latin_pool ) ) {
+				$picked     = $pick_listed_font( $font_id, $latin_pool );
+				$font_id    = $picked[0];
+				$font_label = $picked[1];
+			}
+
+			if ( ! empty( $cyr_pool ) ) {
+				$posted_cyr     = isset( $_POST['apd_font_id_cyr'] ) ? sanitize_text_field( wp_unslash( $_POST['apd_font_id_cyr'] ) ) : '';
+				$picked_cyr     = $pick_listed_font( $posted_cyr, $cyr_pool );
+				$font_id_cyr    = $picked_cyr[0];
+				$font_label_cyr = $picked_cyr[1];
+			}
+		} elseif ( '' !== $script && ! empty( $payload['fonts'] ) ) {
 			$script_fonts = array();
 
 			foreach ( $payload['fonts'] as $font ) {
@@ -1777,8 +1967,10 @@ final class APD_WooCommerce {
 		}
 
 		if ( $unstyled ) {
-			$font_id    = '';
-			$font_label = '';
+			$font_id        = '';
+			$font_label     = '';
+			$font_id_cyr    = '';
+			$font_label_cyr = '';
 		} elseif ( '' === $font_label && ! empty( $payload['fonts'] ) ) {
 			$font_id = APD_Formats::default_font_id( $payload['fonts'], isset( $format['type'] ) ? (string) $format['type'] : '' );
 
@@ -1845,17 +2037,25 @@ final class APD_WooCommerce {
 		$letters        = '';
 		$frame_plain    = null;
 
+		$digital_only = self::product_is_digital_only( $product_id );
+
 		if ( '' !== APD_Formats::letter_rule( $type ) ) {
-			$letters = APD_Formats::letters_are_digital( $format, $script, $text ) ? 'digital' : 'embossed';
+			$letters = APD_Formats::letters_are_digital( $format, $script, $text, $digital_only ) ? 'digital' : 'embossed';
 		}
 
-		if ( $plain_family && $format_framed && ( 'color' === $type || 'embossed' === $letters || 'cyrillic' === $script ) ) {
+		if ( $plain_family && $format_framed && ( 'color' === $type || 'embossed' === $letters || 'digital' === $letters || 'cyrillic' === $script ) ) {
 			$frame_plain = isset( $_POST['apd_frame_plain'] ) && '1' === sanitize_text_field( wp_unslash( $_POST['apd_frame_plain'] ) );
 		} elseif ( $plain_family && $format_framed && 'digital' === $letters ) {
 			$frame_plain = false;
 		}
 
-		$legacy_no_frame = $plain_family && isset( $_POST['apd_legacy_no_frame'] ) && '1' === sanitize_text_field( wp_unslash( $_POST['apd_legacy_no_frame'] ) );
+		$hide_plain_frame = APD_Admin_Settings::product_hides_plain_frame( $product_id );
+
+		if ( $hide_plain_frame && null !== $frame_plain ) {
+			$frame_plain = false;
+		}
+
+		$legacy_no_frame = $plain_family && ! $hide_plain_frame && isset( $_POST['apd_legacy_no_frame'] ) && '1' === sanitize_text_field( wp_unslash( $_POST['apd_legacy_no_frame'] ) );
 		$frame_chosen    = $legacy_no_frame ? false : ( $plain_family ? $format_framed : ( APD_Formats::offers_frame_choice( $type ) && isset( $_POST['apd_frame'] ) && '1' === sanitize_text_field( wp_unslash( $_POST['apd_frame'] ) ) ) );
 		if ( $legacy_no_frame ) {
 			$frame_plain = null;
@@ -1863,22 +2063,71 @@ final class APD_WooCommerce {
 		$english_frame = APD_Formats::is_english( $type );
 		$admin_border  = isset( $format['border_width'] ) ? (int) $format['border_width'] : 0;
 		$offered       = APD_Admin_Settings::product_offered_colors( $product_id );
-		$text_color    = $this->snapshot_palette_color( 'apd_text_color', APD_Formats::shop_swatch_colors( $type, 'text', $color_fields, $offered ) );
-		$border_color  = $this->snapshot_palette_color( 'apd_border_color', ( $frame_chosen || $english_frame ) ? APD_Formats::shop_swatch_colors( $type, 'border', $color_fields, $offered ) : array() );
-		$fill_color    = $this->snapshot_palette_color( 'apd_background_color', APD_Formats::shop_swatch_colors( $type, 'background', $color_fields, $offered ) );
+		$text_colors   = APD_Formats::shop_swatch_colors( $type, 'text', $color_fields, $offered );
+		$border_colors = ( $frame_chosen || $english_frame ) ? APD_Formats::shop_swatch_colors( $type, 'border', $color_fields, $offered ) : array();
+		$fill_colors   = APD_Formats::shop_swatch_colors( $type, 'background', $color_fields, $offered );
+		$text_color    = $this->snapshot_palette_color( 'apd_text_color', $text_colors );
+		$border_color  = $this->snapshot_palette_color( 'apd_border_color', $border_colors );
+		$fill_color    = $this->snapshot_palette_color( 'apd_background_color', $fill_colors );
 		$holder_color  = $this->snapshot_palette_color( 'apd_holder_color', APD_Formats::shop_swatch_colors( $type, 'holder', $color_fields, $offered ) );
 		$slogan_color  = $this->snapshot_palette_color( 'apd_slogan_color', $english_frame ? APD_Formats::shop_swatch_colors( $type, 'slogan', $color_fields, $offered ) : array() );
+		$slogan_font_id    = '';
+		$slogan_font_label = '';
+
+		if ( $english_frame && ! empty( $payload['fonts'] ) ) {
+			$posted_slogan_font = isset( $_POST['apd_slogan_font_id'] ) ? sanitize_text_field( wp_unslash( $_POST['apd_slogan_font_id'] ) ) : '';
+
+			foreach ( $payload['fonts'] as $font ) {
+				if ( isset( $font['id'] ) && (string) $font['id'] === $posted_slogan_font ) {
+					$slogan_font_id    = (string) $font['id'];
+					$slogan_font_label = APD_Formats::font_shop_label( $font );
+					break;
+				}
+			}
+
+			if ( '' === $slogan_font_id ) {
+				$slogan_font_id    = $font_id;
+				$slogan_font_label = $font_label;
+			}
+		}
 
 		if ( $frame_chosen && '' === $border_color['hex'] && isset( $format['border_color'] ) ) {
 			$border_color['hex'] = (string) $format['border_color'];
 		}
 
-		$shared_ink = 'digital' === $letters && APD_Formats::letters_follow_count( $type ) && ! APD_Formats::is_mini( $type );
+		$colors_locked = APD_Admin_Settings::product_locks_colors( $product_id );
+
+		if ( $colors_locked ) {
+			$locked_hexes = APD_Admin_Settings::locked_color_hexes( $type, APD_Admin_Settings::product_initial_fill( $product_id, $format ) );
+
+			if ( ! empty( $text_colors ) ) {
+				$text_color = array(
+					'hex'   => $locked_hexes['text'],
+					'label' => $this->label_for_color_list( $text_colors, $locked_hexes['text'] ),
+				);
+			}
+
+			if ( ! empty( $fill_colors ) ) {
+				$fill_color = array(
+					'hex'   => $locked_hexes['background'],
+					'label' => $this->label_for_color_list( $fill_colors, $locked_hexes['background'] ),
+				);
+			}
+
+			if ( $frame_chosen || $english_frame ) {
+				$border_color = array(
+					'hex'   => $locked_hexes['border'],
+					'label' => $this->label_for_color_list( $border_colors, $locked_hexes['border'] ),
+				);
+			}
+		}
+
+		$shared_ink = APD_Formats::frame_uses_text_color( $type, $format, $letters );
 
 		if ( true === $frame_plain ) {
 			$border_color['hex']   = '' !== $fill_color['hex'] ? $fill_color['hex'] : '#FFFFFF';
 			$border_color['label'] = '';
-		} elseif ( $shared_ink && '' !== $text_color['hex'] ) {
+		} elseif ( ! $colors_locked && $shared_ink && '' !== $text_color['hex'] ) {
 			$border_color['hex']   = $text_color['hex'];
 			$border_color['label'] = $text_color['label'];
 		}
@@ -1902,6 +2151,8 @@ final class APD_WooCommerce {
 			'text'                   => $text,
 			'font_id'                => $font_id,
 			'font_label'             => $font_label,
+			'font_id_cyrillic'       => $font_id_cyr,
+			'font_label_cyrillic'    => $font_label_cyr,
 			'preset_id'              => $preset_id,
 			'preset_label'           => $preset_label,
 			'design_id'              => $design_id,
@@ -1913,6 +2164,7 @@ final class APD_WooCommerce {
 			'script'                 => $script,
 			'comment'                => $comment,
 			'letters'                => $letters,
+			'digital_only'           => $digital_only,
 			'frame_plain'            => $frame_plain,
 			'text_color'             => $text_color['hex'],
 			'text_color_label'       => $text_color['label'],
@@ -1929,6 +2181,8 @@ final class APD_WooCommerce {
 			'fr_year'                => $fr_year,
 			'fr_region'              => $fr_region,
 			'slogan'                 => $slogan,
+			'slogan_font_id'         => $slogan_font_id,
+			'slogan_font_label'      => $slogan_font_label,
 			'slogan_color'           => $slogan_color['hex'],
 			'slogan_color_label'     => $slogan_color['label'],
 		);
@@ -2003,6 +2257,13 @@ final class APD_WooCommerce {
 			);
 		}
 
+		if ( APD_Formats::is_english( $type ) && ! empty( $config['slogan'] ) && ! empty( $config['slogan_font_label'] ) ) {
+			$rows[] = array(
+				'key'   => __( 'Slogan font', 'auto-plate-designer' ),
+				'value' => (string) $config['slogan_font_label'],
+			);
+		}
+
 		if ( APD_Formats::is_english( $type ) && self::config_includes_color( $config, 'slogan' ) && ! empty( $config['slogan'] ) && ! empty( $config['slogan_color'] ) ) {
 			$rows[] = array(
 				'key'   => __( 'Slogan color', 'auto-plate-designer' ),
@@ -2013,7 +2274,31 @@ final class APD_WooCommerce {
 			);
 		}
 
-		if ( ! empty( $config['font_label'] ) ) {
+		if ( APD_Formats::is_holder( $type ) && ! empty( $config['script'] ) && empty( $config['unstyled'] ) && ! empty( $config['font_label'] ) ) {
+			$holder_script = (string) $config['script'];
+
+			if ( 'combined' === $holder_script ) {
+				$rows[] = array(
+					'key'   => __( 'Combined font, Cyrillic and Latin', 'auto-plate-designer' ),
+					'value' => sprintf(
+						/* translators: 1: Latin font name, 2: Cyrillic font name */
+						__( 'Latin: %1$s. Cyrillic: %2$s.', 'auto-plate-designer' ),
+						(string) $config['font_label'],
+						isset( $config['font_label_cyrillic'] ) ? (string) $config['font_label_cyrillic'] : ''
+					),
+				);
+			} elseif ( 'cyrillic' === $holder_script ) {
+				$rows[] = array(
+					'key'   => __( 'Cyrillic letters', 'auto-plate-designer' ),
+					'value' => (string) $config['font_label'],
+				);
+			} else {
+				$rows[] = array(
+					'key'   => __( 'Latin', 'auto-plate-designer' ),
+					'value' => (string) $config['font_label'],
+				);
+			}
+		} elseif ( ! empty( $config['font_label'] ) ) {
 			$rows[] = array(
 				'key'   => __( 'Font', 'auto-plate-designer' ),
 				'value' => (string) $config['font_label'],
@@ -2060,9 +2345,14 @@ final class APD_WooCommerce {
 		}
 
 		if ( array_key_exists( 'frame_plain', $config ) && null !== $config['frame_plain'] && APD_Formats::offers_uncolored_frame( $type ) && empty( $config['no_frame'] ) ) {
+			if ( ! empty( $config['digital_only'] ) ) {
+				$frame_value = ! empty( $config['frame_plain'] ) ? __( 'Without color', 'auto-plate-designer' ) : __( 'With frame', 'auto-plate-designer' );
+			} else {
+				$frame_value = ! empty( $config['frame_plain'] ) ? __( 'Embossed, without color', 'auto-plate-designer' ) : __( 'Embossed frame', 'auto-plate-designer' );
+			}
 			$rows[] = array(
 				'key'   => __( 'Frame', 'auto-plate-designer' ),
-				'value' => ! empty( $config['frame_plain'] ) ? __( 'Embossed, without color', 'auto-plate-designer' ) : __( 'Embossed frame', 'auto-plate-designer' ),
+				'value' => $frame_value,
 			);
 		}
 

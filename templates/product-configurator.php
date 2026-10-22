@@ -38,16 +38,29 @@ if ( isset( $restore['text'] ) && '' !== (string) $restore['text'] ) {
 }
 $scripts = isset( $apd_payload['scripts'] ) && is_array( $apd_payload['scripts'] ) ? array_values( $apd_payload['scripts'] ) : array();
 $cyr_default = isset( $apd_payload['default_text_cyrillic'] ) ? (string) $apd_payload['default_text_cyrillic'] : '';
+$combined_default = isset( $apd_payload['default_text_combined'] ) ? (string) $apd_payload['default_text_combined'] : '';
 $script_value = isset( $restore['script'] ) && in_array( (string) $restore['script'], $scripts, true ) ? (string) $restore['script'] : ( isset( $scripts[0] ) ? (string) $scripts[0] : '' );
 if ( ! isset( $restore['text'] ) && 'cyrillic' === $script_value ) {
 	$default_text = $cyr_default;
+} elseif ( ! isset( $restore['text'] ) && 'combined' === $script_value ) {
+	$default_text = $combined_default;
 }
+$holder_product = APD_Formats::is_holder( $type );
 $comment_value = isset( $restore['comment'] ) ? (string) $restore['comment'] : '';
 $default_font   = APD_Formats::default_font_id( $fonts, $type );
 if ( ! empty( $restore['font_id'] ) ) {
 	$default_font = (string) $restore['font_id'];
 }
-$default_preset = ! empty( $presets ) ? $presets[0]['id'] : '';
+$default_slogan_font = $default_font;
+if ( ! empty( $restore['slogan_font_id'] ) ) {
+	$default_slogan_font = (string) $restore['slogan_font_id'];
+}
+$default_preset = APD_Formats::opening_preset_id(
+	$presets,
+	isset( $apd_payload['default_preset_id'] ) && '' !== (string) $apd_payload['default_preset_id']
+		? (string) $apd_payload['default_preset_id']
+		: ( isset( $format['default_preset_id'] ) ? (string) $format['default_preset_id'] : '' )
+);
 if ( ! empty( $restore['preset_id'] ) ) {
 	$default_preset = (string) $restore['preset_id'];
 }
@@ -58,15 +71,17 @@ if ( ! empty( $restore['design_id'] ) ) {
 $us_side_limits = APD_Formats::active_us_side_limits( $format, $default_design );
 $show_frame     = APD_Formats::offers_frame_choice( $type ) && ! APD_Formats::offers_uncolored_frame( $type );
 $plain_frame    = APD_Formats::offers_uncolored_frame( $type ) && empty( $format['no_frame'] ) && ( isset( $format['border_width'] ) ? (int) $format['border_width'] : 0 ) > 0;
-$plain_on       = $plain_frame && ! empty( $restore['frame_plain'] );
-$legacy_frame_off = $plain_frame && array_key_exists( 'no_frame', $restore ) && ! array_key_exists( 'frame_plain', $restore ) && ! empty( $restore['no_frame'] );
+$hide_plain_frame = ! empty( $apd_payload['hide_plain_frame'] );
+$plain_on       = $plain_frame && ! $hide_plain_frame && ! empty( $restore['frame_plain'] );
+$legacy_frame_off = ! $hide_plain_frame && $plain_frame && array_key_exists( 'no_frame', $restore ) && ! array_key_exists( 'frame_plain', $restore ) && ! empty( $restore['no_frame'] );
 $frame_on       = $show_frame && $show_eu && empty( $format['no_frame'] );
 if ( $show_frame && array_key_exists( 'no_frame', $restore ) ) {
 	$frame_on = empty( $restore['no_frame'] );
 }
 $text_hex       = ! empty( $restore['text_color'] ) ? (string) $restore['text_color'] : APD_Plugin::palette_preferred_hex( 'text', array( '#000000' ) );
 $holder_hex     = ! empty( $restore['holder_color'] ) ? (string) $restore['holder_color'] : APD_Plugin::palette_preferred_hex( 'holder', array( '#000000' ) );
-$plate_hex      = ! empty( $restore['background_color'] ) ? (string) $restore['background_color'] : APD_Plugin::palette_preferred_hex( 'background', array( '#FFFFFF' ) );
+$opening_fill   = isset( $apd_payload['default_fill'] ) ? (string) $apd_payload['default_fill'] : '';
+$plate_hex      = ! empty( $restore['background_color'] ) ? (string) $restore['background_color'] : ( '' !== $opening_fill ? $opening_fill : APD_Plugin::palette_preferred_hex( 'background', array( '#FFFFFF' ) ) );
 if ( APD_Formats::is_photo_holder( $type ) ) {
 	if ( empty( $restore['text_color'] ) ) {
 		$text_hex = '#000000';
@@ -76,11 +91,19 @@ if ( APD_Formats::is_photo_holder( $type ) ) {
 	}
 }
 $border_hex     = ! empty( $restore['border_color'] ) ? (string) $restore['border_color'] : APD_Plugin::palette_preferred_hex( 'border', array( '#000000', isset( $format['border_color'] ) ? (string) $format['border_color'] : '#000000' ) );
+$lock_colors    = ! empty( $apd_payload['lock_colors'] );
+if ( $lock_colors ) {
+	$locked_hexes = APD_Admin_Settings::locked_color_hexes( $type, $opening_fill );
+	$text_hex     = $locked_hexes['text'];
+	$plate_hex    = $locked_hexes['background'];
+	$border_hex   = $locked_hexes['border'];
+}
 $slogan_hex     = ! empty( $restore['slogan_color'] ) ? (string) $restore['slogan_color'] : '#000000';
 $apd_round      = APD_Formats::uses_painted_plate( $type );
 $apd_english    = APD_Formats::is_english( $type );
-$apd_plate_rx   = $apd_round ? round( 10 / max( 1, (int) $format['width'] ) * 100, 3 ) : 0;
-$apd_plate_ry   = $apd_round ? round( 10 / max( 1, (int) $format['height'] ) * 100, 3 ) : 0;
+$apd_radius_mm  = $apd_round ? APD_Formats::plate_corner_radius_mm( $format['height'] ) : 0;
+$apd_plate_rx   = $apd_round ? round( $apd_radius_mm / max( 1, (int) $format['width'] ) * 100, 3 ) : 0;
+$apd_plate_ry   = $apd_round ? round( $apd_radius_mm / max( 1, (int) $format['height'] ) * 100, 3 ) : 0;
 $canvas_label   = $country_picker && ! empty( $presets )
 	? ( isset( $i18n['bandHint'] ) ? $i18n['bandHint'] : __( 'Click the country band to change country', 'auto-plate-designer' ) )
 	: __( 'Plate preview', 'auto-plate-designer' );
@@ -117,6 +140,29 @@ $apd_swatches = static function ( $label, $name, $colors, $current ) {
 
 	echo '</div></fieldset>';
 };
+
+/**
+ * Render a color choice. Locked text, frame, and plate colors stay as hidden values.
+ *
+ * @param string                            $label   Field label.
+ * @param string                            $name    Input name.
+ * @param array<int, array<string, string>> $colors  Palette.
+ * @param string                            $current Selected hex.
+ */
+$apd_color_choice = static function ( $label, $name, $colors, $current ) use ( $apd_swatches, $lock_colors ) {
+	$locked_names = array( 'apd_text_color', 'apd_background_color', 'apd_border_color' );
+
+	if ( $lock_colors && in_array( $name, $locked_names, true ) ) {
+		if ( empty( $colors ) ) {
+			return;
+		}
+
+		echo '<input type="hidden" name="' . esc_attr( $name ) . '" value="' . esc_attr( $current ) . '" data-apd-color="' . esc_attr( $name ) . '">';
+		return;
+	}
+
+	$apd_swatches( $label, $name, $colors, $current );
+};
 ?>
 <div class="apd-configurator" data-apd-root style="--apd-swatch-size: <?php echo esc_attr( (string) (int) $swatch_ui['size'] ); ?>px; --apd-swatch-radius: <?php echo esc_attr( APD_Color_Palettes::swatch_radius_css( $swatch_ui ) ); ?>; --apd-swatch-border: <?php echo esc_attr( APD_Color_Palettes::swatch_border_css( $swatch_ui ) ); ?>;">
 	<?php wp_nonce_field( 'apd_configure', 'apd_nonce' ); ?>
@@ -149,24 +195,34 @@ $apd_swatches = static function ( $label, $name, $colors, $current ) {
 		<?php endif; ?>
 		<div data-apd-personal>
 		<?php if ( count( $scripts ) > 1 ) : ?>
+			<?php
+			$script_choices = array(
+				'latin'    => __( 'Latin', 'auto-plate-designer' ),
+				'cyrillic' => __( 'Cyrillic letters', 'auto-plate-designer' ),
+				'combined' => __( 'Combined font, Cyrillic and Latin', 'auto-plate-designer' ),
+			);
+			?>
 			<div class="form-row form-row-wide apd-field">
 				<label><?php esc_html_e( 'Inscription language', 'auto-plate-designer' ); ?></label>
-				<span class="apd-font-hint"><?php esc_html_e( 'For Cyrillic text, or Latin text longer than 10 characters, the letters are made digitally while the plate frame stays classic and embossed.', 'auto-plate-designer' ); ?></span>
+				<?php if ( empty( $apd_payload['digital_only'] ) && ! $holder_product ) : ?>
+					<span class="apd-font-hint"><?php esc_html_e( 'For Cyrillic text, or Latin text longer than 10 characters, the letters are made digitally while the plate frame stays classic and embossed.', 'auto-plate-designer' ); ?></span>
+				<?php endif; ?>
 				<fieldset class="apd-script">
 					<legend class="screen-reader-text"><?php esc_html_e( 'Inscription language', 'auto-plate-designer' ); ?></legend>
-					<label class="apd-choice">
-						<input type="radio" name="apd_script" value="latin" data-apd-script <?php checked( 'latin', $script_value ); ?>>
-						<?php esc_html_e( 'Latin', 'auto-plate-designer' ); ?>
-					</label>
-					<label class="apd-choice">
-						<input type="radio" name="apd_script" value="cyrillic" data-apd-script <?php checked( 'cyrillic', $script_value ); ?>>
-						<?php esc_html_e( 'Cyrillic letters', 'auto-plate-designer' ); ?>
-					</label>
+					<?php foreach ( $script_choices as $script_key => $script_label ) : ?>
+						<?php if ( ! in_array( $script_key, $scripts, true ) ) { continue; } ?>
+						<label class="apd-choice">
+							<input type="radio" name="apd_script" value="<?php echo esc_attr( $script_key ); ?>" data-apd-script <?php checked( $script_key, $script_value ); ?>>
+							<?php echo esc_html( $script_label ); ?>
+						</label>
+					<?php endforeach; ?>
 				</fieldset>
 			</div>
 		<?php elseif ( 1 === count( $scripts ) ) : ?>
 			<input type="hidden" name="apd_script" value="<?php echo esc_attr( $script_value ); ?>" data-apd-script>
-			<p class="apd-font-hint"><?php echo 'cyrillic' === $script_value ? esc_html__( 'This plate is written in Cyrillic letters.', 'auto-plate-designer' ) : esc_html__( 'This plate is written in Latin letters.', 'auto-plate-designer' ); ?></p>
+			<?php if ( ! $holder_product ) : ?>
+				<p class="apd-font-hint"><?php echo 'cyrillic' === $script_value ? esc_html__( 'This plate is written in Cyrillic letters.', 'auto-plate-designer' ) : esc_html__( 'This plate is written in Latin letters.', 'auto-plate-designer' ); ?></p>
+			<?php endif; ?>
 		<?php endif; ?>
 		<p class="apd-font-hint apd-field-error" data-apd-script-error role="alert" hidden></p>
 		<?php if ( $two_row_fields ) : ?>
@@ -317,6 +373,37 @@ $apd_swatches = static function ( $label, $name, $colors, $current ) {
 				<span class="apd-count" data-apd-count></span>
 			</p>
 			<input type="hidden" id="apd_text" name="apd_text" value="<?php echo esc_attr( $at_values[0] . "\n" . $at_values[1] ); ?>">
+		<?php elseif ( APD_Formats::is_english( $type ) ) : ?>
+			<fieldset class="apd-field apd-group" data-apd-plate-group>
+				<legend><?php esc_html_e( 'Plate', 'auto-plate-designer' ); ?></legend>
+				<p class="form-row form-row-wide apd-field">
+					<label for="apd_text"><?php echo esc_html( $i18n['textLabel'] ); ?></label>
+					<span class="apd-font-hint"><?php esc_html_e( 'Allowed characters are digits, letters, "-", ".", "@", "!" and "?".', 'auto-plate-designer' ); ?></span>
+					<input type="text" class="input-text" id="apd_text" name="apd_text" value="<?php echo esc_attr( $default_text ); ?>" maxlength="<?php echo esc_attr( (string) $max ); ?>" autocomplete="off">
+					<span class="apd-count" data-apd-count></span>
+				</p>
+				<?php if ( count( $fonts ) > 1 ) : ?>
+					<p class="form-row form-row-wide apd-field">
+						<label for="apd_font_id"><?php echo esc_html( $i18n['fontLabel'] ); ?></label>
+						<select id="apd_font_id" name="apd_font_id">
+							<?php foreach ( $fonts as $font ) : ?>
+								<?php $font_for = isset( $font['scripts'] ) && is_array( $font['scripts'] ) ? implode( ' ', $font['scripts'] ) : ''; ?>
+								<option value="<?php echo esc_attr( $font['id'] ); ?>" <?php echo '' !== $font_for ? 'data-apd-font-for="' . esc_attr( $font_for ) . '"' : ''; ?> <?php selected( $font['id'], $default_font ); ?>><?php echo esc_html( APD_Formats::font_shop_label( $font ) ); ?></option>
+							<?php endforeach; ?>
+						</select>
+					</p>
+				<?php elseif ( '' !== $default_font ) : ?>
+					<input type="hidden" name="apd_font_id" value="<?php echo esc_attr( $default_font ); ?>">
+				<?php endif; ?>
+				<?php
+				$apd_text_colors = APD_Formats::shop_swatch_colors( $type, 'text', $color_fields, $palettes );
+				if ( ! empty( $apd_text_colors ) ) {
+					echo '<div data-apd-text-colors>';
+					$apd_color_choice( $i18n['textColor'], 'apd_text_color', $apd_text_colors, $text_hex );
+					echo '</div>';
+				}
+				?>
+			</fieldset>
 		<?php else : ?>
 			<p class="form-row form-row-wide apd-field">
 				<label for="apd_text"><?php echo esc_html( $i18n['textLabel'] ); ?></label>
@@ -339,17 +426,57 @@ $apd_swatches = static function ( $label, $name, $colors, $current ) {
 				$slogan_max = APD_Formats::UK_SLOGAN_MAX;
 			}
 			?>
-			<p class="form-row form-row-wide apd-field">
-				<label for="apd_slogan"><?php echo esc_html( isset( $i18n['sloganLabel'] ) ? $i18n['sloganLabel'] : __( 'Slogan', 'auto-plate-designer' ) ); ?></label>
-				<input type="text" class="input-text" id="apd_slogan" name="apd_slogan" value="<?php echo esc_attr( $slogan_value ); ?>" maxlength="<?php echo esc_attr( (string) $slogan_max ); ?>" autocomplete="off">
-				<span class="apd-count" data-apd-slogan-count></span>
-			</p>
+			<fieldset class="apd-field apd-group" data-apd-slogan-group>
+				<legend><?php echo esc_html( isset( $i18n['sloganLabel'] ) ? $i18n['sloganLabel'] : __( 'Slogan', 'auto-plate-designer' ) ); ?></legend>
+				<p class="form-row form-row-wide apd-field">
+					<label for="apd_slogan"><?php echo esc_html( isset( $i18n['sloganLabel'] ) ? $i18n['sloganLabel'] : __( 'Slogan', 'auto-plate-designer' ) ); ?></label>
+					<input type="text" class="input-text" id="apd_slogan" name="apd_slogan" value="<?php echo esc_attr( $slogan_value ); ?>" maxlength="<?php echo esc_attr( (string) $slogan_max ); ?>" autocomplete="off">
+					<span class="apd-count" data-apd-slogan-count></span>
+				</p>
+				<?php if ( count( $fonts ) > 1 ) : ?>
+					<p class="form-row form-row-wide apd-field">
+						<label for="apd_slogan_font_id"><?php esc_html_e( 'Slogan font', 'auto-plate-designer' ); ?></label>
+						<select id="apd_slogan_font_id" name="apd_slogan_font_id">
+							<?php foreach ( $fonts as $font ) : ?>
+								<option value="<?php echo esc_attr( $font['id'] ); ?>" <?php selected( $font['id'], $default_slogan_font ); ?>><?php echo esc_html( APD_Formats::font_shop_label( $font ) ); ?></option>
+							<?php endforeach; ?>
+						</select>
+					</p>
+				<?php elseif ( '' !== $default_slogan_font ) : ?>
+					<input type="hidden" name="apd_slogan_font_id" value="<?php echo esc_attr( $default_slogan_font ); ?>">
+				<?php endif; ?>
+				<?php
+				$apd_slogan_colors = APD_Formats::shop_swatch_colors( $type, 'slogan', $color_fields, $palettes );
+				if ( ! empty( $apd_slogan_colors ) ) {
+					$slogan_color_label = isset( $i18n['sloganColor'] ) ? $i18n['sloganColor'] : __( 'Slogan color', 'auto-plate-designer' );
+					$apd_swatches( $slogan_color_label, 'apd_slogan_color', $apd_slogan_colors, $slogan_hex );
+				}
+				?>
+			</fieldset>
 		<?php endif; ?>
 
-		<?php if ( count( $fonts ) > 1 ) : ?>
-			<?php $apd_font_style_hint = ! APD_Formats::is_english( $type ) && ! APD_Formats::is_french( $type ) && ! APD_Formats::is_austria( $type ) && 'us' !== (string) $type; ?>
+		<?php
+		$combined_fonts = array();
+		foreach ( $fonts as $font ) {
+			$font_scripts = isset( $font['scripts'] ) && is_array( $font['scripts'] ) ? $font['scripts'] : array();
+			if ( in_array( 'cyrillic', $font_scripts, true ) ) {
+				$combined_fonts[] = $font;
+			}
+		}
+		$combined_font_open = $holder_product && in_array( 'combined', $scripts, true ) && ! empty( $combined_fonts );
+		$combined_selected  = $combined_font_open && 'combined' === $script_value;
+		$default_font_cyr   = $default_font;
+		if ( ! empty( $restore['font_id_cyrillic'] ) ) {
+			$default_font_cyr = (string) $restore['font_id_cyrillic'];
+		}
+		?>
+		<?php if ( ! $apd_english && count( $fonts ) > 1 ) : ?>
+			<?php $apd_font_style_hint = ! $holder_product && ! APD_Formats::is_french( $type ) && ! APD_Formats::is_austria( $type ) && 'us' !== (string) $type; ?>
 			<p class="form-row form-row-wide apd-field">
-				<label for="apd_font_id"><?php echo esc_html( $i18n['fontLabel'] ); ?></label>
+				<label for="apd_font_id">
+					<span data-apd-font-single<?php echo $combined_selected ? ' hidden' : ''; ?>><?php echo esc_html( $i18n['fontLabel'] ); ?></span>
+					<span data-apd-font-latin<?php echo $combined_selected ? '' : ' hidden'; ?>><?php esc_html_e( 'Font for Latin', 'auto-plate-designer' ); ?></span>
+				</label>
 				<?php if ( $apd_font_style_hint ) : ?>
 					<span class="apd-font-hint"><?php esc_html_e( 'For a perfect look, choose a font that matches the plate style and the language of your text (Latin or Cyrillic).', 'auto-plate-designer' ); ?></span>
 				<?php endif; ?>
@@ -360,11 +487,21 @@ $apd_swatches = static function ( $label, $name, $colors, $current ) {
 					<?php endforeach; ?>
 				</select>
 			</p>
-		<?php elseif ( '' !== $default_font ) : ?>
+		<?php elseif ( ! $apd_english && '' !== $default_font ) : ?>
 			<input type="hidden" name="apd_font_id" value="<?php echo esc_attr( $default_font ); ?>">
 		<?php endif; ?>
+		<?php if ( $combined_font_open ) : ?>
+			<p class="form-row form-row-wide apd-field" data-apd-font-cyr<?php echo $combined_selected ? '' : ' hidden'; ?>>
+				<label for="apd_font_id_cyr"><?php esc_html_e( 'Font for Cyrillic', 'auto-plate-designer' ); ?></label>
+				<select id="apd_font_id_cyr" name="apd_font_id_cyr"<?php echo $combined_selected ? '' : ' disabled'; ?>>
+					<?php foreach ( $combined_fonts as $font ) : ?>
+						<option value="<?php echo esc_attr( $font['id'] ); ?>" data-apd-font-for="cyrillic" <?php selected( $font['id'], $default_font_cyr ); ?>><?php echo esc_html( APD_Formats::font_shop_label( $font ) ); ?></option>
+					<?php endforeach; ?>
+				</select>
+			</p>
+		<?php endif; ?>
 
-		<?php if ( $country_picker ) : ?>
+		<?php if ( $show_country && ! empty( $presets ) ) : ?>
 			<?php
 			$current_preset = null;
 			foreach ( $presets as $preset ) {
@@ -378,16 +515,19 @@ $apd_swatches = static function ( $label, $name, $colors, $current ) {
 			}
 			$current_code = $current_preset['country_code'] ? $current_preset['country_code'] : $current_preset['name'];
 			?>
+			<input type="hidden" name="apd_preset_id" value="<?php echo esc_attr( $default_preset ); ?>" data-apd-preset>
+			<?php if ( $country_picker ) : ?>
 			<fieldset class="apd-field apd-country">
 				<legend><?php echo esc_html( $i18n['countryLabel'] ); ?></legend>
-				<input type="hidden" name="apd_preset_id" value="<?php echo esc_attr( $default_preset ); ?>" data-apd-preset>
 				<button
 					type="button"
 					class="apd-country-current"
-					data-apd-country-open
-					aria-haspopup="dialog"
-					aria-expanded="false"
-					aria-controls="apd-country-dialog"
+					<?php if ( $country_picker ) : ?>
+						data-apd-country-open
+						aria-haspopup="dialog"
+						aria-expanded="false"
+						aria-controls="apd-country-dialog"
+					<?php endif; ?>
 				>
 					<?php if ( ! empty( $current_preset['image_url'] ) ) : ?>
 						<img src="<?php echo esc_url( $current_preset['image_url'] ); ?>" alt="" data-apd-country-thumb hidden>
@@ -395,10 +535,13 @@ $apd_swatches = static function ( $label, $name, $colors, $current ) {
 						<img alt="" data-apd-country-thumb hidden>
 					<?php endif; ?>
 					<span data-apd-country-code><?php echo esc_html( $current_code ); ?></span>
-					<span class="apd-country-change"><?php echo esc_html( isset( $i18n['changeCountry'] ) ? $i18n['changeCountry'] : __( 'Change country', 'auto-plate-designer' ) ); ?></span>
+					<?php if ( $country_picker ) : ?>
+						<span class="apd-country-change"><?php echo esc_html( isset( $i18n['changeCountry'] ) ? $i18n['changeCountry'] : __( 'Change country', 'auto-plate-designer' ) ); ?></span>
+					<?php endif; ?>
 				</button>
 			</fieldset>
 
+			<?php if ( $country_picker ) : ?>
 			<div class="apd-dialog" id="apd-country-dialog" hidden data-apd-country-dialog role="dialog" aria-modal="true" aria-hidden="true" aria-labelledby="apd-country-dialog-title">
 				<div class="apd-dialog-backdrop" data-apd-country-dismiss></div>
 				<div class="apd-dialog-panel" role="document">
@@ -425,8 +568,8 @@ $apd_swatches = static function ( $label, $name, $colors, $current ) {
 					</div>
 				</div>
 			</div>
-		<?php elseif ( $show_country && ! empty( $presets ) ) : ?>
-			<input type="hidden" name="apd_preset_id" value="<?php echo esc_attr( $default_preset ); ?>" data-apd-preset>
+			<?php endif; ?>
+			<?php endif; ?>
 		<?php endif; ?>
 
 		<?php if ( $show_designs ) : ?>
@@ -440,7 +583,7 @@ $apd_swatches = static function ( $label, $name, $colors, $current ) {
 					<?php echo esc_html( isset( $i18n['frameLabel'] ) ? $i18n['frameLabel'] : __( 'Add frame', 'auto-plate-designer' ) ); ?>
 				</label>
 			</p>
-		<?php elseif ( $plain_frame && ! $legacy_frame_off ) : ?>
+		<?php elseif ( $plain_frame && ! $legacy_frame_off && ! $hide_plain_frame ) : ?>
 			<p class="form-row form-row-wide apd-field" data-apd-plain-frame>
 				<label class="apd-choice">
 					<input type="checkbox" name="apd_frame_plain" value="1" data-apd-frame-plain <?php checked( $plain_on ); ?>>
@@ -460,9 +603,9 @@ $apd_swatches = static function ( $label, $name, $colors, $current ) {
 			$apd_swatches( $holder_label, 'apd_holder_color', $holder_colors, $holder_hex );
 		}
 
-		if ( ! empty( $apd_text_colors ) && ! $show_strip ) {
+		if ( ! empty( $apd_text_colors ) && ! $show_strip && ! $apd_english ) {
 			echo '<div data-apd-text-colors>';
-			$apd_swatches( $i18n['textColor'], 'apd_text_color', $apd_text_colors, $text_hex );
+			$apd_color_choice( $i18n['textColor'], 'apd_text_color', $apd_text_colors, $text_hex );
 			echo '</div>';
 		}
 
@@ -474,21 +617,23 @@ $apd_swatches = static function ( $label, $name, $colors, $current ) {
 		}
 
 		if ( ! empty( $apd_plate_colors ) && $show_eu ) {
-			$apd_swatches( $i18n['plateColor'], 'apd_background_color', $apd_plate_colors, $plate_hex );
+			$apd_color_choice( $i18n['plateColor'], 'apd_background_color', $apd_plate_colors, $plate_hex );
 		}
 
 		$apd_frame_family = $show_frame || APD_Formats::offers_uncolored_frame( $type );
 		$apd_frame_hidden = ( $show_frame && ! $frame_on ) || ( ! $show_frame && ! $plain_frame ) || $legacy_frame_off;
 		if ( ! empty( $apd_frame_colors ) && $apd_frame_family ) {
 			echo '<div data-apd-frame-colors' . ( $apd_frame_hidden ? ' hidden' : '' ) . '>';
-			$apd_swatches( $i18n['borderColor'], 'apd_border_color', $apd_frame_colors, $border_hex );
+			$apd_color_choice( $i18n['borderColor'], 'apd_border_color', $apd_frame_colors, $border_hex );
 			echo '</div>';
 		} elseif ( ! empty( $apd_frame_colors ) && APD_Formats::is_english( $type ) ) {
-			$apd_swatches( $i18n['borderColor'], 'apd_border_color', $apd_frame_colors, $border_hex );
+			$apd_color_choice( $i18n['borderColor'], 'apd_border_color', $apd_frame_colors, $border_hex );
 		}
 
-		$apd_slogan_colors = APD_Formats::shop_swatch_colors( $type, 'slogan', $color_fields, $palettes );
-		if ( ! empty( $apd_slogan_colors ) ) {
+		if ( ! isset( $apd_slogan_colors ) ) {
+			$apd_slogan_colors = APD_Formats::shop_swatch_colors( $type, 'slogan', $color_fields, $palettes );
+		}
+		if ( ! empty( $apd_slogan_colors ) && ! $apd_english ) {
 			$slogan_color_label = isset( $i18n['sloganColor'] ) ? $i18n['sloganColor'] : __( 'Slogan color', 'auto-plate-designer' );
 			$apd_swatches( $slogan_color_label, 'apd_slogan_color', $apd_slogan_colors, $slogan_hex );
 		}
@@ -498,11 +643,11 @@ $apd_swatches = static function ( $label, $name, $colors, $current ) {
 			$text_label  = isset( $i18n['holderTextColor'] ) ? $i18n['holderTextColor'] : __( 'Holder inscription', 'auto-plate-designer' );
 
 			if ( ! empty( $apd_plate_colors ) ) {
-				$apd_swatches( $strip_label, 'apd_background_color', $apd_plate_colors, $plate_hex );
+				$apd_color_choice( $strip_label, 'apd_background_color', $apd_plate_colors, $plate_hex );
 			}
 
 			if ( ! empty( $apd_text_colors ) ) {
-				$apd_swatches( $text_label, 'apd_text_color', $apd_text_colors, $text_hex );
+				$apd_color_choice( $text_label, 'apd_text_color', $apd_text_colors, $text_hex );
 			}
 		}
 		?>

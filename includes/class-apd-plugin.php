@@ -215,6 +215,7 @@ final class APD_Plugin {
 
 		return array(
 			'formats'          => array(),
+			'format_layout'    => array(),
 			'presets'          => array(),
 			'designs'          => array(),
 			'color_library'    => $starter['library'],
@@ -253,7 +254,7 @@ final class APD_Plugin {
 	public static function get_settings() {
 		$cached = get_transient( APD_CACHE_KEY );
 
-		if ( is_array( $cached ) && isset( $cached['formats'], $cached['limits'], $cached['palettes'], $cached['color_library'], $cached['color_palettes'], $cached['swatch_display']['border_color'] ) ) {
+		if ( is_array( $cached ) && isset( $cached['formats'], $cached['format_layout'], $cached['limits'], $cached['palettes'], $cached['color_library'], $cached['color_palettes'], $cached['swatch_display']['border_color'] ) ) {
 			return self::persist_plate_punctuation( $cached );
 		}
 

@@ -36,11 +36,14 @@ $allowed     = isset( $editing['allowed_format_types'] ) && is_array( $editing['
 <div class="apd-tab">
 	<h2><?php esc_html_e( 'Country presets', 'auto-plate-designer' ); ?></h2>
 	<p class="description"><?php esc_html_e( 'Country bands are shown on EU, EU motorcycle, and EU SUV plates. USA plates, types without a preset, street, color, and holder formats never display these presets.', 'auto-plate-designer' ); ?></p>
+	<p class="description"><?php esc_html_e( 'Drag the rows, then save. This order is used in the shop country list and in the format preset lists.', 'auto-plate-designer' ); ?></p>
 
+	<?php if ( empty( $presets ) ) : ?>
 	<div class="apd-table-scroll">
 	<table class="widefat striped">
 		<thead>
 			<tr>
+				<th class="apd-preset-handle"><span class="screen-reader-text"><?php esc_html_e( 'Preset order', 'auto-plate-designer' ); ?></span></th>
 				<th><?php esc_html_e( 'Name', 'auto-plate-designer' ); ?></th>
 				<th><?php esc_html_e( 'Code', 'auto-plate-designer' ); ?></th>
 				<th><?php esc_html_e( 'Side', 'auto-plate-designer' ); ?></th>
@@ -49,11 +52,30 @@ $allowed     = isset( $editing['allowed_format_types'] ) && is_array( $editing['
 			</tr>
 		</thead>
 		<tbody>
-			<?php if ( empty( $presets ) ) : ?>
-				<tr><td colspan="5"><?php esc_html_e( 'No presets yet. Add Bulgaria, generic EU, Moldova, Germany, and Ukraine here.', 'auto-plate-designer' ); ?></td></tr>
-			<?php else : ?>
+			<tr><td colspan="6"><?php esc_html_e( 'No presets yet. Add Bulgaria, generic EU, Moldova, Germany, and Ukraine here.', 'auto-plate-designer' ); ?></td></tr>
+		</tbody>
+	</table>
+	</div>
+	<?php else : ?>
+	<form method="post" action="<?php echo esc_url( $apd_admin->tab_url( 'presets' ) ); ?>" class="apd-preset-order">
+		<?php wp_nonce_field( 'apd_save_settings', 'apd_settings_nonce' ); ?>
+		<input type="hidden" name="apd_settings_action" value="reorder_presets">
+		<div class="apd-table-scroll">
+		<table class="widefat striped">
+			<thead>
+				<tr>
+					<th class="apd-preset-handle"><span class="screen-reader-text"><?php esc_html_e( 'Preset order', 'auto-plate-designer' ); ?></span></th>
+					<th><?php esc_html_e( 'Name', 'auto-plate-designer' ); ?></th>
+					<th><?php esc_html_e( 'Code', 'auto-plate-designer' ); ?></th>
+					<th><?php esc_html_e( 'Side', 'auto-plate-designer' ); ?></th>
+					<th><?php esc_html_e( 'Active', 'auto-plate-designer' ); ?></th>
+					<th><?php esc_html_e( 'Actions', 'auto-plate-designer' ); ?></th>
+				</tr>
+			</thead>
+			<tbody data-apd-preset-sortable>
 				<?php foreach ( $presets as $preset ) : ?>
 					<tr>
+						<td class="apd-preset-handle" title="<?php esc_attr_e( 'Preset order', 'auto-plate-designer' ); ?>"><span class="dashicons dashicons-menu" aria-hidden="true"></span><input type="hidden" name="apd_preset_order[]" value="<?php echo esc_attr( (string) $preset['id'] ); ?>"></td>
 						<td><?php echo esc_html( $preset['name'] ); ?></td>
 						<td><?php echo esc_html( $preset['country_code'] ); ?></td>
 						<td><?php echo esc_html( $preset['side'] ); ?></td>
@@ -65,10 +87,12 @@ $allowed     = isset( $editing['allowed_format_types'] ) && is_array( $editing['
 						</td>
 					</tr>
 				<?php endforeach; ?>
-			<?php endif; ?>
-		</tbody>
-	</table>
-	</div>
+			</tbody>
+		</table>
+		</div>
+		<?php submit_button( __( 'Save preset order', 'auto-plate-designer' ) ); ?>
+	</form>
+	<?php endif; ?>
 
 	<?php if ( ! $show_form ) : ?>
 		<p>

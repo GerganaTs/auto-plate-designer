@@ -18,19 +18,26 @@ final class APD_Admin_Settings {
 
 	const META_ENABLED      = '_apd_enabled';
 	const META_FORMAT       = '_apd_format_id';
+	const META_DEFAULT_PRESET = '_apd_default_preset_id';
 	const META_DESIGN       = '_apd_design_id';
 	const META_LAYOUTS      = '_apd_layouts';
 	const META_HIDE_IMAGE   = '_apd_hide_image';
+	const META_LOCK_COLORS  = '_apd_lock_colors';
+	const META_HIDE_PLAIN_FRAME = '_apd_hide_plain_frame';
 	const META_COLOR_FIELDS = '_apd_color_fields';
 	const META_PALETTE_IDS  = '_apd_palette_ids';
 	const META_DEFAULT_TEXT   = '_apd_default_text';
 	const META_DEFAULT_TEXT_CYR = '_apd_default_text_cyrillic';
 	const META_DEFAULT_SLOGAN = '_apd_default_slogan';
+	const META_DEFAULT_FILL   = '_apd_default_fill';
 	const META_FR_REGION   = '_apd_fr_region';
 	const META_LATIN       = '_apd_script_latin';
 	const META_CYRILLIC    = '_apd_script_cyrillic';
 	const META_LATIN_FONTS = '_apd_font_ids_latin';
 	const META_CYRILLIC_FONTS = '_apd_font_ids_cyrillic';
+	const META_COMBINED    = '_apd_script_combined';
+	const META_COMBINED_FONTS = '_apd_font_ids_combined';
+	const META_DEFAULT_TEXT_COMBINED = '_apd_default_text_combined';
 
 	const PRODUCT_NONCE_ACTION = 'apd_product_meta';
 
@@ -146,6 +153,7 @@ final class APD_Admin_Settings {
 
 		if ( $is_settings ) {
 		wp_enqueue_media();
+		wp_enqueue_script( 'jquery-ui-sortable' );
 		}
 
 		$css_file = APD_PLUGIN_DIR . 'assets/css/admin-settings.css';
@@ -162,7 +170,7 @@ final class APD_Admin_Settings {
 		wp_enqueue_script(
 			'apd-admin-settings',
 			APD_PLUGIN_URL . 'assets/js/admin-settings.js',
-			array( 'jquery' ),
+			$is_settings ? array( 'jquery', 'jquery-ui-sortable' ) : array( 'jquery' ),
 			is_readable( $js_file ) ? (string) filemtime( $js_file ) : APD_VERSION,
 			true
 		);
@@ -172,11 +180,17 @@ final class APD_Admin_Settings {
 		$type_caps  = array();
 		$text_boxes = array();
 
+		$fill_types = array();
+
 		foreach ( APD_Security::allowed_format_types() as $type ) {
 			$caps[ $type ]      = APD_Formats::color_field_capabilities( $type );
 			$size               = APD_Formats::default_size( $type );
 			$sizes[ $type ]     = array( $size['width'], $size['height'] );
 			$type_caps[ $type ] = APD_Formats::js_capabilities( $type );
+
+			if ( APD_Formats::offers_initial_fill( $type ) ) {
+				$fill_types[] = $type;
+			}
 			$box_format = array(
 				'width'     => $size['width'],
 				'height'    => $size['height'],
@@ -197,6 +211,7 @@ final class APD_Admin_Settings {
 				'selectImage'       => __( 'Select image', 'auto-plate-designer' ),
 				'selectFont'        => __( 'Select WOFF2 font', 'auto-plate-designer' ),
 				'colorCaps'         => $caps,
+				'inkFrameColor'     => __( 'Text and frame color', 'auto-plate-designer' ),
 				'defaultSizes'      => $sizes,
 				'typeCapabilities'   => $type_caps,
 				'defaultTextBoxes'   => $text_boxes,
@@ -206,6 +221,7 @@ final class APD_Admin_Settings {
 				'adminSampleSuv'     => APD_Formats::ADMIN_SAMPLE_SUV,
 				'adminSampleEnglish' => APD_Formats::admin_sample_plate_text( 'uk' ),
 				'adminSampleMini'    => APD_Formats::admin_sample_plate_text( 'mini' ),
+				'adminSampleSuper'   => APD_Formats::admin_sample_plate_text( 'super_mini' ),
 				'holderImageLabel'  => __( 'Holder photo', 'auto-plate-designer' ),
 				'holderImageHelp'   => __( 'The standard car holder is already shown. Upload a PNG, JPEG, or WebP photo to replace it. An SVG plugin is not needed.', 'auto-plate-designer' ),
 				'holderImageUrl'    => APD_Formats::bundled_holder_image_url(),
@@ -214,6 +230,7 @@ final class APD_Admin_Settings {
 					'holder_d'    => APD_Formats::bundled_holder_image_url( 'holder_d' ),
 				),
 				'paletteSlotTypes'  => array( 'color', 'custom', 'eu_plain', 'moto_plain', 'moto_plain_240', 'suv', 'suv_340', 'atyp_300', 'us', 'uk', 'uk_plain' ),
+				'initialFillTypes'  => $fill_types,
 				'holderPlateLabels' => array(
 					'holder'      => APD_Formats::format_size_label( array( 'type' => 'holder' ) ),
 					'holder_moto' => APD_Formats::format_size_label( array( 'type' => 'holder_moto' ) ),
@@ -337,6 +354,15 @@ final class APD_Admin_Settings {
 					$return_args = '' !== $posted_id ? array( 'edit' => $posted_id ) : array( 'add' => '1' );
 				}
 				break;
+			case 'reorder_formats':
+				$posted_order = isset( $_POST['apd_format_order'] ) ? wp_unslash( $_POST['apd_format_order'] ) : array(); // phpcs:ignore WordPress.Security.ValidatedSanitizedInput.InputNotSanitized
+				$result       = APD_Formats::save_order( is_array( $posted_order ) ? $posted_order : array() );
+				$tab          = 'formats';
+				break;
+			case 'add_format_separator':
+				$result = APD_Formats::add_separator();
+				$tab    = 'formats';
+				break;
 			case 'save_preset':
 				$posted = $this->unslash_array( isset( $_POST['apd_preset'] ) ? $_POST['apd_preset'] : array() );
 				$result = APD_Presets::save( $posted );
@@ -345,6 +371,11 @@ final class APD_Admin_Settings {
 					$posted_id   = isset( $posted['id'] ) ? sanitize_text_field( (string) $posted['id'] ) : '';
 					$return_args = '' !== $posted_id ? array( 'edit' => $posted_id ) : array( 'add' => '1' );
 				}
+				break;
+			case 'reorder_presets':
+				$posted_order = isset( $_POST['apd_preset_order'] ) ? wp_unslash( $_POST['apd_preset_order'] ) : array(); // phpcs:ignore WordPress.Security.ValidatedSanitizedInput.InputNotSanitized
+				$result       = APD_Presets::reorder( is_array( $posted_order ) ? $posted_order : array() );
+				$tab          = 'presets';
 				break;
 			case 'save_design':
 				$posted = $this->unslash_array( isset( $_POST['apd_design'] ) ? $_POST['apd_design'] : array() );
@@ -530,6 +561,18 @@ final class APD_Admin_Settings {
 		echo '</label></p>';
 		echo '<p class="description">' . esc_html__( 'Keeps the shop thumbnail. The live preview replaces the gallery on the product page.', 'auto-plate-designer' ) . '</p>';
 
+		$lock_colors = 'yes' === (string) get_post_meta( $post->ID, self::META_LOCK_COLORS, true );
+		echo '<p><label class="apd-choice"><input type="checkbox" name="apd_lock_colors" value="1" ' . checked( $lock_colors, true, false ) . '> ';
+		echo esc_html__( 'Don\'t let the shopper change the text, frame, or plate color', 'auto-plate-designer' );
+		echo '</label></p>';
+		echo '<p class="description">' . esc_html__( 'The text and the plate keep the colors this page opens with. The frame stays black. “Without frame color” stays available.', 'auto-plate-designer' ) . '</p>';
+
+		$hide_plain_frame = 'yes' === (string) get_post_meta( $post->ID, self::META_HIDE_PLAIN_FRAME, true );
+		echo '<p><label class="apd-choice"><input type="checkbox" name="apd_hide_plain_frame" value="1" ' . checked( $hide_plain_frame, true, false ) . '> ';
+		echo esc_html__( 'Remove the without-frame-color option for the shopper', 'auto-plate-designer' );
+		echo '</label></p>';
+		echo '<p class="description">' . esc_html__( 'The frame is drawn as the format sets it. A format with a frame draws that frame. A format without a frame draws none. The color lock still keeps a locked frame black.', 'auto-plate-designer' ) . '</p>';
+
 		echo '<p><label for="apd_format_id">' . esc_html__( 'Format', 'auto-plate-designer' ) . '</label><br>';
 		echo '<select name="apd_format_id" id="apd_format_id" class="widefat">';
 		echo '<option value="">' . esc_html__( 'Select a format', 'auto-plate-designer' ) . '</option>';
@@ -542,8 +585,9 @@ final class APD_Admin_Settings {
 			} elseif ( APD_Formats::is_austria( $item['type'] ) ) {
 				$group_limits = APD_Formats::austria_limits( $item );
 			}
+			$fill_json = wp_json_encode( self::format_fill_choices( $item ) );
 			printf(
-				'<option value="%1$s" data-apd-type="%2$s" data-apd-rows="%11$s" data-apd-no-frame="%6$s" data-apd-split="%7$s" data-apd-photo="%8$s" data-apd-left="%9$s" data-apd-right="%10$s" data-apd-g1="%12$s" data-apd-g2="%13$s" data-apd-g3="%14$s" data-apd-slogan-max="%15$s" data-apd-scripts="%16$s" data-apd-font-ids="%17$s" data-apd-fonts-all="%18$s" %3$s>%4$s (%5$s)</option>',
+				'<option value="%1$s" data-apd-type="%2$s" data-apd-rows="%11$s" data-apd-no-frame="%6$s" data-apd-split="%7$s" data-apd-photo="%8$s" data-apd-left="%9$s" data-apd-right="%10$s" data-apd-g1="%12$s" data-apd-g2="%13$s" data-apd-g3="%14$s" data-apd-slogan-max="%15$s" data-apd-scripts="%16$s" data-apd-font-ids="%17$s" data-apd-fonts-all="%18$s" data-apd-initial-fill="%19$s" data-apd-fills="%20$s" %3$s>%4$s (%5$s)</option>',
 				esc_attr( $item['id'] ),
 				esc_attr( $item['type'] ),
 				selected( $format, $item['id'], false ),
@@ -561,11 +605,54 @@ final class APD_Admin_Settings {
 				esc_attr( (string) ( APD_Formats::is_english( $item['type'] ) ? APD_Formats::slogan_limit( $item ) : 0 ) ),
 				APD_Formats::offers_script( $item['type'] ) ? '1' : '0',
 				esc_attr( isset( $item['font_ids'] ) && is_array( $item['font_ids'] ) ? implode( ',', $item['font_ids'] ) : '' ),
-				! empty( $item['font_ids_all'] ) ? '1' : '0'
+				! empty( $item['font_ids_all'] ) ? '1' : '0',
+				! empty( $item['initial_fill'] ) ? '1' : '0',
+				esc_attr( is_string( $fill_json ) ? $fill_json : '[]' )
 			);
 		}
 
 		echo '</select></p>';
+
+		$preset_choice_map = array();
+
+		foreach ( $formats as $item ) {
+			$choice_rows = array();
+
+			foreach ( APD_Formats::offered_presets( $item ) as $choice_preset ) {
+				$choice_rows[] = array(
+					'id'    => (string) $choice_preset['id'],
+					'label' => (string) $choice_preset['name'] . ' (' . (string) $choice_preset['country_code'] . ')',
+				);
+			}
+
+			if ( ! empty( $choice_rows ) ) {
+				$preset_choice_map[ (string) $item['id'] ] = $choice_rows;
+			}
+		}
+
+		$saved_preset    = (string) get_post_meta( $post->ID, self::META_DEFAULT_PRESET, true );
+		$current_choices = isset( $preset_choice_map[ $format ] ) ? $preset_choice_map[ $format ] : array();
+		$preset_open     = ! empty( $current_choices );
+		$preset_blank    = __( 'As set on the format', 'auto-plate-designer' );
+
+		echo '<p data-apd-product-preset' . ( $preset_open ? '' : ' hidden' ) . '>';
+		echo '<label for="apd_default_preset_id">' . esc_html__( 'Preset when the page opens', 'auto-plate-designer' ) . '</label><br>';
+		echo '<select name="apd_default_preset_id" id="apd_default_preset_id" class="widefat" data-apd-blank="' . esc_attr( $preset_blank ) . '"' . ( $preset_open ? '' : ' disabled' ) . '>';
+		echo '<option value="">' . esc_html( $preset_blank ) . '</option>';
+
+		foreach ( $current_choices as $choice_row ) {
+			printf(
+				'<option value="%1$s" %2$s>%3$s</option>',
+				esc_attr( $choice_row['id'] ),
+				selected( $saved_preset, $choice_row['id'], false ),
+				esc_html( $choice_row['label'] )
+			);
+		}
+
+		echo '</select>';
+		echo '<span class="description" style="display:block;margin-top:6px;">' . esc_html__( 'The shopper can still change the country when the format offers more than one preset.', 'auto-plate-designer' ) . '</span>';
+		echo '</p>';
+		echo '<script type="application/json" id="apd_product_preset_choices">' . wp_json_encode( $preset_choice_map ) . '</script>';
 
 		$script_notice = get_transient( 'apd_product_script_notice_' . get_current_user_id() );
 		if ( is_string( $script_notice ) && '' !== $script_notice ) {
@@ -573,26 +660,62 @@ final class APD_Admin_Settings {
 			echo '<p class="notice notice-warning inline" style="margin:0 0 12px;padding:8px 12px;">' . esc_html( $script_notice ) . '</p>';
 		}
 
-		$latin_on = 'yes' === (string) get_post_meta( $post->ID, self::META_LATIN, true ) || ( '' === (string) get_post_meta( $post->ID, self::META_LATIN, true ) && '' === (string) get_post_meta( $post->ID, self::META_CYRILLIC, true ) );
-		$cyr_on   = 'yes' === (string) get_post_meta( $post->ID, self::META_CYRILLIC, true );
+		$latin_meta = (string) get_post_meta( $post->ID, self::META_LATIN, true );
+		$cyr_meta   = (string) get_post_meta( $post->ID, self::META_CYRILLIC, true );
+		$latin_on   = 'yes' === $latin_meta || ( '' === $latin_meta && '' === $cyr_meta && 'yes' !== (string) get_post_meta( $post->ID, self::META_COMBINED, true ) );
+		$cyr_on     = 'yes' === $cyr_meta;
 		$latin_font_ids = get_post_meta( $post->ID, self::META_LATIN_FONTS, true );
 		$cyr_font_ids   = get_post_meta( $post->ID, self::META_CYRILLIC_FONTS, true );
+		$combined_font_ids = get_post_meta( $post->ID, self::META_COMBINED_FONTS, true );
 		$latin_font_ids = is_array( $latin_font_ids ) ? array_map( 'strval', $latin_font_ids ) : array();
 		$cyr_font_ids   = is_array( $cyr_font_ids ) ? array_map( 'strval', $cyr_font_ids ) : array();
+		$combined_font_ids = is_array( $combined_font_ids ) ? array_map( 'strval', $combined_font_ids ) : array();
 		$library         = APD_Plugin::get_settings();
 		$library_fonts   = isset( $library['fonts'] ) && is_array( $library['fonts'] ) ? $library['fonts'] : array();
 		$script_format   = '' !== $format ? APD_Formats::get( $format ) : null;
 		$script_type     = is_array( $script_format ) && isset( $script_format['type'] ) ? (string) $script_format['type'] : '';
 		$script_open     = '' !== $script_type && APD_Formats::offers_script( $script_type );
+		$holder_script   = APD_Formats::is_holder( $script_type );
+		$combined_on     = $holder_script && 'yes' === (string) get_post_meta( $post->ID, self::META_COMBINED, true );
+		$holder_choice   = 'latin';
+
+		if ( $holder_script && $combined_on ) {
+			$holder_choice = 'combined';
+		} elseif ( $holder_script && $cyr_on && ! $latin_on ) {
+			$holder_choice = 'cyrillic';
+		}
+
+		if ( $holder_script && 'combined' === $holder_choice && ! empty( $combined_font_ids ) ) {
+			$latin_font_ids = $combined_font_ids;
+			$cyr_font_ids   = $combined_font_ids;
+		}
+
+		$show_latin_fonts = $script_open && ( $holder_script ? ( 'latin' === $holder_choice || 'combined' === $holder_choice ) : $latin_on );
+		$show_cyr_fonts   = $script_open && ( $holder_script ? ( 'cyrillic' === $holder_choice || 'combined' === $holder_choice ) : $cyr_on );
 
 		echo '<div data-apd-script-panel' . ( $script_open ? '' : ' hidden' ) . '>';
-		echo '<p><label class="apd-choice"><input type="checkbox" name="apd_script_latin" value="1" ' . checked( $latin_on, true, false ) . '> ';
+		echo '<div data-apd-plate-scripts' . ( $holder_script ? ' hidden' : '' ) . '>';
+		echo '<p><label class="apd-choice"><input type="checkbox" name="apd_script_latin" value="1" ' . checked( $latin_on, true, false ) . ( $holder_script ? ' disabled' : '' ) . '> ';
 		echo esc_html__( 'Latin', 'auto-plate-designer' );
 		echo '</label></p>';
-		echo '<p><label class="apd-choice"><input type="checkbox" name="apd_script_cyrillic" value="1" ' . checked( $cyr_on, true, false ) . '> ';
+		echo '<p><label class="apd-choice"><input type="checkbox" name="apd_script_cyrillic" value="1" ' . checked( $cyr_on, true, false ) . ( $holder_script ? ' disabled' : '' ) . '> ';
 		echo esc_html__( 'Cyrillic letters', 'auto-plate-designer' );
 		echo '</label></p>';
-		echo '<p class="description">' . esc_html__( 'One alphabet shows a sentence on the product. Both show two choices. Existing products stay Latin until you tick Cyrillic.', 'auto-plate-designer' ) . '</p>';
+		echo '<p class="description" data-apd-plate-script-note>' . esc_html__( 'One alphabet shows a sentence on the product. Both show two choices. Existing products stay Latin until you tick Cyrillic.', 'auto-plate-designer' ) . '</p>';
+		echo '</div>';
+		echo '<div data-apd-holder-only' . ( $holder_script ? '' : ' hidden' ) . '>';
+		echo '<p><label class="apd-choice"><input type="radio" name="apd_holder_script" value="latin" ' . checked( 'latin' === $holder_choice, true, false ) . ( $holder_script ? '' : ' disabled' ) . '> ';
+		echo esc_html__( 'Latin', 'auto-plate-designer' );
+		echo '</label></p>';
+		echo '<p><label class="apd-choice"><input type="radio" name="apd_holder_script" value="cyrillic" ' . checked( 'cyrillic' === $holder_choice, true, false ) . ( $holder_script ? '' : ' disabled' ) . '> ';
+		echo esc_html__( 'Cyrillic letters', 'auto-plate-designer' );
+		echo '</label></p>';
+		echo '<p><label class="apd-choice"><input type="radio" name="apd_holder_script" value="combined" ' . checked( 'combined' === $holder_choice, true, false ) . ( $holder_script ? '' : ' disabled' ) . '> ';
+		echo esc_html__( 'Combined font, Cyrillic and Latin', 'auto-plate-designer' );
+		echo '</label></p>';
+		echo '<p class="description">' . esc_html__( 'A holder offers one choice. Latin and Cyrillic each have one font list. The combined choice has a Latin list and a Cyrillic list. Tick the suitable fonts from every font uploaded in the plugin. Existing holders stay Latin.', 'auto-plate-designer' ) . '</p>';
+		echo '</div>';
+		echo '<div data-apd-script-font-block="latin"' . ( $show_latin_fonts ? '' : ' hidden' ) . '>';
 		echo '<p><strong>' . esc_html__( 'Latin fonts', 'auto-plate-designer' ) . '</strong></p>';
 		echo '<div class="apd-choice-list" data-apd-script-fonts="latin">';
 		foreach ( $library_fonts as $library_font ) {
@@ -605,7 +728,9 @@ final class APD_Admin_Settings {
 			echo '</label>';
 		}
 		echo '</div>';
-		echo '<p class="description">' . esc_html__( 'An empty Latin list uses every font on the format.', 'auto-plate-designer' ) . '</p>';
+		echo '<p class="description" data-apd-latin-font-note' . ( $holder_script && 'combined' === $holder_choice ? ' hidden' : '' ) . '>' . esc_html__( 'An empty Latin list uses every font on the format.', 'auto-plate-designer' ) . '</p>';
+		echo '</div>';
+		echo '<div data-apd-script-font-block="cyrillic"' . ( $show_cyr_fonts ? '' : ' hidden' ) . '>';
 		echo '<p><strong>' . esc_html__( 'Cyrillic fonts', 'auto-plate-designer' ) . '</strong></p>';
 		echo '<div class="apd-choice-list" data-apd-script-fonts="cyrillic">';
 		foreach ( $library_fonts as $library_font ) {
@@ -619,6 +744,8 @@ final class APD_Admin_Settings {
 		}
 		echo '</div>';
 		echo '<p class="description">' . esc_html__( 'Cyrillic needs at least one font from this list.', 'auto-plate-designer' ) . '</p>';
+		echo '</div>';
+		echo '<p class="description" data-apd-combined-font-note' . ( $holder_script && 'combined' === $holder_choice ? '' : ' hidden' ) . '>' . esc_html__( 'The combined choice needs at least one Latin font and one Cyrillic font.', 'auto-plate-designer' ) . '</p>';
 		echo '</div>';
 
 		$selected_format = '' !== $format ? APD_Formats::get( $format ) : null;
@@ -664,17 +791,22 @@ final class APD_Admin_Settings {
 		$austria_limits  = $austria_default ? APD_Formats::austria_limits( $selected_format ) : array( 2, 6 );
 		$french_temp     = $french_default && APD_Formats::is_french_temporary( $selected_type );
 		$cyr_text        = (string) get_post_meta( $post->ID, self::META_DEFAULT_TEXT_CYR, true );
-		$both_scripts    = $script_open && $latin_on && $cyr_on;
-		$only_cyrillic   = $script_open && $cyr_on && ! $latin_on;
+		$combined_text   = (string) get_post_meta( $post->ID, self::META_DEFAULT_TEXT_COMBINED, true );
+		$both_scripts    = $script_open && ! $holder_script && $latin_on && $cyr_on;
+		$only_cyrillic   = $script_open && ( $holder_script ? 'cyrillic' === $holder_choice : ( $cyr_on && ! $latin_on ) );
+		$holder_named    = false;
+		$only_combined   = $holder_script && 'combined' === $holder_choice;
 		if ( $both_scripts && '' === trim( $cyr_text ) && '' !== trim( $default_text ) && true === APD_Security::validate_plate_script( $default_text, 'cyrillic' ) && is_wp_error( APD_Security::validate_plate_script( $default_text, 'latin' ) ) ) {
 			$cyr_text     = $default_text;
 			$default_text = '';
 		}
 		$cyr_single      = str_replace( array( "\r\n", "\r", "\n" ), ' ', $cyr_text );
+		$combined_single = str_replace( array( "\r\n", "\r", "\n" ), ' ', $combined_text );
 		$cyr_rows        = APD_Formats::suv_plate_rows( $cyr_text );
 		$single_text     = str_replace( array( "\r\n", "\r", "\n" ), ' ', $default_text );
 		$suv_rows        = APD_Formats::suv_plate_rows( $default_text );
 		$single_open     = ! $suv_default && ! $sides_default && ! $french_default && ! $austria_default;
+		$single_visible  = $single_open && ! $only_combined;
 		$english_product = is_array( $selected_format ) && APD_Formats::is_english( $selected_type );
 		$slogan_max      = $english_product ? APD_Formats::slogan_limit( $selected_format ) : APD_Formats::UK_SLOGAN_MAX;
 		if ( $slogan_max < 1 ) {
@@ -682,19 +814,51 @@ final class APD_Admin_Settings {
 		}
 		$default_slogan = (string) get_post_meta( $post->ID, self::META_DEFAULT_SLOGAN, true );
 
-		echo '<p data-apd-default-single' . ( $single_open ? '' : ' hidden' ) . '><label for="apd_default_text">';
-		echo '<span data-apd-latin-only' . ( ( $both_scripts || $only_cyrillic ) ? ' hidden' : '' ) . '>' . esc_html__( 'Initial plate text', 'auto-plate-designer' ) . '</span>';
+		echo '<p data-apd-default-single' . ( $single_visible ? '' : ' hidden' ) . '><label for="apd_default_text">';
+		echo '<span data-apd-latin-only' . ( ( $both_scripts || $only_cyrillic || $holder_named || $only_combined ) ? ' hidden' : '' ) . '>' . esc_html__( 'Initial plate text', 'auto-plate-designer' ) . '</span>';
 		echo '<span data-apd-latin-both' . ( $both_scripts ? '' : ' hidden' ) . '>' . esc_html__( 'Latin', 'auto-plate-designer' ) . '</span>';
+		echo '<span data-apd-holder-latin' . ( $holder_named ? '' : ' hidden' ) . '>' . esc_html__( 'Latin', 'auto-plate-designer' ) . '</span>';
 		echo '<span data-apd-cyr-only' . ( $only_cyrillic ? '' : ' hidden' ) . '>' . esc_html__( 'Cyrillic letters', 'auto-plate-designer' ) . '</span>';
 		echo '</label><br>';
-		echo '<input type="text" class="widefat" id="apd_default_text" name="apd_default_text" value="' . esc_attr( $single_text ) . '" maxlength="32" autocomplete="off"' . ( $single_open ? '' : ' disabled' ) . '>';
+		echo '<input type="text" class="widefat" id="apd_default_text" name="apd_default_text" value="' . esc_attr( $single_text ) . '" maxlength="32" autocomplete="off"' . ( $single_visible ? '' : ' disabled' ) . '>';
 		echo '</p>';
 		echo '<p data-apd-cyrillic-defaults="single"' . ( ( $both_scripts && $single_open ) ? '' : ' hidden' ) . '><label for="apd_default_text_cyrillic">' . esc_html__( 'Cyrillic letters', 'auto-plate-designer' ) . '</label><br>';
 		echo '<input type="text" class="widefat" id="apd_default_text_cyrillic" name="apd_default_text_cyrillic" value="' . esc_attr( $cyr_single ) . '" maxlength="32" autocomplete="off"' . ( ( $both_scripts && $single_open ) ? '' : ' disabled' ) . '>';
 		echo '</p>';
+		echo '<p data-apd-combined-defaults' . ( ( $combined_on && $single_open ) ? '' : ' hidden' ) . '><label for="apd_default_text_combined">' . esc_html__( 'Combined font, Cyrillic and Latin', 'auto-plate-designer' ) . '</label><br>';
+		echo '<input type="text" class="widefat" id="apd_default_text_combined" name="apd_default_text_combined" value="' . esc_attr( $combined_single ) . '" maxlength="32" autocomplete="off"' . ( ( $combined_on && $single_open ) ? '' : ' disabled' ) . '>';
+		echo '</p>';
 		echo '<p data-apd-default-slogan' . ( $english_product ? '' : ' hidden' ) . '><label for="apd_default_slogan">' . esc_html__( 'Initial slogan', 'auto-plate-designer' ) . '</label><br>';
 		echo '<input type="text" class="widefat" id="apd_default_slogan" name="apd_default_slogan" value="' . esc_attr( $default_slogan ) . '" maxlength="' . esc_attr( (string) $slogan_max ) . '" autocomplete="off"' . ( $english_product ? '' : ' disabled' ) . '>';
 		echo '<span class="description">' . esc_html__( 'Shown on the product page until the shopper types a slogan. Leave blank for no slogan.', 'auto-plate-designer' ) . '</span>';
+		echo '</p>';
+		$fill_open     = is_array( $selected_format ) && ! empty( $selected_format['initial_fill'] ) && APD_Formats::offers_initial_fill( $selected_type );
+		$fill_choices  = $fill_open ? self::product_fill_choices( $post->ID ) : array();
+		$stored_fill   = (string) get_post_meta( $post->ID, self::META_DEFAULT_FILL, true );
+		$fill_selected = '';
+
+		foreach ( $fill_choices as $choice ) {
+			if ( 0 === strcasecmp( $choice['hex'], $stored_fill ) ) {
+				$fill_selected = $choice['hex'];
+				break;
+			}
+		}
+
+		echo '<p data-apd-default-fill data-apd-fill-format="' . esc_attr( $format ) . '"' . ( $fill_open ? '' : ' hidden' ) . '><label for="apd_default_fill">' . esc_html__( 'Opening plate color', 'auto-plate-designer' ) . '</label><br>';
+		echo '<select class="widefat" id="apd_default_fill" name="apd_default_fill"' . ( $fill_open ? '' : ' disabled' ) . '>';
+		echo '<option value="">' . esc_html__( 'Default', 'auto-plate-designer' ) . '</option>';
+
+		foreach ( $fill_choices as $choice ) {
+			printf(
+				'<option value="%1$s" %2$s>%3$s</option>',
+				esc_attr( $choice['hex'] ),
+				selected( $fill_selected, $choice['hex'], false ),
+				esc_html( $choice['label'] )
+			);
+		}
+
+		echo '</select>';
+		echo '<span class="description">' . esc_html__( 'The plate opens on this color. Default keeps the usual white.', 'auto-plate-designer' ) . '</span>';
 		echo '</p>';
 		echo '<div class="apd-default-sides" data-apd-default-sides' . ( $sides_default ? '' : ' hidden' ) . '>';
 		echo '<p><label for="apd_default_text_left">' . esc_html__( 'Left text', 'auto-plate-designer' ) . '</label><br>';
@@ -783,6 +947,18 @@ final class APD_Admin_Settings {
 		$hide_image = isset( $_POST['apd_hide_image'] ) ? 'yes' : 'no';
 		update_post_meta( $product_id, self::META_HIDE_IMAGE, $hide_image );
 
+		if ( isset( $_POST['apd_lock_colors'] ) ) {
+			update_post_meta( $product_id, self::META_LOCK_COLORS, 'yes' );
+		} else {
+			delete_post_meta( $product_id, self::META_LOCK_COLORS );
+		}
+
+		if ( isset( $_POST['apd_hide_plain_frame'] ) ) {
+			update_post_meta( $product_id, self::META_HIDE_PLAIN_FRAME, 'yes' );
+		} else {
+			delete_post_meta( $product_id, self::META_HIDE_PLAIN_FRAME );
+		}
+
 		$format_id = isset( $_POST['apd_format_id'] ) ? sanitize_text_field( wp_unslash( $_POST['apd_format_id'] ) ) : '';
 
 		if ( '' !== $format_id && null === APD_Formats::get( $format_id ) ) {
@@ -799,27 +975,46 @@ final class APD_Admin_Settings {
 			$format_type = is_array( $format_row ) && isset( $format_row['type'] ) ? (string) $format_row['type'] : '';
 		}
 
+		$posted_preset   = isset( $_POST['apd_default_preset_id'] ) ? sanitize_text_field( wp_unslash( $_POST['apd_default_preset_id'] ) ) : '';
+		$allowed_presets = array();
+
+		if ( is_array( $format_row ) ) {
+			foreach ( APD_Formats::offered_presets( $format_row ) as $offered_preset ) {
+				if ( isset( $offered_preset['id'] ) ) {
+					$allowed_presets[] = (string) $offered_preset['id'];
+				}
+			}
+		}
+
+		if ( '' !== $posted_preset && in_array( $posted_preset, $allowed_presets, true ) ) {
+			update_post_meta( $product_id, self::META_DEFAULT_PRESET, $posted_preset );
+		} else {
+			delete_post_meta( $product_id, self::META_DEFAULT_PRESET );
+		}
+
 		if ( ! APD_Formats::offers_script( $format_type ) ) {
 			delete_post_meta( $product_id, self::META_LATIN );
 			delete_post_meta( $product_id, self::META_CYRILLIC );
 			delete_post_meta( $product_id, self::META_LATIN_FONTS );
 			delete_post_meta( $product_id, self::META_CYRILLIC_FONTS );
+			delete_post_meta( $product_id, self::META_COMBINED );
+			delete_post_meta( $product_id, self::META_COMBINED_FONTS );
+			delete_post_meta( $product_id, self::META_DEFAULT_TEXT_COMBINED );
 		} else {
 			$allowed_fonts = array();
+			$holder_type   = APD_Formats::is_holder( $format_type );
 
-			if ( is_array( $format_row ) ) {
-				if ( ! empty( $format_row['font_ids_all'] ) ) {
-					$settings = APD_Plugin::get_settings();
-					$library  = isset( $settings['fonts'] ) && is_array( $settings['fonts'] ) ? $settings['fonts'] : array();
+			if ( $holder_type || ( is_array( $format_row ) && ! empty( $format_row['font_ids_all'] ) ) ) {
+				$settings = APD_Plugin::get_settings();
+				$library  = isset( $settings['fonts'] ) && is_array( $settings['fonts'] ) ? $settings['fonts'] : array();
 
-					foreach ( $library as $library_font ) {
-						if ( ! empty( $library_font['id'] ) ) {
-							$allowed_fonts[] = (string) $library_font['id'];
-						}
+				foreach ( $library as $library_font ) {
+					if ( ! empty( $library_font['id'] ) ) {
+						$allowed_fonts[] = (string) $library_font['id'];
 					}
-				} elseif ( isset( $format_row['font_ids'] ) && is_array( $format_row['font_ids'] ) ) {
-					$allowed_fonts = array_map( 'strval', $format_row['font_ids'] );
 				}
+			} elseif ( is_array( $format_row ) && isset( $format_row['font_ids'] ) && is_array( $format_row['font_ids'] ) ) {
+				$allowed_fonts = array_map( 'strval', $format_row['font_ids'] );
 			}
 
 			$keep_font = static function ( $key ) use ( $allowed_fonts ) {
@@ -845,6 +1040,14 @@ final class APD_Admin_Settings {
 			$cyr_fonts   = $keep_font( 'apd_font_ids_cyrillic' );
 			$latin_yes   = isset( $_POST['apd_script_latin'] );
 			$cyr_yes     = isset( $_POST['apd_script_cyrillic'] );
+			$combined_yes = false;
+
+			if ( $holder_type ) {
+				$holder_choice = isset( $_POST['apd_holder_script'] ) ? sanitize_key( wp_unslash( $_POST['apd_holder_script'] ) ) : 'latin';
+				$latin_yes     = 'latin' === $holder_choice;
+				$cyr_yes       = 'cyrillic' === $holder_choice;
+				$combined_yes  = 'combined' === $holder_choice;
+			}
 
 			if ( $cyr_yes && empty( $cyr_fonts ) ) {
 				$cyr_yes = false;
@@ -855,14 +1058,32 @@ final class APD_Admin_Settings {
 				);
 			}
 
-			if ( ! $latin_yes && ! $cyr_yes ) {
+			if ( $combined_yes && ( empty( $latin_fonts ) || empty( $cyr_fonts ) ) ) {
+				$combined_yes = false;
+				set_transient(
+					'apd_product_script_notice_' . get_current_user_id(),
+					__( 'The combined choice needs at least one Latin font and one Cyrillic font.', 'auto-plate-designer' ),
+					MINUTE_IN_SECONDS
+				);
+			}
+
+			if ( ! $latin_yes && ! $cyr_yes && ! $combined_yes ) {
 				$latin_yes = true;
 			}
 
 			update_post_meta( $product_id, self::META_LATIN, $latin_yes ? 'yes' : 'no' );
 			update_post_meta( $product_id, self::META_CYRILLIC, $cyr_yes ? 'yes' : 'no' );
-			update_post_meta( $product_id, self::META_LATIN_FONTS, $latin_fonts );
-			update_post_meta( $product_id, self::META_CYRILLIC_FONTS, $cyr_fonts );
+			update_post_meta( $product_id, self::META_LATIN_FONTS, $latin_yes || $combined_yes ? $latin_fonts : array() );
+			update_post_meta( $product_id, self::META_CYRILLIC_FONTS, $cyr_yes || $combined_yes ? $cyr_fonts : array() );
+
+			if ( $holder_type ) {
+				update_post_meta( $product_id, self::META_COMBINED, $combined_yes ? 'yes' : 'no' );
+				delete_post_meta( $product_id, self::META_COMBINED_FONTS );
+			} else {
+				delete_post_meta( $product_id, self::META_COMBINED );
+				delete_post_meta( $product_id, self::META_COMBINED_FONTS );
+				delete_post_meta( $product_id, self::META_DEFAULT_TEXT_COMBINED );
+			}
 		}
 
 		$design_id = isset( $_POST['apd_design_id'] ) ? sanitize_text_field( wp_unslash( $_POST['apd_design_id'] ) ) : '';
@@ -984,6 +1205,25 @@ final class APD_Admin_Settings {
 			delete_post_meta( $product_id, self::META_DEFAULT_SLOGAN );
 		}
 
+		$fill_hex = '';
+
+		if ( is_array( $format_row ) && ! empty( $format_row['initial_fill'] ) && APD_Formats::offers_initial_fill( $format_type ) ) {
+			$posted_fill = isset( $_POST['apd_default_fill'] ) ? sanitize_text_field( wp_unslash( $_POST['apd_default_fill'] ) ) : '';
+
+			foreach ( self::product_fill_choices( $product_id ) as $choice ) {
+				if ( 0 === strcasecmp( $choice['hex'], $posted_fill ) ) {
+					$fill_hex = $choice['hex'];
+					break;
+				}
+			}
+		}
+
+		if ( '' === $fill_hex ) {
+			delete_post_meta( $product_id, self::META_DEFAULT_FILL );
+		} else {
+			update_post_meta( $product_id, self::META_DEFAULT_FILL, $fill_hex );
+		}
+
 		if ( ! APD_Formats::is_french( $format_type ) ) {
 			delete_post_meta( $product_id, self::META_FR_REGION );
 		}
@@ -1002,13 +1242,14 @@ final class APD_Admin_Settings {
 	 *
 	 * @param int                  $product_id Product ID.
 	 * @param array<string, mixed> $format     Format row.
-	 * @return array{scripts: array<int, string>, latin_fonts: array<int, string>, cyrillic_fonts: array<int, string>}
+	 * @return array{scripts: array<int, string>, latin_fonts: array<int, string>, cyrillic_fonts: array<int, string>, combined_fonts: array<int, string>}
 	 */
 	public static function product_script_state( $product_id, $format ) {
 		$empty = array(
 			'scripts'         => array(),
 			'latin_fonts'     => array(),
 			'cyrillic_fonts'  => array(),
+			'combined_fonts'  => array(),
 		);
 		$type = is_array( $format ) && isset( $format['type'] ) ? (string) $format['type'] : '';
 
@@ -1017,11 +1258,13 @@ final class APD_Admin_Settings {
 		}
 
 		$product_id = absint( $product_id );
+		$holder     = APD_Formats::is_holder( $type );
 		$latin      = $product_id ? (string) get_post_meta( $product_id, self::META_LATIN, true ) : '';
 		$cyrillic   = $product_id ? (string) get_post_meta( $product_id, self::META_CYRILLIC, true ) : '';
+		$combined   = ( $product_id && $holder ) ? (string) get_post_meta( $product_id, self::META_COMBINED, true ) : '';
 		$scripts    = array();
 
-		if ( '' === $latin && '' === $cyrillic ) {
+		if ( '' === $latin && '' === $cyrillic && '' === $combined ) {
 			$scripts[] = 'latin';
 		} else {
 			if ( 'yes' === $latin ) {
@@ -1031,19 +1274,43 @@ final class APD_Admin_Settings {
 			if ( 'yes' === $cyrillic ) {
 				$scripts[] = 'cyrillic';
 			}
+
+			if ( 'yes' === $combined ) {
+				$scripts[] = 'combined';
+			}
 		}
 
 		if ( empty( $scripts ) ) {
 			$scripts[] = 'latin';
 		}
 
-		$latin_fonts = $product_id ? get_post_meta( $product_id, self::META_LATIN_FONTS, true ) : array();
-		$cyr_fonts   = $product_id ? get_post_meta( $product_id, self::META_CYRILLIC_FONTS, true ) : array();
+		if ( $holder && count( $scripts ) > 1 ) {
+			if ( in_array( 'combined', $scripts, true ) ) {
+				$scripts = array( 'combined' );
+			} elseif ( in_array( 'latin', $scripts, true ) ) {
+				$scripts = array( 'latin' );
+			} else {
+				$scripts = array( 'cyrillic' );
+			}
+		}
+
+		$latin_fonts    = $product_id ? get_post_meta( $product_id, self::META_LATIN_FONTS, true ) : array();
+		$cyr_fonts      = $product_id ? get_post_meta( $product_id, self::META_CYRILLIC_FONTS, true ) : array();
+		$combined_fonts = ( $product_id && $holder ) ? get_post_meta( $product_id, self::META_COMBINED_FONTS, true ) : array();
+		$latin_fonts    = is_array( $latin_fonts ) ? array_map( 'strval', $latin_fonts ) : array();
+		$cyr_fonts      = is_array( $cyr_fonts ) ? array_map( 'strval', $cyr_fonts ) : array();
+		$combined_fonts = is_array( $combined_fonts ) ? array_map( 'strval', $combined_fonts ) : array();
+
+		if ( $holder && in_array( 'combined', $scripts, true ) && ! empty( $combined_fonts ) ) {
+			$latin_fonts = $combined_fonts;
+			$cyr_fonts   = $combined_fonts;
+		}
 
 		return array(
-			'scripts'        => $scripts,
-			'latin_fonts'    => is_array( $latin_fonts ) ? array_map( 'strval', $latin_fonts ) : array(),
-			'cyrillic_fonts' => is_array( $cyr_fonts ) ? array_map( 'strval', $cyr_fonts ) : array(),
+			'scripts'         => $scripts,
+			'latin_fonts'     => $latin_fonts,
+			'cyrillic_fonts'  => $cyr_fonts,
+			'combined_fonts'  => $combined_fonts,
 		);
 	}
 
@@ -1102,6 +1369,13 @@ final class APD_Admin_Settings {
 
 		$latin_text = $this->accept_script_default( $latin_text, $latin_on && $cyr_on ? 'latin' : '', $text_limit, $multiline );
 		$cyr_text   = $this->accept_script_default( $cyr_text, $cyr_on ? 'cyrillic' : '', $text_limit, $multiline );
+		$combined_text = '';
+
+		if ( APD_Formats::is_holder( $format_type ) && 'yes' === (string) get_post_meta( $product_id, self::META_COMBINED, true ) ) {
+			$posted_combined = isset( $_POST['apd_default_text_combined'] ) ? (string) wp_unslash( $_POST['apd_default_text_combined'] ) : ''; // phpcs:ignore WordPress.Security.ValidatedSanitizedInput.InputNotSanitized
+			$posted_combined = APD_Security::sanitize_plate_text( $posted_combined, false );
+			$combined_text   = $this->accept_script_default( $posted_combined, 'combined', $text_limit, false );
+		}
 
 		update_post_meta( $product_id, self::META_DEFAULT_TEXT, $latin_text );
 
@@ -1109,6 +1383,12 @@ final class APD_Admin_Settings {
 			delete_post_meta( $product_id, self::META_DEFAULT_TEXT_CYR );
 		} else {
 			update_post_meta( $product_id, self::META_DEFAULT_TEXT_CYR, $cyr_text );
+		}
+
+		if ( '' === $combined_text ) {
+			delete_post_meta( $product_id, self::META_DEFAULT_TEXT_COMBINED );
+		} else {
+			update_post_meta( $product_id, self::META_DEFAULT_TEXT_COMBINED, $combined_text );
 		}
 	}
 
@@ -1163,7 +1443,7 @@ final class APD_Admin_Settings {
 				'max_length'       => $text_limit,
 				'multiline'        => $multiline,
 				'allow_empty'      => true,
-				'skip_admin_regex' => 'cyrillic' === $script,
+				'skip_admin_regex' => 'cyrillic' === $script || 'combined' === $script,
 			)
 		);
 
@@ -1240,6 +1520,22 @@ final class APD_Admin_Settings {
 	}
 
 	/**
+	 * Starting text for a holder that mixes both alphabets in one field.
+	 *
+	 * @param int $product_id Product ID.
+	 * @return string
+	 */
+	public static function product_combined_text( $product_id ) {
+		$product_id = absint( $product_id );
+
+		if ( ! $product_id ) {
+			return '';
+		}
+
+		return trim( (string) get_post_meta( $product_id, self::META_DEFAULT_TEXT_COMBINED, true ) );
+	}
+
+	/**
 	 * Slogan shown on an English product until the shopper edits it.
 	 *
 	 * @param int                        $product_id Product ID.
@@ -1274,6 +1570,260 @@ final class APD_Admin_Settings {
 		}
 
 		return $stored;
+	}
+
+	/**
+	 * Plate color a product opens on, when its format allows one.
+	 *
+	 * An empty string keeps the usual white. A stored color that is no longer offered is ignored.
+	 *
+	 * @param int                       $product_id Product ID.
+	 * @param array<string, mixed>|null $format     Format row.
+	 * @return string
+	 */
+	public static function product_initial_fill( $product_id, $format = null ) {
+		$product_id = absint( $product_id );
+
+		if ( ! is_array( $format ) && $product_id ) {
+			$format_id = (string) get_post_meta( $product_id, self::META_FORMAT, true );
+			$format    = '' !== $format_id ? APD_Formats::get( $format_id ) : null;
+		}
+
+		$type = is_array( $format ) && isset( $format['type'] ) ? (string) $format['type'] : '';
+
+		if ( ! is_array( $format ) || empty( $format['initial_fill'] ) || ! APD_Formats::offers_initial_fill( $type ) || ! $product_id ) {
+			return '';
+		}
+
+		$stored = trim( (string) get_post_meta( $product_id, self::META_DEFAULT_FILL, true ) );
+
+		if ( '' === $stored ) {
+			return '';
+		}
+
+		foreach ( self::product_fill_choices( $product_id ) as $choice ) {
+			if ( 0 === strcasecmp( $choice['hex'], $stored ) ) {
+				return $choice['hex'];
+			}
+		}
+
+		return '';
+	}
+
+	/**
+	 * Whether this product hides the text, frame, and plate color choices.
+	 *
+	 * A missing value stays open, so products saved before the checkbox keep their color choices.
+	 *
+	 * @param int $product_id Product ID.
+	 * @return bool
+	 */
+	public static function product_locks_colors( $product_id ) {
+		return 'yes' === (string) get_post_meta( absint( $product_id ), self::META_LOCK_COLORS, true );
+	}
+
+	/**
+	 * Whether this product hides “Without frame color”.
+	 *
+	 * A missing value keeps the option, so products saved before the checkbox are unchanged.
+	 *
+	 * @param int $product_id Product ID.
+	 * @return bool
+	 */
+	public static function product_hides_plain_frame( $product_id ) {
+		return 'yes' === (string) get_post_meta( absint( $product_id ), self::META_HIDE_PLAIN_FRAME, true );
+	}
+
+	/**
+	 * Text, plate, and frame colors used when the shopper cannot change them.
+	 *
+	 * The text and plate match a freshly opened page. The frame is black.
+	 * “Without frame color” is applied later and still paints the frame with the plate color.
+	 *
+	 * @param string $type         Format type.
+	 * @param string $opening_fill Product opening fill, or an empty string.
+	 * @return array{text: string, background: string, border: string}
+	 */
+	public static function locked_color_hexes( $type, $opening_fill ) {
+		if ( APD_Formats::is_photo_holder( $type ) ) {
+			return array(
+				'text'       => '#000000',
+				'background' => '#FFFFFF',
+				'border'     => '#000000',
+			);
+		}
+
+		$opening_fill = (string) $opening_fill;
+
+		return array(
+			'text'       => APD_Plugin::palette_preferred_hex( 'text', array( '#000000' ) ),
+			'background' => '' !== $opening_fill ? $opening_fill : APD_Plugin::palette_preferred_hex( 'background', array( '#FFFFFF' ) ),
+			'border'     => '#000000',
+		);
+	}
+
+	/**
+	 * Background colors a product can open on.
+	 *
+	 * @param int $product_id Product ID.
+	 * @return array<int, array<string, string>>
+	 */
+	public static function product_fill_choices( $product_id ) {
+		$product_id = absint( $product_id );
+
+		if ( ! $product_id ) {
+			return array();
+		}
+
+		$format_id = (string) get_post_meta( $product_id, self::META_FORMAT, true );
+		$format    = '' !== $format_id ? APD_Formats::get( $format_id ) : null;
+		$type      = is_array( $format ) && isset( $format['type'] ) ? (string) $format['type'] : '';
+
+		if ( '' === $type || ! APD_Formats::offers_initial_fill( $type ) ) {
+			return array();
+		}
+
+		return self::fill_choice_rows(
+			APD_Formats::shop_swatch_colors(
+				$type,
+				'background',
+				self::product_color_fields( $product_id ),
+				self::product_offered_colors( $product_id )
+			)
+		);
+	}
+
+	/**
+	 * Background colors stored on a format that allows an opening color.
+	 *
+	 * @param array<string, mixed> $format Format row.
+	 * @return array<int, array<string, string>>
+	 */
+	public static function format_fill_choices( $format ) {
+		if ( ! is_array( $format ) || empty( $format['type'] ) || empty( $format['initial_fill'] ) ) {
+			return array();
+		}
+
+		$type = (string) $format['type'];
+
+		if ( ! APD_Formats::offers_initial_fill( $type ) ) {
+			return array();
+		}
+
+		$grouped = array();
+
+		foreach ( APD_Color_Palettes::purposes() as $purpose ) {
+			$grouped[ $purpose ] = array();
+		}
+
+		if ( APD_Formats::uses_palette_slots( $type ) && isset( $format['palette_slots'] ) && is_array( $format['palette_slots'] ) ) {
+			foreach ( APD_Formats::palette_slot_keys_for( $type, $format ) as $slot ) {
+				$id      = isset( $format['palette_slots'][ $slot ] ) ? (string) $format['palette_slots'][ $slot ] : '';
+				$palette = '' !== $id ? APD_Color_Palettes::get( $id ) : null;
+
+				if ( ! is_array( $palette ) || empty( $palette['active'] ) ) {
+					continue;
+				}
+
+				$grouped[ $slot ] = APD_Color_Palettes::palette_colors( $palette );
+			}
+		} else {
+			$ids = isset( $format['palette_ids'] ) && is_array( $format['palette_ids'] ) ? $format['palette_ids'] : array();
+
+			foreach ( array_keys( $grouped ) as $purpose ) {
+				$grouped[ $purpose ] = APD_Color_Palettes::colors_for_product( $ids, $purpose );
+			}
+		}
+
+		$fields = array();
+
+		foreach ( $grouped as $purpose => $rows ) {
+			if ( ! empty( $rows ) ) {
+				$fields[] = $purpose;
+			}
+		}
+
+		return self::fill_choice_rows( APD_Formats::shop_swatch_colors( $type, 'background', $fields, $grouped ) );
+	}
+
+	/**
+	 * Hex and label pairs for an opening-color menu.
+	 *
+	 * @param array<int, array<string, mixed>> $rows Swatch rows.
+	 * @return array<int, array<string, string>>
+	 */
+	private static function fill_choice_rows( $rows ) {
+		$out = array();
+
+		if ( ! is_array( $rows ) ) {
+			return $out;
+		}
+
+		foreach ( $rows as $row ) {
+			if ( ! is_array( $row ) || empty( $row['hex'] ) ) {
+				continue;
+			}
+
+			$out[] = array(
+				'hex'   => (string) $row['hex'],
+				'label' => isset( $row['label'] ) && '' !== (string) $row['label'] ? (string) $row['label'] : (string) $row['hex'],
+			);
+		}
+
+		return $out;
+	}
+
+	/**
+	 * Published shop products that store each format.
+	 *
+	 * Drafts, private products, and products in the trash are left out.
+	 * A separator is not a format, so it is never counted.
+	 *
+	 * @return array<string, int> Format ID => product count.
+	 */
+	public static function shop_product_counts_by_format() {
+		$counts = array();
+
+		if ( ! function_exists( 'get_posts' ) ) {
+			return $counts;
+		}
+
+		$product_ids = get_posts(
+			array(
+				'post_type'              => 'product',
+				'post_status'            => 'publish',
+				'posts_per_page'         => -1,
+				'fields'                 => 'ids',
+				'no_found_rows'          => true,
+				'update_post_term_cache' => false,
+				'meta_query'             => array( // phpcs:ignore WordPress.DB.SlowDBQuery.slow_db_query_meta_query
+					array(
+						'key'     => self::META_FORMAT,
+						'compare' => 'EXISTS',
+					),
+				),
+			)
+		);
+
+		if ( $product_ids && function_exists( 'update_meta_cache' ) ) {
+			update_meta_cache( 'post', $product_ids );
+		}
+
+		foreach ( $product_ids as $product_id ) {
+			$format_id = (string) get_post_meta( (int) $product_id, self::META_FORMAT, true );
+
+			if ( '' === $format_id ) {
+				continue;
+			}
+
+			if ( ! isset( $counts[ $format_id ] ) ) {
+				$counts[ $format_id ] = 0;
+			}
+
+			++$counts[ $format_id ];
+		}
+
+		return $counts;
 	}
 
 	/**
@@ -1372,7 +1922,7 @@ final class APD_Admin_Settings {
 		if ( is_array( $format ) && APD_Formats::uses_palette_slots( $type ) && isset( $format['palette_slots'] ) && is_array( $format['palette_slots'] ) ) {
 			$ids = array();
 
-			foreach ( APD_Formats::palette_slot_keys_for( $type ) as $slot ) {
+			foreach ( APD_Formats::palette_slot_keys_for( $type, $format ) as $slot ) {
 				$id = isset( $format['palette_slots'][ $slot ] ) ? sanitize_text_field( (string) $format['palette_slots'][ $slot ] ) : '';
 
 				if ( '' !== $id ) {
@@ -1429,7 +1979,7 @@ final class APD_Admin_Settings {
 		}
 
 		if ( is_array( $format ) && APD_Formats::uses_palette_slots( $type ) && isset( $format['palette_slots'] ) && is_array( $format['palette_slots'] ) ) {
-			foreach ( APD_Formats::palette_slot_keys_for( $type ) as $slot ) {
+			foreach ( APD_Formats::palette_slot_keys_for( $type, $format ) as $slot ) {
 				$id      = isset( $format['palette_slots'][ $slot ] ) ? sanitize_text_field( (string) $format['palette_slots'][ $slot ] ) : '';
 				$palette = '' !== $id ? APD_Color_Palettes::get( $id ) : null;
 
@@ -1482,7 +2032,7 @@ final class APD_Admin_Settings {
 		$fields = array();
 
 		if ( is_array( $format ) && APD_Formats::uses_palette_slots( $type ) && isset( $format['palette_slots'] ) && is_array( $format['palette_slots'] ) ) {
-			foreach ( APD_Formats::palette_slot_keys_for( $type ) as $slot ) {
+			foreach ( APD_Formats::palette_slot_keys_for( $type, $format ) as $slot ) {
 				if ( ! empty( $format['palette_slots'][ $slot ] ) ) {
 					$fields[] = $slot;
 				}
@@ -1643,6 +2193,8 @@ final class APD_Admin_Settings {
 
 		if ( in_array( $type, array( 'colors', 'color_palettes' ), true ) ) {
 			$tab = 'palette';
+		} elseif ( 'format_separator' === $type ) {
+			$tab = 'formats';
 		}
 
 		return wp_nonce_url(
@@ -1769,6 +2321,10 @@ final class APD_Admin_Settings {
 		switch ( $type ) {
 			case 'formats':
 				$result = APD_Formats::delete( $id );
+				$tab    = 'formats';
+				break;
+			case 'format_separator':
+				$result = APD_Formats::delete_separator( $id );
 				$tab    = 'formats';
 				break;
 			case 'presets':

@@ -25,8 +25,10 @@
  * - austria     Austrian plate, locked A preset, district and registration around a region box (520×110)
  * - uk          English plate with an open country preset, a 5 mm inner frame, and one slogan (520×110)
  * - uk_plain    English plate without a country preset, same frame and slogan (520×110)
- * - mini        mini plate with an open country preset, one text line, no slogan frame (340×90)
- * - mini_plain  mini plate without a country preset, one text line, no slogan frame (340×90)
+ * - mini        mini plate with an open country preset, one text line, no slogan (340×90)
+ * - mini_plain  mini plate without a country preset, one text line, no slogan (340×90)
+ * - super_mini       super mini plate with an open country preset, one text line, no slogan (200×90)
+ * - super_mini_plain super mini plate without a country preset, one text line, no slogan (200×90)
  * - us          state graphics
  * - custom      street / painted, no band, size is typed in millimetres
  * - color       painted, no band
@@ -145,6 +147,10 @@ final class APD_Formats {
 			return 199;
 		}
 
+		if ( self::is_compact_plate( $type ) ) {
+			return 520;
+		}
+
 		return 0;
 	}
 
@@ -155,8 +161,10 @@ final class APD_Formats {
 	 * (520 mm = 500 px). Motorcycle, SUV, and USA plates use the older,
 	 * smaller size as 500 px, so a wider plate in that family grows and its
 	 * letters match. The 300x150 plates use the motorcycle millimetre, so
-	 * 300 mm is wider than 199 mm and 150 mm stays the same height. Other
-	 * plates stay at 500 px. Height always follows the format aspect ratio.
+	 * 300 mm is wider than 199 mm and 150 mm stays the same height. Mini and
+	 * super mini use the car-plate millimetre (520 mm = 500 px), so 200 mm is
+	 * narrower than 340 mm and both 90 mm plates share a height. Other plates
+	 * stay at 500 px. Height always follows the format aspect ratio.
 	 *
 	 * @param string $type  Format type.
 	 * @param int    $width Format width in millimetres.
@@ -188,7 +196,7 @@ final class APD_Formats {
 	 * @return bool
 	 */
 	public static function offers_frame_choice( $type ) {
-		return ! in_array( (string) $type, array( 'holder', 'holder_moto', 'holder_d', 'us', 'fr', 'fr_ww', 'fr_region', 'austria', 'uk', 'uk_plain', 'mini', 'mini_plain' ), true );
+		return ! in_array( (string) $type, array( 'holder', 'holder_moto', 'holder_d', 'us', 'fr', 'fr_ww', 'fr_region', 'austria', 'uk', 'uk_plain' ), true );
 	}
 
 	/**
@@ -502,7 +510,11 @@ final class APD_Formats {
 			);
 		}
 
-		$settings['formats'] = $next;
+		$settings['formats']       = $next;
+		$settings['format_layout'] = self::layout_without_format(
+			isset( $settings['format_layout'] ) ? $settings['format_layout'] : array(),
+			$id
+		);
 		APD_Plugin::save_settings( $settings );
 
 		if ( class_exists( 'APD_Designs' ) ) {
@@ -510,6 +522,278 @@ final class APD_Formats {
 		}
 
 		return true;
+	}
+
+	/**
+	 * Formats tab rows: saved formats and divider lines, in saved order.
+	 *
+	 * A format that is not in the saved layout is appended. A missing format
+	 * is skipped. Divider lines are not formats.
+	 *
+	 * @return array<int, array<string, mixed>>
+	 */
+	public static function display_rows() {
+		$formats = self::all();
+		$by_id   = array();
+		$order   = array();
+
+		foreach ( $formats as $format ) {
+			if ( ! is_array( $format ) || empty( $format['id'] ) ) {
+				continue;
+			}
+
+			$id = (string) $format['id'];
+
+			if ( isset( $by_id[ $id ] ) ) {
+				continue;
+			}
+
+			$by_id[ $id ] = $format;
+			$order[]      = $id;
+		}
+
+		$settings = APD_Plugin::get_settings();
+		$stored   = isset( $settings['format_layout'] ) && is_array( $settings['format_layout'] ) ? $settings['format_layout'] : array();
+		$rows     = array();
+		$seen     = array();
+
+		foreach ( $stored as $item ) {
+			if ( ! is_array( $item ) || empty( $item['type'] ) || empty( $item['id'] ) ) {
+				continue;
+			}
+
+			$id = (string) $item['id'];
+
+			if ( 'format' === $item['type'] && isset( $by_id[ $id ] ) && ! isset( $seen[ $id ] ) ) {
+				$rows[]     = array(
+					'type'   => 'format',
+					'id'     => $id,
+					'format' => $by_id[ $id ],
+				);
+				$seen[ $id ] = true;
+			} elseif ( 'separator' === $item['type'] && self::is_layout_id( $id ) && ! isset( $seen[ 'separator:' . $id ] ) ) {
+				$rows[] = array(
+					'type' => 'separator',
+					'id'   => $id,
+				);
+				$seen[ 'separator:' . $id ] = true;
+			}
+		}
+
+		foreach ( $order as $id ) {
+			if ( isset( $seen[ $id ] ) ) {
+				continue;
+			}
+
+			$rows[] = array(
+				'type'   => 'format',
+				'id'     => $id,
+				'format' => $by_id[ $id ],
+			);
+		}
+
+		return $rows;
+	}
+
+	/**
+	 * Apply a posted Formats-tab order without dropping a format.
+	 *
+	 * Tokens look like "format:{id}" and "separator:{id}". Unknown formats
+	 * are ignored. A format left out of the tokens stays at the end. A
+	 * divider that is left out is removed. Format rows themselves are not
+	 * changed.
+	 *
+	 * @param array<int, array<string, mixed>> $formats Stored formats.
+	 * @param array<int, string>               $tokens  Posted order tokens.
+	 * @return array{formats: array<int, array<string, mixed>>, layout: array<int, array<string, string>>}
+	 */
+	public static function arrange( $formats, $tokens ) {
+		$by_id = array();
+		$order = array();
+
+		foreach ( (array) $formats as $format ) {
+			if ( ! is_array( $format ) || empty( $format['id'] ) ) {
+				continue;
+			}
+
+			$id = (string) $format['id'];
+
+			if ( isset( $by_id[ $id ] ) ) {
+				continue;
+			}
+
+			$by_id[ $id ] = $format;
+			$order[]      = $id;
+		}
+
+		$layout       = array();
+		$next         = array();
+		$seen_formats = array();
+		$seen_lines   = array();
+
+		foreach ( (array) $tokens as $token ) {
+			$token = sanitize_text_field( (string) $token );
+			$parts = explode( ':', $token, 2 );
+
+			if ( 2 !== count( $parts ) ) {
+				continue;
+			}
+
+			$kind = $parts[0];
+			$id   = $parts[1];
+
+			if ( 'format' === $kind && isset( $by_id[ $id ] ) && ! isset( $seen_formats[ $id ] ) ) {
+				$layout[]            = array(
+					'type' => 'format',
+					'id'   => $id,
+				);
+				$next[]              = $by_id[ $id ];
+				$seen_formats[ $id ] = true;
+			} elseif ( 'separator' === $kind && self::is_layout_id( $id ) && ! isset( $seen_lines[ $id ] ) ) {
+				$layout[]          = array(
+					'type' => 'separator',
+					'id'   => $id,
+				);
+				$seen_lines[ $id ] = true;
+			}
+		}
+
+		foreach ( $order as $id ) {
+			if ( isset( $seen_formats[ $id ] ) ) {
+				continue;
+			}
+
+			$layout[] = array(
+				'type' => 'format',
+				'id'   => $id,
+			);
+			$next[]   = $by_id[ $id ];
+		}
+
+		return array(
+			'formats' => $next,
+			'layout'  => $layout,
+		);
+	}
+
+	/**
+	 * Save the Formats-tab order and the matching format list.
+	 *
+	 * @param array<int, string> $tokens Posted order tokens.
+	 * @return true
+	 */
+	public static function save_order( $tokens ) {
+		$settings = APD_Plugin::get_settings();
+		$current  = isset( $settings['formats'] ) && is_array( $settings['formats'] ) ? $settings['formats'] : array();
+		$arranged = self::arrange( $current, $tokens );
+		$settings['formats']       = $arranged['formats'];
+		$settings['format_layout'] = $arranged['layout'];
+		APD_Plugin::save_settings( $settings );
+
+		return true;
+	}
+
+	/**
+	 * Append a divider line to the Formats tab.
+	 *
+	 * @return true|WP_Error
+	 */
+	public static function add_separator() {
+		if ( empty( self::all() ) ) {
+			return new WP_Error(
+				'apd_format_separator',
+				__( 'Add a format before adding a divider.', 'auto-plate-designer' )
+			);
+		}
+
+		$tokens = array();
+
+		foreach ( self::display_rows() as $row ) {
+			$tokens[] = $row['type'] . ':' . $row['id'];
+		}
+
+		$tokens[] = 'separator:' . APD_Plugin::new_id();
+		self::save_order( $tokens );
+
+		return true;
+	}
+
+	/**
+	 * Remove one divider line.
+	 *
+	 * @param string $id Divider ID.
+	 * @return true|WP_Error
+	 */
+	public static function delete_separator( $id ) {
+		$id     = (string) $id;
+		$tokens = array();
+		$found  = false;
+
+		foreach ( self::display_rows() as $row ) {
+			if ( 'separator' === $row['type'] && (string) $row['id'] === $id ) {
+				$found = true;
+				continue;
+			}
+
+			$tokens[] = $row['type'] . ':' . $row['id'];
+		}
+
+		if ( ! $found ) {
+			return new WP_Error(
+				'apd_format_separator_missing',
+				__( 'Divider was not found.', 'auto-plate-designer' )
+			);
+		}
+
+		self::save_order( $tokens );
+
+		return true;
+	}
+
+	/**
+	 * Drop one format from a stored layout. Divider lines stay.
+	 *
+	 * @param array<int, mixed> $layout    Stored layout.
+	 * @param string            $format_id Format ID.
+	 * @return array<int, array<string, string>>
+	 */
+	public static function layout_without_format( $layout, $format_id ) {
+		$next = array();
+
+		foreach ( (array) $layout as $item ) {
+			if ( ! is_array( $item ) || empty( $item['type'] ) || empty( $item['id'] ) ) {
+				continue;
+			}
+
+			if ( 'format' === $item['type'] && (string) $item['id'] === (string) $format_id ) {
+				continue;
+			}
+
+			if ( 'format' !== $item['type'] && 'separator' !== $item['type'] ) {
+				continue;
+			}
+
+			if ( ! self::is_layout_id( (string) $item['id'] ) ) {
+				continue;
+			}
+
+			$next[] = array(
+				'type' => (string) $item['type'],
+				'id'   => (string) $item['id'],
+			);
+		}
+
+		return $next;
+	}
+
+	/**
+	 * Layout ids are the plugin's own row ids.
+	 *
+	 * @param string $id Row ID.
+	 * @return bool
+	 */
+	private static function is_layout_id( $id ) {
+		return 1 === preg_match( '/^[A-Za-z0-9-]{8,80}$/', (string) $id );
 	}
 
 	/**
@@ -569,7 +853,7 @@ final class APD_Formats {
 		$no_frame  = self::uses_painted_plate( $type ) && ! empty( $raw['no_frame'] );
 		$band_box  = array();
 
-		if ( self::is_fixed_euro( $type ) || self::is_english( $type ) || self::is_mini( $type ) ) {
+		if ( self::is_fixed_euro( $type ) || self::is_english( $type ) ) {
 			$no_frame = true;
 			$border   = 0;
 		}
@@ -728,6 +1012,7 @@ final class APD_Formats {
 			'font_ids'         => $font_ids,
 			'font_ids_all'     => $font_ids_all,
 			'wrap_text'        => self::is_street_plate( $type ) && ! empty( $raw['wrap_text'] ),
+			'initial_fill'     => self::offers_initial_fill( $type ) && ! empty( $raw['initial_fill'] ),
 			'price_adjustment' => round( $price, 2 ),
 		);
 
@@ -827,15 +1112,26 @@ final class APD_Formats {
 		}
 
 		if ( self::offers_digital_palette( $type ) ) {
-			$digital_id = isset( $raw['digital_palette_id'] ) ? sanitize_text_field( (string) $raw['digital_palette_id'] ) : '';
-			$digital    = '' !== $digital_id ? APD_Color_Palettes::get( $digital_id ) : null;
-			$row['digital_palette_id'] = ( is_array( $digital ) && ! empty( $digital['active'] ) ) ? $digital_id : '';
+			if ( array_key_exists( 'digital_palette_id', $raw ) ) {
+				$digital_id = sanitize_text_field( (string) $raw['digital_palette_id'] );
+				$digital    = '' !== $digital_id ? APD_Color_Palettes::get( $digital_id ) : null;
+				$row['digital_palette_id'] = ( is_array( $digital ) && ! empty( $digital['active'] ) ) ? $digital_id : '';
+			} else {
+				$stored = self::get( $id );
+				$kept   = is_array( $stored ) && isset( $stored['digital_palette_id'] ) ? sanitize_text_field( (string) $stored['digital_palette_id'] ) : '';
+				$digital = '' !== $kept ? APD_Color_Palettes::get( $kept ) : null;
+				$row['digital_palette_id'] = ( is_array( $digital ) && ! empty( $digital['active'] ) ) ? $kept : '';
+			}
+		}
+
+		if ( self::can_share_text_frame( $type ) ) {
+			$row['separate_text_frame'] = self::format_has_assigned_frame( $row ) && ! empty( $raw['separate_text_frame'] );
 		}
 
 		$palette_ids = APD_Color_Palettes::sanitize_product_ids( isset( $raw['palette_ids'] ) ? $raw['palette_ids'] : array(), $type );
 
 		if ( self::uses_palette_slots( $type ) && isset( $raw['palette_slots'] ) ) {
-			$palette_slots = self::sanitize_palette_slots( $raw['palette_slots'], $type );
+			$palette_slots = self::sanitize_palette_slots( $raw['palette_slots'], $type, ! empty( $row['separate_text_frame'] ) );
 
 			if ( is_wp_error( $palette_slots ) ) {
 				return $palette_slots;
@@ -846,8 +1142,87 @@ final class APD_Formats {
 		}
 
 		$row['palette_ids'] = $palette_ids;
+		$row                 = self::keep_hidden_frame_palette( $type, $id, $row );
+
+		if ( ! empty( $row['separate_text_frame'] ) && ! self::uses_palette_slots( $type ) && ! self::palette_ids_have_frame( $row['palette_ids'] ) ) {
+			return new WP_Error( 'apd_format_palette_slot', __( 'Choose a palette for the text, the plate, and the frame.', 'auto-plate-designer' ) );
+		}
 
 		return $row;
+	}
+
+	/**
+	 * A hidden frame palette stays on the format so it returns when the frame is turned back on.
+	 *
+	 * Disabled inputs are not posted. The text palette still paints the frame while one is assigned.
+	 *
+	 * @param string               $type Format type.
+	 * @param string               $id   Format id.
+	 * @param array<string, mixed> $row  Sanitized format.
+	 * @return array<string, mixed>
+	 */
+	private static function keep_hidden_frame_palette( $type, $id, array $row ) {
+		if ( ! self::can_share_text_frame( $type ) || '' === (string) $id || ! empty( $row['separate_text_frame'] ) ) {
+			return $row;
+		}
+
+		$existing = self::get( $id );
+
+		if ( ! is_array( $existing ) ) {
+			return $row;
+		}
+
+		if ( self::uses_palette_slots( $type ) && isset( $row['palette_slots'] ) && is_array( $row['palette_slots'] ) ) {
+			$border = isset( $existing['palette_slots']['border'] ) ? sanitize_text_field( (string) $existing['palette_slots']['border'] ) : '';
+
+			if ( '' !== $border && ( ! isset( $row['palette_slots']['border'] ) || '' === (string) $row['palette_slots']['border'] ) ) {
+				$row['palette_slots']['border'] = $border;
+
+				if ( ! in_array( $border, $row['palette_ids'], true ) ) {
+					$row['palette_ids'][] = $border;
+				}
+			}
+
+			return $row;
+		}
+
+		$kept = isset( $existing['palette_ids'] ) && is_array( $existing['palette_ids'] ) ? $existing['palette_ids'] : array();
+
+		foreach ( $kept as $old_id ) {
+			$old_id  = sanitize_text_field( (string) $old_id );
+			$palette = '' !== $old_id ? APD_Color_Palettes::get( $old_id ) : null;
+			$purpose = is_array( $palette ) && isset( $palette['purpose'] ) ? (string) $palette['purpose'] : '';
+
+			if ( in_array( $purpose, array( 'border', 'color_border' ), true ) && ! in_array( $old_id, $row['palette_ids'], true ) ) {
+				$row['palette_ids'][] = $old_id;
+			}
+		}
+
+		return $row;
+	}
+
+	/**
+	 * A saved palette list includes a frame palette.
+	 *
+	 * @param array<int, string> $ids Palette ids.
+	 * @return bool
+	 */
+	private static function palette_ids_have_frame( $ids ) {
+		if ( ! is_array( $ids ) ) {
+			return false;
+		}
+
+		foreach ( $ids as $old_id ) {
+			$old_id  = sanitize_text_field( (string) $old_id );
+			$palette = '' !== $old_id ? APD_Color_Palettes::get( $old_id ) : null;
+			$purpose = is_array( $palette ) && isset( $palette['purpose'] ) ? (string) $palette['purpose'] : '';
+
+			if ( in_array( $purpose, array( 'border', 'color_border' ), true ) ) {
+				return true;
+			}
+		}
+
+		return false;
 	}
 
 	/**
@@ -857,24 +1232,42 @@ final class APD_Formats {
 	 * @return bool
 	 */
 	public static function uses_palette_slots( $type ) {
-		return in_array( (string) $type, array( 'color', 'custom', 'eu_plain', 'moto_plain', 'moto_plain_240', 'suv', 'suv_340', 'atyp_300', 'us', 'uk', 'uk_plain' ), true );
+		return in_array( (string) $type, array( 'color', 'custom', 'eu_plain', 'moto_plain', 'moto_plain_240', 'suv', 'suv_340', 'atyp_300', 'us', 'uk', 'uk_plain', 'mini_plain', 'super_mini_plain' ), true );
+	}
+
+	/**
+	 * The format can let each product open on a plate color.
+	 *
+	 * French, Austrian, USA, and holder plates do not offer that color.
+	 *
+	 * @param string $type Format type.
+	 * @return bool
+	 */
+	public static function offers_initial_fill( $type ) {
+		return self::is_english( $type ) || self::can_share_text_frame( $type );
 	}
 
 	/**
 	 * Palette menus shown for a format type.
 	 *
+	 * A missing format, or a format without separate colors, keeps one palette for the letters and the frame.
 	 * USA plates are a graphic, so only the text color is chosen.
 	 *
-	 * @param string $type Format type.
+	 * @param string                    $type   Format type.
+	 * @param array<string, mixed>|null $format Format row. Null keeps the shared frame palette hidden.
 	 * @return array<int, string>
 	 */
-	public static function palette_slot_keys_for( $type ) {
+	public static function palette_slot_keys_for( $type, $format = null ) {
 		if ( 'us' === (string) $type ) {
 			return array( 'text' );
 		}
 
 		if ( self::is_english( $type ) ) {
 			return array( 'text', 'background', 'border', 'slogan' );
+		}
+
+		if ( self::can_share_text_frame( $type ) && ! self::format_splits_text_frame( $format ) ) {
+			return array( 'text', 'background' );
 		}
 
 		return self::palette_slot_keys();
@@ -908,13 +1301,21 @@ final class APD_Formats {
 	/**
 	 * One active palette for each shop row.
 	 *
-	 * @param mixed $raw Posted slot map.
+	 * @param mixed $raw      Posted slot map.
+	 * @param string $type     Format type.
+	 * @param bool   $separate True when this format stores a frame palette of its own.
 	 * @return array<string, string>|WP_Error
 	 */
-	public static function sanitize_palette_slots( $raw, $type = '' ) {
+	public static function sanitize_palette_slots( $raw, $type = '', $separate = false ) {
 		$clean = array();
+		$probe = $separate ? array(
+			'type'                 => (string) $type,
+			'separate_text_frame'  => true,
+			'no_frame'             => false,
+			'border_width'         => 1,
+		) : null;
 
-		foreach ( self::palette_slot_keys_for( $type ) as $slot ) {
+		foreach ( self::palette_slot_keys_for( $type, $probe ) as $slot ) {
 			$clean[ $slot ] = '';
 		}
 
@@ -932,6 +1333,8 @@ final class APD_Formats {
 				$message = __( 'Choose a palette for the text.', 'auto-plate-designer' );
 			} elseif ( self::is_english( $type ) ) {
 				$message = __( 'Choose a palette for the text, the plate, the frame, and the slogan.', 'auto-plate-designer' );
+			} elseif ( self::can_share_text_frame( $type ) && ! $separate ) {
+				$message = __( 'Choose a palette for the text and frame, and for the plate.', 'auto-plate-designer' );
 			} else {
 				$message = __( 'Choose a palette for the text, the plate, and the frame.', 'auto-plate-designer' );
 			}
@@ -1088,6 +1491,7 @@ final class APD_Formats {
 			case 'eu_300':
 			case 'uk':
 			case 'mini':
+			case 'super_mini':
 				$caps = array(
 					'painted'       => true,
 					'country_band'  => true,
@@ -1117,6 +1521,7 @@ final class APD_Formats {
 			case 'color':
 			case 'uk_plain':
 			case 'mini_plain':
+			case 'super_mini_plain':
 				$caps = array(
 					'painted'       => true,
 					'country_band'  => false,
@@ -1172,7 +1577,8 @@ final class APD_Formats {
 			'countryChoice' => self::offers_country_choice( $type ),
 			'baseImage'     => ! empty( $caps['base_image'] ),
 			'plateDesigns'  => ! empty( $caps['plate_designs'] ),
-			'twoRow'        => ! empty( $caps['two_row'] ),
+			'twoRow'          => ! empty( $caps['two_row'] ),
+			'sharesTextFrame' => self::can_share_text_frame( $type ),
 		);
 	}
 
@@ -1197,6 +1603,10 @@ final class APD_Formats {
 			case 'holder_moto':
 			case 'holder_d':
 				return 'holder';
+			case 'mini_plain':
+				return 'mini';
+			case 'super_mini_plain':
+				return 'super_mini';
 			default:
 				return (string) $type;
 		}
@@ -1266,7 +1676,7 @@ final class APD_Formats {
 	 * @return bool
 	 */
 	public static function letters_follow_count( $type ) {
-		return self::is_registration_plate( $type ) || self::is_mini( $type );
+		return self::is_registration_plate( $type ) || self::is_compact_plate( $type );
 	}
 
 	/**
@@ -1288,13 +1698,15 @@ final class APD_Formats {
 	}
 
 	/**
-	 * The product can offer Latin, Cyrillic, or both.
+	 * The product can offer Latin and Cyrillic.
+	 *
+	 * Holders can also offer one field that mixes both alphabets.
 	 *
 	 * @param string $type Format type.
 	 * @return bool
 	 */
 	public static function offers_script( $type ) {
-		return self::is_registration_plate( $type ) || 'color' === (string) $type || self::is_mini( $type );
+		return self::is_registration_plate( $type ) || 'color' === (string) $type || self::is_compact_plate( $type ) || self::is_holder( $type );
 	}
 
 	/**
@@ -1304,7 +1716,131 @@ final class APD_Formats {
 	 * @return bool
 	 */
 	public static function offers_digital_palette( $type ) {
-		return self::is_registration_plate( $type );
+		return self::is_registration_plate( $type ) || self::is_compact_plate( $type );
+	}
+
+	/**
+	 * Types whose text palette also paints the frame when this format has one.
+	 *
+	 * English, USA, French, Austrian, and holder plates stay out of this list.
+	 *
+	 * @param string $type Format type.
+	 * @return bool
+	 */
+	public static function can_share_text_frame( $type ) {
+		return in_array(
+			(string) $type,
+			array(
+				'eu',
+				'eu_plain',
+				'moto',
+				'moto_240',
+				'moto_plain',
+				'moto_plain_240',
+				'suv',
+				'suv_340',
+				'suv_eu',
+				'suv_eu_340',
+				'eu_300',
+				'atyp_300',
+				'custom',
+				'color',
+				'mini',
+				'mini_plain',
+				'super_mini',
+				'super_mini_plain',
+			),
+			true
+		);
+	}
+
+	/**
+	 * The format tab has a frame the shopper can see.
+	 *
+	 * @param array<string, mixed> $format Format row.
+	 * @return bool
+	 */
+	public static function format_has_assigned_frame( $format ) {
+		if ( ! is_array( $format ) ) {
+			return false;
+		}
+
+		$type = isset( $format['type'] ) ? (string) $format['type'] : '';
+
+		if ( '' === $type || ! self::uses_painted_plate( $type ) || ! empty( $format['no_frame'] ) ) {
+			return false;
+		}
+
+		return ( isset( $format['border_width'] ) ? (int) $format['border_width'] : 0 ) > 0;
+	}
+
+	/**
+	 * This format paints letters and frame from the text palette, including while the letters are embossed.
+	 *
+	 * Without a format row, the type is treated as sharing so the format tab hides the separate frame palette.
+	 *
+	 * @param string                    $type   Format type.
+	 * @param array<string, mixed>|null $format Format row. Null asks only whether the type can share.
+	 * @return bool
+	 */
+	public static function shares_text_frame_color( $type, $format = null ) {
+		if ( ! self::can_share_text_frame( $type ) ) {
+			return false;
+		}
+
+		if ( null === $format ) {
+			return true;
+		}
+
+		if ( self::format_splits_text_frame( $format ) ) {
+			return false;
+		}
+
+		return self::format_has_assigned_frame( $format );
+	}
+
+	/**
+	 * The format stores a frame palette of its own.
+	 *
+	 * A missing key stays shared. English, USA, French, Austrian, and holder plates ignore the flag.
+	 *
+	 * @param array<string, mixed>|null $format Format row.
+	 * @return bool
+	 */
+	public static function format_splits_text_frame( $format ) {
+		if ( ! is_array( $format ) || empty( $format['separate_text_frame'] ) ) {
+			return false;
+		}
+
+		$type = isset( $format['type'] ) ? (string) $format['type'] : '';
+
+		return self::can_share_text_frame( $type ) && self::format_has_assigned_frame( $format );
+	}
+
+	/**
+	 * The frame is painted with the letter color.
+	 *
+	 * Shared formats keep that color when the letters are embossed, digital, or Cyrillic.
+	 * A format with separate colors keeps the frame palette in every one of those states.
+	 *
+	 * @param string                    $type    Format type.
+	 * @param array<string, mixed>|null $format  Format row.
+	 * @param string                    $letters embossed|digital.
+	 * @return bool
+	 */
+	public static function frame_uses_text_color( $type, $format, $letters = '' ) {
+		if ( self::format_splits_text_frame( $format ) ) {
+			return false;
+		}
+
+		if ( self::shares_text_frame_color( $type, $format ) ) {
+			return true;
+		}
+
+		return 'digital' === (string) $letters
+			&& self::letters_follow_count( $type )
+			&& is_array( $format )
+			&& self::format_has_assigned_frame( $format );
 	}
 
 	/**
@@ -1314,7 +1850,7 @@ final class APD_Formats {
 	 * @return bool
 	 */
 	public static function offers_uncolored_frame( $type ) {
-		return self::is_registration_plate( $type ) || 'color' === (string) $type;
+		return self::is_registration_plate( $type ) || 'color' === (string) $type || self::is_compact_plate( $type );
 	}
 
 	/**
@@ -1375,14 +1911,19 @@ final class APD_Formats {
 	/**
 	 * Whether these letters are produced digitally.
 	 *
-	 * @param array<string, mixed> $format Format row.
-	 * @param string               $script latin|cyrillic|empty.
-	 * @param string               $text   Plate text.
+	 * @param array<string, mixed> $format       Format row.
+	 * @param string               $script       latin|cyrillic|empty.
+	 * @param string               $text         Plate text.
+	 * @param bool                 $digital_only Product has the digital badge and not the embossed badge.
 	 * @return bool
 	 */
-	public static function letters_are_digital( $format, $script, $text ) {
+	public static function letters_are_digital( $format, $script, $text, $digital_only = false ) {
 		$type = is_array( $format ) && isset( $format['type'] ) ? (string) $format['type'] : '';
 		$rule = self::letter_rule( $type );
+
+		if ( $digital_only && ( 'digital' === $rule || 'count' === $rule ) ) {
+			return true;
+		}
 
 		if ( 'digital' === $rule ) {
 			return true;
@@ -1799,6 +2340,8 @@ final class APD_Formats {
 			'uk_plain'        => __( 'Standard English plate without country preset', 'auto-plate-designer' ),
 			'mini'            => __( 'Mini plate 340×90 mm with country preset', 'auto-plate-designer' ),
 			'mini_plain'      => __( 'Mini plate 340×90 mm without country preset', 'auto-plate-designer' ),
+			'super_mini'      => __( 'Super mini plate 200×90 mm with country preset', 'auto-plate-designer' ),
+			'super_mini_plain' => __( 'Super mini plate 200×90 mm without country preset', 'auto-plate-designer' ),
 			'custom'     => __( 'Street plate', 'auto-plate-designer' ),
 			'color'      => __( 'Color plate', 'auto-plate-designer' ),
 			'holder'      => __( 'Car plate holders', 'auto-plate-designer' ),
@@ -1831,6 +2374,18 @@ final class APD_Formats {
 		$caps = self::type_capabilities( $type );
 
 		return ! empty( $caps['painted'] );
+	}
+
+	/**
+	 * Outer corner of a painted plate, in millimetres. The shop canvas uses the same circle.
+	 *
+	 * @param int|float $height Plate height in millimetres.
+	 * @return float
+	 */
+	public static function plate_corner_radius_mm( $height ) {
+		$height = max( 1, (float) $height );
+
+		return min( 10.0, $height * 0.12 );
 	}
 
 	/**
@@ -1911,6 +2466,16 @@ final class APD_Formats {
 	 */
 	public static function is_mini( $type ) {
 		return in_array( (string) $type, array( 'mini', 'mini_plain' ), true );
+	}
+
+	/**
+	 * Mini or super mini plate: one line, no slogan, legal motorcycle letters.
+	 *
+	 * @param string $type Format type.
+	 * @return bool
+	 */
+	public static function is_compact_plate( $type ) {
+		return self::is_mini( $type ) || in_array( (string) $type, array( 'super_mini', 'super_mini_plain' ), true );
 	}
 
 	/**
@@ -2439,6 +3004,10 @@ final class APD_Formats {
 			return 'GUNTHER';
 		}
 
+		if ( self::is_compact_plate( $type ) ) {
+			return 'FDN';
+		}
+
 		if ( self::uses_painted_plate( $type ) ) {
 			return 'CA 0909 BX';
 		}
@@ -2471,6 +3040,10 @@ final class APD_Formats {
 
 		if ( self::is_mini( $type ) ) {
 			return 'GUNTHER';
+		}
+
+		if ( self::is_compact_plate( $type ) ) {
+			return 'FDN';
 		}
 
 		if ( self::uses_painted_plate( $type ) || self::uses_two_rows( $type ) ) {
@@ -2555,6 +3128,12 @@ final class APD_Formats {
 			case 'mini_plain':
 				return array(
 					'width'  => 340,
+					'height' => 90,
+				);
+			case 'super_mini':
+			case 'super_mini_plain':
+				return array(
+					'width'  => 200,
 					'height' => 90,
 				);
 			case 'holder':
@@ -2988,7 +3567,9 @@ final class APD_Formats {
 				return array( 'text', 'border', 'background', 'slogan' );
 			case 'mini':
 			case 'mini_plain':
-				return array();
+			case 'super_mini':
+			case 'super_mini_plain':
+				return array( 'text', 'border', 'background' );
 			case 'eu':
 			case 'moto':
 			case 'moto_240':
@@ -3348,6 +3929,7 @@ final class APD_Formats {
 					'valign' => 'middle',
 				);
 			case 'mini':
+			case 'super_mini':
 				return array(
 					'x'      => 18.0,
 					'y'      => 12.0,
@@ -3357,6 +3939,7 @@ final class APD_Formats {
 					'valign' => 'middle',
 				);
 			case 'mini_plain':
+			case 'super_mini_plain':
 				return array(
 					'x'      => 6.0,
 					'y'      => 12.0,
@@ -4133,6 +4716,140 @@ final class APD_Formats {
 	}
 
 	/**
+	 * Active presets this format offers, in the saved preset order.
+	 *
+	 * A selected list narrows the offer. An empty narrow list keeps every
+	 * active preset, which is how a format saved before that choice behaves.
+	 * The format default is not moved to the front; the shop selects it
+	 * separately when the page opens.
+	 *
+	 * @param array<string, mixed> $format Format row.
+	 * @return array<int, array<string, mixed>>
+	 */
+	public static function offered_presets( $format ) {
+		$presets = array();
+
+		if ( ! is_array( $format ) ) {
+			return $presets;
+		}
+
+		$type        = isset( $format['type'] ) ? (string) $format['type'] : '';
+		$locked_code = self::locked_country_code( $type );
+
+		if ( ! self::uses_country_band( $type ) ) {
+			return $presets;
+		}
+
+		foreach ( APD_Presets::active_for_format( $type ) as $preset ) {
+			$code = isset( $preset['country_code'] ) ? (string) $preset['country_code'] : '';
+
+			if ( '' !== $locked_code && ! self::preset_matches_country( $code, $locked_code ) ) {
+				continue;
+			}
+
+			$preset_image = isset( $preset['image_id'] ) ? wp_get_attachment_image_url( absint( $preset['image_id'] ), 'full' ) : '';
+			$presets[]    = array(
+				'id'           => $preset['id'],
+				'name'         => $preset['name'],
+				'country_code' => $preset['country_code'],
+				'image_url'    => $preset_image ? $preset_image : '',
+				'side'         => $preset['side'],
+				'band_ratio'   => (float) $preset['band_ratio'],
+			);
+		}
+
+		if ( self::offers_country_choice( $type ) && isset( $format['preset_mode'] ) && 'selected' === $format['preset_mode'] && ! empty( $format['preset_ids'] ) && is_array( $format['preset_ids'] ) ) {
+			$allowed = array_fill_keys( array_map( 'strval', $format['preset_ids'] ), true );
+			$narrow  = array();
+
+			foreach ( $presets as $preset ) {
+				if ( isset( $allowed[ (string) $preset['id'] ] ) ) {
+					$narrow[] = $preset;
+				}
+			}
+
+			if ( ! empty( $narrow ) ) {
+				$presets = $narrow;
+			}
+		}
+
+		return $presets;
+	}
+
+	/**
+	 * Preset selected when a product page opens.
+	 *
+	 * The preferred id wins when it is in the offered list. Otherwise the
+	 * first preset in the saved order is used. The list order is unchanged.
+	 *
+	 * @param array<int, array<string, mixed>> $presets   Offered presets.
+	 * @param string                            $preferred Product or format preset id.
+	 * @return string
+	 */
+	public static function opening_preset_id( $presets, $preferred ) {
+		$preferred = (string) $preferred;
+		$first     = '';
+
+		if ( ! is_array( $presets ) ) {
+			return '';
+		}
+
+		foreach ( $presets as $preset ) {
+			if ( ! is_array( $preset ) || ! isset( $preset['id'] ) ) {
+				continue;
+			}
+
+			$id = (string) $preset['id'];
+
+			if ( '' === $first ) {
+				$first = $id;
+			}
+
+			if ( '' !== $preferred && $id === $preferred ) {
+				return $id;
+			}
+		}
+
+		return $first;
+	}
+
+	/**
+	 * Copy a preset list with the format default first.
+	 *
+	 * Cart offers stored this order before the shop list followed the saved
+	 * preset order. The fingerprint keeps it so an unchanged catalog does
+	 * not drop plates already in the cart. The shop list does not use this.
+	 *
+	 * @param array<int, array<string, mixed>> $presets    Preset rows.
+	 * @param string                            $default_id Format default preset id.
+	 * @return array<int, array<string, mixed>>
+	 */
+	public static function presets_with_default_first( $presets, $default_id ) {
+		$default_id = (string) $default_id;
+
+		if ( ! is_array( $presets ) || '' === $default_id || count( $presets ) < 2 ) {
+			return is_array( $presets ) ? $presets : array();
+		}
+
+		$lead = array();
+		$tail = array();
+
+		foreach ( $presets as $preset ) {
+			if ( is_array( $preset ) && isset( $preset['id'] ) && (string) $preset['id'] === $default_id ) {
+				$lead[] = $preset;
+			} else {
+				$tail[] = $preset;
+			}
+		}
+
+		if ( empty( $lead ) ) {
+			return $presets;
+		}
+
+		return array_merge( $lead, $tail );
+	}
+
+	/**
 	 * JSON-safe payload for the product-page configurator.
 	 *
 	 * @param array<string, mixed> $format Format row.
@@ -4200,62 +4917,7 @@ final class APD_Formats {
 			$image_url = self::bundled_holder_image_url( $type );
 		}
 
-		$presets     = array();
-		$locked_code = self::locked_country_code( $type );
-
-		if ( self::uses_country_band( $type ) ) {
-			foreach ( APD_Presets::active_for_format( $type ) as $preset ) {
-				$code = isset( $preset['country_code'] ) ? (string) $preset['country_code'] : '';
-
-				if ( '' !== $locked_code && ! self::preset_matches_country( $code, $locked_code ) ) {
-					continue;
-				}
-
-				$preset_image = isset( $preset['image_id'] ) ? wp_get_attachment_image_url( absint( $preset['image_id'] ), 'full' ) : '';
-				$presets[]    = array(
-					'id'           => $preset['id'],
-					'name'         => $preset['name'],
-					'country_code' => $preset['country_code'],
-					'image_url'    => $preset_image ? $preset_image : '',
-					'side'         => $preset['side'],
-					'band_ratio'   => (float) $preset['band_ratio'],
-				);
-			}
-
-			if ( self::offers_country_choice( $type ) && isset( $format['preset_mode'] ) && 'selected' === $format['preset_mode'] && ! empty( $format['preset_ids'] ) && is_array( $format['preset_ids'] ) ) {
-				$allowed = array_fill_keys( array_map( 'strval', $format['preset_ids'] ), true );
-				$narrow  = array();
-
-				foreach ( $presets as $preset ) {
-					if ( isset( $allowed[ (string) $preset['id'] ] ) ) {
-						$narrow[] = $preset;
-					}
-				}
-
-				if ( ! empty( $narrow ) ) {
-					$presets = $narrow;
-				}
-			}
-
-			$default_preset = isset( $format['default_preset_id'] ) ? (string) $format['default_preset_id'] : '';
-
-			if ( '' !== $default_preset && count( $presets ) > 1 ) {
-				$lead = array();
-				$tail = array();
-
-				foreach ( $presets as $preset ) {
-					if ( (string) $preset['id'] === $default_preset ) {
-						$lead[] = $preset;
-					} else {
-						$tail[] = $preset;
-					}
-				}
-
-				if ( ! empty( $lead ) ) {
-					$presets = array_merge( $lead, $tail );
-				}
-			}
-		}
+		$presets = self::offered_presets( $format );
 
 		$designs = array();
 
@@ -4368,6 +5030,7 @@ final class APD_Formats {
 			'text_box'         => $text_left,
 			'fonts'            => $fonts,
 			'presets'          => $presets,
+			'default_preset_id' => isset( $format['default_preset_id'] ) ? (string) $format['default_preset_id'] : '',
 			'designs'          => $designs,
 			'capabilities'     => $capabilities,
 			'allow_empty'      => true,
@@ -4375,6 +5038,8 @@ final class APD_Formats {
 			'wrap_text'        => self::is_street_plate( $type ) && ! empty( $format['wrap_text'] ),
 			'max_lines'        => self::wrap_line_limit(),
 			'letter_rule'      => self::letter_rule( $type ),
+			'shares_text_frame'   => self::shares_text_frame_color( $type, $format ),
+			'separate_text_frame' => self::format_splits_text_frame( $format ),
 			'embossed_chars'   => $embossed_limits[0],
 			'embossed_rows'    => $embossed_limits,
 			'digital_colors'   => $digital_colors,

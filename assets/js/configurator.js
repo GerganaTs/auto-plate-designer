@@ -14,6 +14,7 @@
 	var imageCache = {};
 	var previewChromeTop = null;
 	var previewStageFrame = 0;
+	var paintCartEdit = function () {};
 
 	function ready(fn) {
 		if (document.readyState === 'loading') {
@@ -49,7 +50,7 @@
 		if (caps) {
 			return !!caps.country_band;
 		}
-		return type === 'eu' || type === 'moto' || type === 'moto_240' || type === 'suv_eu' || type === 'suv_eu_340';
+		return type === 'eu' || type === 'moto' || type === 'moto_240' || type === 'suv_eu' || type === 'suv_eu_340' || type === 'mini' || type === 'super_mini';
 	}
 
 	function usesPaintedPlate(type) {
@@ -162,6 +163,44 @@
 		return drawingFont(matched || fonts[0]);
 	}
 
+	function currentSloganFont(root) {
+		var fonts = cfg.format.fonts || [];
+		var input = root.querySelector('[name="apd_slogan_font_id"]');
+		if (!input || !fonts.length) {
+			return currentFont(root);
+		}
+		var id = input.value;
+		var i;
+		for (i = 0; i < fonts.length; i += 1) {
+			if (fonts[i].id === id) {
+				return drawingFont(fonts[i]);
+			}
+		}
+		return currentFont(root);
+	}
+
+	function sloganFace(font, size) {
+		var family = font && font.family ? font.family : 'sans-serif';
+		var weight = font && font.weight ? font.weight : 400;
+		var style = font && font.style === 'italic' ? 'italic' : 'normal';
+		return style + ' ' + weight + ' ' + size + 'px "' + family + '", sans-serif';
+	}
+
+	function currentCyrFont(root) {
+		var fonts = cfg.format.fonts || [];
+		var input = root.querySelector('[name="apd_font_id_cyr"]');
+		var id = input && !input.disabled ? input.value : '';
+		var i;
+		var matched = null;
+		for (i = 0; i < fonts.length; i += 1) {
+			if (fonts[i].id === id) {
+				matched = fonts[i];
+				break;
+			}
+		}
+		return drawingFont(matched || fonts[0]);
+	}
+
 	function faceFamily(font) {
 		var name = font && font.family ? String(font.family) : 'sans-serif';
 		var id = font && font.id ? String(font.id) : '';
@@ -248,7 +287,8 @@
 
 	function scheduleDraw(root, cache, keepStage) {
 		var font = currentFont(root);
-		ensureFontLoaded(font).then(function () {
+		var sloganFont = currentSloganFont(root);
+		Promise.all([ensureFontLoaded(font), ensureFontLoaded(sloganFont)]).then(function () {
 			draw(root, cache, keepStage);
 		});
 	}
@@ -322,6 +362,16 @@
 		return picked && picked.value ? picked.value : 'latin';
 	}
 
+	function scriptGuardsText() {
+		if (!cfg.format || !cfg.scripts || !cfg.scripts.length) {
+			return false;
+		}
+		if (currentScript() === 'combined') {
+			return false;
+		}
+		return !!(cfg.format.letter_rule || isHolderFamily(cfg.format.type));
+	}
+
 	function currentPlateText() {
 		var input = document.querySelector('[name="apd_text"]');
 		return input ? input.value : '';
@@ -329,6 +379,9 @@
 
 	function letterMode(text) {
 		var rule = cfg.format && cfg.format.letter_rule ? cfg.format.letter_rule : '';
+		if (cfg.digital_only && (rule === 'digital' || rule === 'count')) {
+			return 'digital';
+		}
 		if (rule === 'digital') {
 			return 'digital';
 		}
@@ -351,7 +404,7 @@
 	}
 
 	function scriptRejected(text) {
-		if (!cfg.format || !cfg.format.letter_rule || !cfg.scripts || !cfg.scripts.length) {
+		if (!scriptGuardsText()) {
 			return false;
 		}
 		var value = String(text || '').replace(/[\r\n]/g, '');
@@ -362,6 +415,19 @@
 			return /[A-Za-z\u00C0-\u024F]/.test(value);
 		}
 		return /[\u0400-\u04FF]/.test(value);
+	}
+
+	function plateTextMismatchesScript(root) {
+		if (!root || !cfg.scripts || cfg.scripts.length < 2) {
+			return false;
+		}
+		var mismatched = false;
+		root.querySelectorAll('[name="apd_text"], [data-apd-plate-row]').forEach(function (input) {
+			if (input && input.type !== 'hidden' && scriptRejected(input.value)) {
+				mismatched = true;
+			}
+		});
+		return mismatched;
 	}
 
 	function scriptPlateText(text) {
@@ -376,7 +442,7 @@
 	}
 
 	function stripWrongScript(input) {
-		if (!input || input.type === 'hidden' || !cfg.format || !cfg.format.letter_rule || !cfg.scripts || !cfg.scripts.length) {
+		if (!input || input.type === 'hidden' || !scriptGuardsText()) {
 			return false;
 		}
 		var value = String(input.value || '');
@@ -404,12 +470,10 @@
 		return node.type === 'checkbox';
 	}
 
-	function syncFonts() {
-		var select = document.querySelector('#apd_font_id');
-		if (!select) {
+	function syncFontSelect(select, script) {
+		if (!select || select.tagName !== 'SELECT') {
 			return;
 		}
-		var script = currentScript();
 		var first = null;
 		Array.prototype.forEach.call(select.options, function (option) {
 			var allow = option.getAttribute('data-apd-font-for');
@@ -425,11 +489,76 @@
 		}
 	}
 
+	function syncFonts() {
+		var script = currentScript();
+		var combined = script === 'combined';
+		var cyrWrap = document.querySelector('[data-apd-font-cyr]');
+		if (cyrWrap) {
+			cyrWrap.hidden = !combined;
+			cyrWrap.querySelectorAll('select, input').forEach(function (field) {
+				field.disabled = !combined;
+			});
+		}
+		document.querySelectorAll('[data-apd-font-single]').forEach(function (label) {
+			label.hidden = combined;
+		});
+		document.querySelectorAll('[data-apd-font-latin]').forEach(function (label) {
+			label.hidden = !combined;
+		});
+		syncFontSelect(document.querySelector('#apd_font_id'), combined ? 'latin' : script);
+		syncFontSelect(document.querySelector('#apd_font_id_cyr'), 'cyrillic');
+	}
+
+	function cartEditSignature(root) {
+		var parts = [];
+		root.querySelectorAll('input, select, textarea').forEach(function (field) {
+			if (!field.name || field.disabled) {
+				return;
+			}
+			if (field.name === 'apd_nonce' || field.name === 'apd_preview' || field.name === 'apd_cart_item' || field.name === 'apd_legacy_no_frame') {
+				return;
+			}
+			if ((field.type === 'checkbox' || field.type === 'radio') && !field.checked) {
+				return;
+			}
+			parts.push(field.name + '=' + field.value);
+		});
+		parts.sort();
+		return parts.join('\n');
+	}
+
+	function syncCartEditButton(button, saved, current) {
+		if (!button) {
+			return;
+		}
+		var dirty = current !== saved;
+		var backLabel = (cfg.i18n && cfg.i18n.backToCart) || 'Back to cart';
+		var refreshLabel = (cfg.i18n && cfg.i18n.refreshCart) || 'Refresh the cart';
+		button.textContent = dirty ? refreshLabel : backLabel;
+		if (dirty) {
+			button.type = 'submit';
+			button.removeAttribute('data-apd-cart-back');
+			return;
+		}
+		button.type = 'button';
+		button.setAttribute('data-apd-cart-back', '1');
+		button.disabled = false;
+	}
+
+	function inkIsShared(rule, mode) {
+		if (cfg.format && cfg.format.separate_text_frame) {
+			return false;
+		}
+		var framed = !(cfg.format && cfg.format.no_frame);
+		return !!(cfg.format && cfg.format.shares_text_frame) || (framed && rule === 'count' && mode === 'digital');
+	}
+
 	function syncLetterChrome() {
+		paintCartEdit();
 		var text = currentPlateText();
 		var mode = letterMode(text);
 		var rule = cfg.format && cfg.format.letter_rule ? cfg.format.letter_rule : '';
-		var shared = rule === 'count' && mode === 'digital';
+		var shared = inkIsShared(rule, mode);
 		var digital = document.querySelector('[data-apd-digital-colors]');
 		var textColors = document.querySelector('[data-apd-text-colors]');
 		var plain = document.querySelector('[data-apd-frame-plain]');
@@ -455,7 +584,7 @@
 			}
 		}
 		if (plainWrap) {
-			var allowPlain = rule === 'digital' || mode === 'embossed' || currentScript() === 'cyrillic';
+			var allowPlain = rule === 'digital' || mode === 'embossed' || mode === 'digital' || currentScript() === 'cyrillic';
 			plainWrap.hidden = !allowPlain;
 			if (!allowPlain && plain) {
 				plain.checked = false;
@@ -472,10 +601,14 @@
 		}
 		if (note) {
 			var message = '';
-			var mini = cfg.format && (cfg.format.type === 'mini' || cfg.format.type === 'mini_plain');
+			var compact = isCompactPlate();
 			var digitalLetters = rule === 'digital' || (rule === 'count' && mode === 'digital');
-			if (digitalLetters && mini) {
+			if (cfg.digital_only) {
+				message = '';
+			} else if (digitalLetters && compact && !compactHasFrame()) {
 				message = (cfg.i18n && cfg.i18n.miniDigital) || '';
+			} else if (rule === 'digital') {
+				message = (cfg.i18n && cfg.i18n.colorNotice) || '';
 			} else if (digitalLetters && currentScript() === 'cyrillic') {
 				message = (cfg.i18n && cfg.i18n.cyrillicNotice) || '';
 			} else if (digitalLetters) {
@@ -535,26 +668,72 @@
 		return Math.min(10, h * 0.12);
 	}
 
+	function insetCornerRadius(h, fromEdge) {
+		return Math.max(0, plateCornerRadius(h) - Math.max(0, fromEdge));
+	}
+
+	function cornerRadiusCss(horizontal, vertical) {
+		if (!(horizontal > 0) && !(vertical > 0)) {
+			return '0';
+		}
+		if (Math.abs(horizontal - vertical) < 0.05) {
+			return horizontal + 'px';
+		}
+		return horizontal + 'px ' + vertical + 'px';
+	}
+
+	function bandCornerRadius(h, sideInset, edgeInset) {
+		return insetCornerRadius(h, Math.max(sideInset, edgeInset));
+	}
+
 	function paintAdminFrame(ctx, w, h) {
 		var border = frameThickness();
-		if (border <= 0) {
+		if (border <= 0 || !(w > 0) || !(h > 0)) {
 			return;
 		}
-		var radius = plateCornerRadius(h);
-		ctx.lineWidth = border;
 		var stroke = colorValue('apd_border_color');
 		var rule = cfg.format && cfg.format.letter_rule ? cfg.format.letter_rule : '';
 		var mode = letterMode(currentPlateText());
 		var plain = document.querySelector('[data-apd-frame-plain]');
 		var plainWrap = plain ? plain.closest('[data-apd-plain-frame]') : null;
+		var sharedFrame = inkIsShared(rule, mode);
 		if (plain && plain.checked && plainWrap && !plainWrap.hidden) {
 			stroke = colorValue('apd_background_color');
-		} else if (rule === 'count' && mode === 'digital') {
+		} else if (sharedFrame && !cfg.lock_colors) {
 			stroke = colorValue('apd_text_color');
 		}
-		ctx.strokeStyle = stroke;
-		roundRect(ctx, border / 2, border / 2, w - border, h - border, radius);
-		ctx.stroke();
+		var holeW = w - border * 2;
+		var holeH = h - border * 2;
+		ctx.save();
+		ctx.beginPath();
+		addRoundRect(ctx, 0, 0, w, h, plateCornerRadius(h));
+		if (holeW > 0 && holeH > 0) {
+			addRoundRect(ctx, border, border, holeW, holeH, insetCornerRadius(h, border));
+		}
+		ctx.fillStyle = stroke;
+		ctx.fill('evenodd');
+		ctx.restore();
+	}
+
+	// A short saved band leaves white plate under the blue. The standard
+	// 520×110 band already fills the frame, so this only lengthens the others.
+	function extendEuroBand(band, plateH) {
+		if (!band || !(plateH > 0)) {
+			return band;
+		}
+		var thick = frameThickness();
+		var top = thick;
+		var bottom = plateH - thick;
+		if (band.y <= top + 0.5 && band.y + band.height >= bottom - 0.5) {
+			return band;
+		}
+		return {
+			x: band.x,
+			y: top,
+			width: band.width,
+			height: Math.max(0, bottom - top),
+			side: band.side
+		};
 	}
 
 	function placeBandInsideFrame(band, w, h) {
@@ -609,12 +788,15 @@
 		img.style.height = (band.height / h * 100) + '%';
 		var frameEl = canvas.parentElement;
 		var scale = frameEl && frameEl.clientHeight ? frameEl.clientHeight / h : 1;
-		var rpx = plateCornerRadius(h) * scale;
 		var left = band.side !== 'right';
-		img.style.borderTopLeftRadius = left ? rpx + 'px' : '0';
-		img.style.borderBottomLeftRadius = left ? rpx + 'px' : '0';
-		img.style.borderTopRightRadius = left ? '0' : rpx + 'px';
-		img.style.borderBottomRightRadius = left ? '0' : rpx + 'px';
+		var sideInset = left ? band.x : Math.max(0, w - (band.x + band.width));
+		var sidePx = insetCornerRadius(h, sideInset) * scale;
+		var topPx = insetCornerRadius(h, band.y) * scale;
+		var bottomPx = insetCornerRadius(h, h - (band.y + band.height)) * scale;
+		img.style.borderTopLeftRadius = left ? cornerRadiusCss(sidePx, topPx) : '0';
+		img.style.borderBottomLeftRadius = left ? cornerRadiusCss(sidePx, bottomPx) : '0';
+		img.style.borderTopRightRadius = left ? '0' : cornerRadiusCss(sidePx, topPx);
+		img.style.borderBottomRightRadius = left ? '0' : cornerRadiusCss(sidePx, bottomPx);
 	}
 
 	function hoistPreview(root) {
@@ -736,12 +918,12 @@
 		var plate = getCanvas();
 		var thumb = root.querySelector('[data-apd-country-thumb]');
 		var wrap = root.querySelector('.apd-country-current');
-		if (wrap) {
-			wrap.querySelectorAll('canvas.apd-country-thumb').forEach(function (node) {
-				node.remove();
-			});
-		}
 		if (!plate || !thumb || !band) {
+			if (wrap) {
+				wrap.querySelectorAll('canvas.apd-country-thumb').forEach(function (node) {
+					node.remove();
+				});
+			}
 			return;
 		}
 		var cssH = plate.clientHeight;
@@ -754,24 +936,106 @@
 		if (cssH < 8) {
 			return;
 		}
-		thumb.hidden = false;
 		thumb.style.width = 'auto';
 		thumb.style.height = cssH + 'px';
 		if (wrap) {
 			wrap.style.setProperty('--apd-band-w', cssW + 'px');
 			wrap.style.setProperty('--apd-band-h', cssH + 'px');
 		}
+		var url = thumb.getAttribute('src') || '';
+		var cached = url && imageCache[url] && imageCache[url].naturalWidth ? imageCache[url] : null;
+		var canvas = wrap ? wrap.querySelector('canvas.apd-country-thumb') : null;
+		if (!cached) {
+			if (canvas) {
+				canvas.remove();
+			}
+			thumb.hidden = false;
+			return;
+		}
+		if (!canvas) {
+			canvas = document.createElement('canvas');
+			canvas.className = 'apd-country-thumb';
+			canvas.setAttribute('aria-hidden', 'true');
+			thumb.parentNode.insertBefore(canvas, thumb);
+		}
+		var dpr = window.devicePixelRatio || 1;
+		if (dpr < 2) {
+			dpr = 2;
+		}
+		canvas.width = Math.max(1, Math.round(cssW * dpr));
+		canvas.height = Math.max(1, Math.round(cssH * dpr));
+		canvas.style.width = cssW + 'px';
+		canvas.style.height = cssH + 'px';
+		var thumbCtx = canvas.getContext('2d');
+		thumbCtx.setTransform(canvas.width / cssW, 0, 0, canvas.height / cssH, 0, 0);
+		thumbCtx.imageSmoothingEnabled = true;
+		if ('imageSmoothingQuality' in thumbCtx) {
+			thumbCtx.imageSmoothingQuality = 'high';
+		}
+		thumbCtx.clearRect(0, 0, cssW, cssH);
+		thumbCtx.fillStyle = '#003399';
+		thumbCtx.fillRect(0, 0, cssW, cssH);
+		drawEuroBand(thumbCtx, cached, 0, 0, cssW, cssH);
+		thumb.hidden = true;
 	}
 
-	function roundRect(ctx, x, y, w, h, r) {
-		var radius = Math.min(r, w / 2, h / 2);
-		ctx.beginPath();
+	function paintCountryOptions(root) {
+		if (!root) {
+			return;
+		}
+		root.querySelectorAll('.apd-country-option img').forEach(function (imgEl) {
+			if (imgEl.dataset.apdClean === '1') {
+				return;
+			}
+			var url = imgEl.getAttribute('src') || '';
+			var cached = url && imageCache[url] && imageCache[url].naturalWidth ? imageCache[url] : null;
+			if (!cached) {
+				return;
+			}
+			var cssH = imgEl.clientHeight;
+			var cssW = imgEl.clientWidth;
+			if (cssH < 8 || cssW < 4) {
+				return;
+			}
+			var canvas = imgEl.parentNode.querySelector('canvas.apd-country-thumb');
+			if (!canvas) {
+				canvas = document.createElement('canvas');
+				canvas.className = 'apd-country-thumb';
+				canvas.setAttribute('aria-hidden', 'true');
+				imgEl.parentNode.insertBefore(canvas, imgEl);
+			}
+			var dpr = window.devicePixelRatio || 1;
+			if (dpr < 2) {
+				dpr = 2;
+			}
+			canvas.width = Math.max(1, Math.round(cssW * dpr));
+			canvas.height = Math.max(1, Math.round(cssH * dpr));
+			canvas.style.width = cssW + 'px';
+			canvas.style.height = cssH + 'px';
+			var optionCtx = canvas.getContext('2d');
+			optionCtx.setTransform(canvas.width / cssW, 0, 0, canvas.height / cssH, 0, 0);
+			optionCtx.clearRect(0, 0, cssW, cssH);
+			optionCtx.fillStyle = '#003399';
+			optionCtx.fillRect(0, 0, cssW, cssH);
+			drawEuroBand(optionCtx, cached, 0, 0, cssW, cssH);
+			imgEl.dataset.apdClean = '1';
+			imgEl.hidden = true;
+		});
+	}
+
+	function addRoundRect(ctx, x, y, w, h, r) {
+		var radius = Math.max(0, Math.min(r, Math.abs(w) / 2, Math.abs(h) / 2));
 		ctx.moveTo(x + radius, y);
 		ctx.arcTo(x + w, y, x + w, y + h, radius);
 		ctx.arcTo(x + w, y + h, x, y + h, radius);
 		ctx.arcTo(x, y + h, x, y, radius);
 		ctx.arcTo(x, y, x + w, y, radius);
 		ctx.closePath();
+	}
+
+	function roundRect(ctx, x, y, w, h, r) {
+		ctx.beginPath();
+		addRoundRect(ctx, x, y, w, h, r);
 	}
 
 	function measureInk(ctx, text, size) {
@@ -1112,6 +1376,46 @@
 			width: bandW,
 			height: h,
 			side: side
+		};
+	}
+
+	// A single preset has no country picker. Widen its band until the preset
+	// graphic fills the band height, the same fit the standard EU plate uses.
+	// A 300×150 plate stops at the shop SUV band. The 340×200 SUV plates draw
+	// a 63.3 mm strip; fitting this preset to the full 150 mm height is wider.
+	function fitSinglePresetBand(band, plateW) {
+		var presets = (cfg.format && cfg.format.presets) || [];
+		if (!band || presets.length !== 1 || !(band.height > 0) || !(plateW > 0)) {
+			return band;
+		}
+		var preset = presets[0];
+		var url = preset && preset.image_url ? preset.image_url : '';
+		var img = url && imageCache[url] ? imageCache[url] : null;
+		var sw = img && (img.naturalWidth || img.width);
+		var sh = img && (img.naturalHeight || img.height);
+		if (!(sw > 0) || !(sh > 0)) {
+			return band;
+		}
+		var needed = band.height * (sw / sh);
+		if (!(needed > band.width + 0.5)) {
+			return band;
+		}
+		var thick = frameThickness();
+		var room = band.side === 'right' ? (band.x + band.width) - thick : (plateW - thick) - band.x;
+		var cap = plateW * 0.25;
+		if (cfg.format && cfg.format.type === 'eu_300') {
+			cap = Math.min(cap, 63.3);
+		}
+		var width = Math.min(cap, room, needed);
+		if (!(width > band.width + 0.5)) {
+			return band;
+		}
+		return {
+			x: band.side === 'right' ? (band.x + band.width - width) : band.x,
+			y: band.y,
+			width: width,
+			height: band.height,
+			side: band.side
 		};
 	}
 
@@ -1781,7 +2085,7 @@
 
 	function lockedBand(format, w, h) {
 		var preset = currentPreset();
-		return placeBandInsideFrame(resolveBand(format, preset, w, h), w, h);
+		return fitSinglePresetBand(placeBandInsideFrame(resolveBand(format, preset, w, h), w, h), w);
 	}
 
 	function paintLockedBand(ctx, canvas, band, w, h, code) {
@@ -1794,11 +2098,11 @@
 			ctx.save();
 			roundRect(ctx, 0, 0, w, h, radius);
 			ctx.clip();
-			clipCountryBand(ctx, band, h);
+			clipCountryBand(ctx, band, h, w);
 			ctx.fillStyle = '#003399';
 			ctx.fillRect(band.x, band.y, band.width, band.height);
 			if (img) {
-				drawImageCover(ctx, img, band.x, band.y, band.width, band.height);
+				drawEuroBand(ctx, img, band.x, band.y, band.width, band.height);
 			} else {
 				ctx.fillStyle = '#ffffff';
 				ctx.textAlign = 'center';
@@ -1827,7 +2131,7 @@
 		ctx.save();
 		roundRect(ctx, 0, 0, w, h, radius);
 		ctx.clip();
-		clipCountryBand(ctx, band, h);
+		clipCountryBand(ctx, band, h, w);
 		ctx.fillStyle = '#003399';
 		ctx.fillRect(band.x, band.y, band.width, band.height);
 		ctx.restore();
@@ -2361,12 +2665,6 @@
 		}
 		ctx.restore();
 		paintLockedBand(ctx, canvas, band, w, h, format.at_mark || 'A');
-		ctx.save();
-		ctx.strokeStyle = '#111111';
-		ctx.lineWidth = 1.4;
-		roundRect(ctx, 0.7, 0.7, Math.max(1, w - 1.4), Math.max(1, h - 1.4), radius);
-		ctx.stroke();
-		ctx.restore();
 	}
 
 	function paintOpenBand(ctx, canvas, band, w, h) {
@@ -2381,11 +2679,11 @@
 		ctx.save();
 		roundRect(ctx, 0, 0, w, h, radius);
 		ctx.clip();
-		clipCountryBand(ctx, band, h);
+		clipCountryBand(ctx, band, h, w);
 		ctx.fillStyle = '#003399';
 		ctx.fillRect(band.x, band.y, band.width, band.height);
 		if (img) {
-			drawImageCover(ctx, img, band.x, band.y, band.width, band.height);
+			drawEuroBand(ctx, img, band.x, band.y, band.width, band.height);
 		} else if (preset && preset.country_code) {
 			ctx.fillStyle = '#ffffff';
 			ctx.textAlign = 'center';
@@ -2409,6 +2707,10 @@
 
 	function legalNarrowGlyph(ch) {
 		return ch === 'I' || ch === 'i' || ch === '1' || ch === '\u0406' || ch === '\u0456';
+	}
+
+	function legalWideGlyph(ch) {
+		return ch === 'W' || ch === 'w' || ch === 'M' || ch === 'm' || ch === 'A' || ch === 'a';
 	}
 
 	function legalPlateGlyph(ch) {
@@ -2521,7 +2823,8 @@
 		var group = law.group * ratio;
 		// Same horizontal scale as a normal figure. A proportional "1" or "I"
 		// stays at that scale when it is wider than the legal stroke, so the
-		// stem is not crushed into the stroke width.
+		// stem is not crushed into the stroke width. W, M and A stay at that
+		// scale when they are wider than the cell, so they are not squeezed.
 		var uniform = full;
 		var ref = glyphInk(ctx.measureText('0'));
 		if (ref.ink > 0.5) {
@@ -2544,6 +2847,9 @@
 				if (legalNarrowGlyph(ch)) {
 					var natural = ink * uniform;
 					cell = natural > narrow ? natural : narrow;
+				} else if (legalWideGlyph(ch)) {
+					var wide = ink * uniform;
+					cell = wide > full ? wide : full;
 				} else {
 					cell = full;
 				}
@@ -2728,7 +3034,7 @@
 		var radius = Math.min(10, h * 0.12);
 		var type = cfg.format.type;
 		var preset = type === 'uk' ? currentPreset() : null;
-		var rawBand = type === 'uk' ? resolveBand(cfg.format, preset, w, h) : null;
+		var rawBand = type === 'uk' ? fitSinglePresetBand(resolveBand(cfg.format, preset, w, h), w) : null;
 		bandHit = rawBand;
 		var plateColor = colorValue('apd_background_color');
 		ctx.save();
@@ -2754,16 +3060,17 @@
 		var right = bandOnRight ? (rawBand.x - inset) : (w - inset);
 		var top = inset;
 		var innerW = Math.max(8, right - left);
+		var sloganFont = currentSloganFont(root);
 		var sloganSize = 11;
 		var sloganWidth = 0;
 		var textX = left;
 		if (slogan) {
 			var span = placed && placed.width > 8 ? Math.max(20, placed.width - 8) : innerW - 16;
-			ctx.font = '400 ' + sloganSize + 'px Arial, "Helvetica Neue", sans-serif';
+			ctx.font = sloganFace(sloganFont, sloganSize);
 			sloganWidth = ctx.measureText(slogan).width;
 			while (sloganSize > 6 && sloganWidth > span) {
 				sloganSize -= 0.5;
-				ctx.font = '400 ' + sloganSize + 'px Arial, "Helvetica Neue", sans-serif';
+				ctx.font = sloganFace(sloganFont, sloganSize);
 				sloganWidth = ctx.measureText(slogan).width;
 			}
 			var slotX = placed && placed.width > 8 ? placed.x : left;
@@ -2818,7 +3125,7 @@
 		if (slogan) {
 			ctx.save();
 			ctx.fillStyle = colorValue('apd_slogan_color');
-			ctx.font = '400 ' + sloganSize + 'px Arial, "Helvetica Neue", sans-serif';
+			ctx.font = sloganFace(sloganFont, sloganSize);
 			ctx.textAlign = 'left';
 			ctx.textBaseline = 'alphabetic';
 			ctx.fillText(slogan, textX, lineY + sloganSize * 0.12);
@@ -2826,45 +3133,196 @@
 		}
 	}
 
+	function isCompactPlate(type) {
+		type = type || (cfg.format && cfg.format.type);
+		return type === 'mini' || type === 'mini_plain' || type === 'super_mini' || type === 'super_mini_plain';
+	}
+
+	function compactHasFrame() {
+		return !!(cfg.format && !cfg.format.no_frame && cfg.format.border_width > 0);
+	}
+
 	function drawMiniPlate(ctx, canvas, root, w, h, font, minSize) {
-		var radius = Math.min(10, h * 0.12);
+		var radius = plateCornerRadius(h);
 		var type = cfg.format.type;
-		var preset = type === 'mini' ? currentPreset() : null;
-		var rawBand = type === 'mini' ? resolveBand(cfg.format, preset, w, h) : null;
+		var banded = usesCountryBand(type);
+		var preset = banded ? currentPreset() : null;
+		var rawBand = banded ? fitSinglePresetBand(placeBandInsideFrame(resolveBand(cfg.format, preset, w, h), w, h), w) : null;
 		bandHit = rawBand;
 		ctx.save();
 		roundRect(ctx, 0, 0, w, h, radius);
 		ctx.clip();
-		ctx.fillStyle = '#ffffff';
+		ctx.fillStyle = colorValue('apd_background_color');
 		ctx.fillRect(0, 0, w, h);
 		ctx.restore();
 		paintOpenBand(ctx, canvas, rawBand, w, h);
 		bandHit = rawBand;
-		ctx.save();
-		ctx.strokeStyle = '#111111';
-		ctx.lineWidth = 1.4;
-		roundRect(ctx, 0.7, 0.7, Math.max(1, w - 1.4), Math.max(1, h - 1.4), radius);
-		ctx.stroke();
-		ctx.restore();
+		paintCountryThumb(root, rawBand);
 		var textInput = root.querySelector('[name="apd_text"]');
 		var text = scriptPlateText(textInput ? textInput.value : '');
-		if (!text.replace(/[\s\r\n]/g, '')) {
+		var inset = frameTextInset();
+		var gap = inset > 0 ? inset : 8;
+		if (text.replace(/[\s\r\n]/g, '')) {
+			var left = rawBand ? Math.max(gap, rawBand.x + rawBand.width + 8) : gap;
+			var right = w - gap;
+			drawLegalRegistration(ctx, text, font, {
+				x: left,
+				y: gap,
+				width: Math.max(8, right - left),
+				height: Math.max(8, h - gap * 2)
+			}, colorValue('apd_text_color'), LEGAL_MOTO, minSize);
+		}
+		paintAdminFrame(ctx, w, h);
+	}
+
+	function holderRunFont(ch, latin, cyr) {
+		if (/[\u0400-\u04FF]/.test(ch)) {
+			return cyr && cyr.family ? cyr : latin;
+		}
+		return latin;
+	}
+
+	function holderInkCenterShift(up, down) {
+		return (up - down) / 2;
+	}
+
+	function drawHolderMixed(ctx, text, latin, cyr, box, color, minSize) {
+		if (!latin || !box || box.width <= 0 || box.height <= 0) {
 			return;
 		}
-		var left = rawBand ? rawBand.x + rawBand.width + 8 : 8;
-		var right = w - 8;
-		drawLegalRegistration(ctx, text, font, {
-			x: left,
-			y: 8,
-			width: Math.max(8, right - left),
-			height: Math.max(8, h - 16)
-		}, '#000000', LEGAL_MOTO, minSize);
+		var lines = String(text || '').split('\n');
+		function faceCss(face, px) {
+			return (face.style || 'normal') + ' ' + (face.weight || 400) + ' ' + px + 'px "' + face.family + '", sans-serif';
+		}
+		function inkOf(ch, face, px) {
+			var drawn = plateGlyphs(ctx, ch, face.family, face.weight, face.style);
+			ctx.font = faceCss(face, px);
+			var measured = ctx.measureText(drawn);
+			var up = measured.actualBoundingBoxAscent;
+			var down = measured.actualBoundingBoxDescent;
+			if (!isFinite(up) || up < px * 0.2) {
+				up = px * 0.72;
+			}
+			if (!isFinite(down) || down < 0) {
+				down = 0;
+			}
+			return { text: drawn, up: up, down: down, width: measured.width };
+		}
+		function layout(px) {
+			return lines.map(function (line) {
+				var glyphs = Array.from(line).map(function (ch) {
+					var face = holderRunFont(ch, latin, cyr);
+					return {
+						ch: ch,
+						face: face,
+						ink: inkOf(ch, face, px),
+						cyr: /[\u0400-\u04FF]/.test(ch),
+						letter: /[A-Za-z\u00C0-\u024F\u0400-\u04FF]/.test(ch),
+						digit: /[0-9]/.test(ch)
+					};
+				});
+				function union(list) {
+					var up = 0;
+					var down = 0;
+					list.forEach(function (glyph) {
+						up = Math.max(up, glyph.ink.up);
+						down = Math.max(down, glyph.ink.down);
+					});
+					return { up: up, down: down };
+				}
+				var latinGroup = glyphs.filter(function (glyph) { return glyph.letter && !glyph.cyr; });
+				if (!latinGroup.length) {
+					latinGroup = glyphs.filter(function (glyph) { return glyph.digit; });
+				}
+				var cyrGroup = glyphs.filter(function (glyph) { return glyph.cyr; });
+				var latinInk = union(latinGroup);
+				var cyrInk = union(cyrGroup);
+				var above = Math.max(latinInk.up, cyrInk.up);
+				var below = Math.max(latinInk.down, cyrInk.down);
+				if (above <= 0 && below <= 0) {
+					above = px * 0.72;
+				}
+				var width = 0;
+				glyphs.forEach(function (glyph) {
+					width += glyph.ink.width;
+				});
+				return {
+					glyphs: glyphs,
+					width: width,
+					above: above,
+					below: below,
+					latinShift: holderInkCenterShift(latinInk.up, latinInk.down),
+					cyrShift: holderInkCenterShift(cyrInk.up, cyrInk.down),
+					hasLatin: latinGroup.length > 0,
+					hasCyr: cyrGroup.length > 0
+				};
+			});
+		}
+		var size = Math.max(minSize, Math.floor(box.height * 1.5));
+		var guard = 0;
+		var laid = layout(size);
+		while (size > minSize && guard < 500) {
+			var wide = false;
+			var block = 0;
+			var n;
+			for (n = 0; n < laid.length; n += 1) {
+				if (laid[n].width > box.width) {
+					wide = true;
+				}
+				block += laid[n].above + laid[n].below;
+			}
+			block += Math.max(0, laid.length - 1) * size * 0.15;
+			if (!wide && block <= box.height) {
+				break;
+			}
+			size -= 1;
+			guard += 1;
+			laid = layout(size);
+		}
+		ctx.save();
+		resetCanvasSpacing(ctx);
+		ctx.fillStyle = color;
+		ctx.textAlign = 'left';
+		ctx.textBaseline = 'alphabetic';
+		var blockH = 0;
+		laid.forEach(function (line, index) {
+			blockH += line.above + line.below;
+			if (index > 0) {
+				blockH += size * 0.15;
+			}
+		});
+		var top = box.y + (box.height - blockH) / 2;
+		if (box.valign === 'top') {
+			top = box.y;
+		} else if (box.valign === 'bottom') {
+			top = box.y + box.height - blockH;
+		}
+		var cursor = top;
+		laid.forEach(function (line) {
+			var lineCenter = cursor + (line.above + line.below) / 2;
+			var latinBase = lineCenter + (line.hasLatin ? line.latinShift : line.cyrShift);
+			var cyrBase = lineCenter + (line.hasCyr ? line.cyrShift : line.latinShift);
+			var x = box.x + (box.width - line.width) / 2;
+			if (box.align === 'left') {
+				x = box.x;
+			} else if (box.align === 'right') {
+				x = box.x + box.width - line.width;
+			}
+			line.glyphs.forEach(function (glyph) {
+				ctx.font = faceCss(glyph.face, size);
+				ctx.fillText(glyph.ink.text, x, glyph.cyr ? cyrBase : latinBase);
+				x += glyph.ink.width;
+			});
+			cursor += line.above + line.below + size * 0.15;
+		});
+		ctx.restore();
 	}
 
 	function draw(root, cache, keepStage) {
 		if (cache && cache.images) {
 			imageCache = cache.images;
 		}
+		paintCountryOptions(root);
 		if (!keepStage) {
 			measurePreviewStage();
 		}
@@ -2908,7 +3366,7 @@
 			return;
 		}
 
-		if (type === 'mini' || type === 'mini_plain') {
+		if (isCompactPlate(type)) {
 			drawMiniPlate(ctx, canvas, root, w, h, font, minSize);
 			return;
 		}
@@ -2952,8 +3410,8 @@
 				}
 				if (text) {
 					var holderBox = resolveTextBox(format, null, null, w, h);
-					var fittedH = fitText(ctx, text, font.family, font.weight, font.style, holderBox.width, holderBox.height, minSize);
-					drawTextInBox(ctx, fittedH, holderBox, colorValue('apd_text_color'));
+					var holderCyr = currentScript() === 'combined' ? currentCyrFont(root) : font;
+					drawHolderMixed(ctx, text, font, holderCyr, holderBox, colorValue('apd_text_color'), minSize);
 				}
 				return;
 			}
@@ -2977,12 +3435,12 @@
 		var border = wantsNoFrame() ? 0 : ((cfg.format && cfg.format.border_width) || 8);
 		var preset = usesCountryBand(type) ? currentPreset() : null;
 		var rawBand = usesCountryBand(type) ? resolveBand(format, preset, w, h) : null;
-		var band = rawBand ? placeBandInsideFrame(rawBand, w, h) : null;
+		var band = rawBand ? extendEuroBand(fitSinglePresetBand(placeBandInsideFrame(rawBand, w, h), w), h) : null;
 		bandHit = band;
 		var bandUrl = preset && preset.image_url ? preset.image_url : '';
 
 		ctx.save();
-		roundRect(ctx, 1, 1, w - 2, h - 2, radius);
+		roundRect(ctx, 0, 0, w, h, radius);
 		ctx.clip();
 		ctx.fillStyle = colorValue('apd_background_color');
 		ctx.fillRect(0, 0, w, h);
@@ -3014,21 +3472,30 @@
 		ctx.restore();
 
 		paintAdminFrame(ctx, w, h);
-		if (band && !bandUrl && preset && preset.country_code) {
+		var bandImg = bandUrl && imageCache[bandUrl] && imageCache[bandUrl].naturalWidth ? imageCache[bandUrl] : null;
+		if (band && (bandImg || (!bandUrl && preset && preset.country_code))) {
 			ctx.save();
-			clipCountryBand(ctx, band, h);
+			roundRect(ctx, 0, 0, w, h, radius);
+			ctx.clip();
+			clipCountryBand(ctx, band, h, w);
 			ctx.fillStyle = '#003399';
 			ctx.fillRect(band.x, band.y, band.width, band.height);
-			ctx.fillStyle = '#ffffff';
-			ctx.textAlign = 'center';
-			ctx.textBaseline = 'middle';
-			ctx.font = '700 ' + Math.round(band.height * 0.22) + 'px sans-serif';
-			ctx.fillText(preset.country_code, band.x + band.width / 2, band.y + band.height * 0.72);
-			ctx.textAlign = 'left';
-			ctx.textBaseline = 'alphabetic';
+			if (bandImg) {
+				drawEuroBand(ctx, bandImg, band.x, band.y, band.width, band.height);
+			} else {
+				ctx.fillStyle = '#ffffff';
+				ctx.textAlign = 'center';
+				ctx.textBaseline = 'middle';
+				ctx.font = '700 ' + Math.round(band.height * 0.22) + 'px sans-serif';
+				ctx.fillText(preset.country_code, band.x + band.width / 2, band.y + band.height * 0.72);
+				ctx.textAlign = 'left';
+				ctx.textBaseline = 'alphabetic';
+			}
 			ctx.restore();
+			placeBandLayer(canvas, null, '', w, h);
+		} else {
+			placeBandLayer(canvas, band, bandUrl, w, h);
 		}
-		placeBandLayer(canvas, band, bandUrl, w, h);
 		paintCountryThumb(root, band);
 	}
 
@@ -3237,6 +3704,10 @@
 		dialog.hidden = false;
 		dialog.setAttribute('aria-hidden', 'false');
 		document.body.classList.add('apd-dialog-open');
+		paintCountryOptions(root);
+		window.requestAnimationFrame(function () {
+			paintCountryOptions(root);
+		});
 		if (opener) {
 			opener.setAttribute('aria-expanded', 'true');
 		}
@@ -3262,22 +3733,338 @@
 		ctx.drawImage(img, (sw - cw) / 2, (sh - ch) / 2, cw, ch, dx, dy, dw, dh);
 	}
 
-	function clipCountryBand(ctx, band, plateH) {
+	function bleedEuroBandPixels(data, sw, sh) {
+		var count = sw * sh;
+		var fringe = new Uint8Array(count);
+		var queue = [];
+		// Edge matte is transparent, a near-black export rim, or the white corners a JPEG
+		// uses where a PNG would be transparent. Interior white (a flag stripe, "BG") is
+		// not connected to that edge, so it stays.
+		function isMatte(pixel) {
+			var offset = pixel * 4;
+			var red = data[offset];
+			var green = data[offset + 1];
+			var blue = data[offset + 2];
+			var alpha = data[offset + 3];
+			if (alpha < 20) {
+				return true;
+			}
+			if (red < 48 && green < 48 && blue < 48) {
+				return true;
+			}
+			return red > 200 && green > 200 && blue > 200;
+		}
+		function isCore(pixel) {
+			var offset = pixel * 4;
+			var red = data[offset];
+			var green = data[offset + 1];
+			var blue = data[offset + 2];
+			var alpha = data[offset + 3];
+			if (alpha < 200) {
+				return false;
+			}
+			if (blue > 130 && red < 60 && green < 100) {
+				return true;
+			}
+			var max = Math.max(red, green, blue);
+			var min = Math.min(red, green, blue);
+			return (max - min) > 110 && max < 250;
+		}
+		function push(x, y) {
+			if (x < 0 || y < 0 || x >= sw || y >= sh) {
+				return;
+			}
+			var pixel = y * sw + x;
+			if (fringe[pixel] || !isMatte(pixel)) {
+				return;
+			}
+			fringe[pixel] = 1;
+			queue.push(pixel);
+		}
+		var edge;
+		for (edge = 0; edge < sw; edge++) {
+			push(edge, 0);
+			push(edge, sh - 1);
+		}
+		for (edge = 0; edge < sh; edge++) {
+			push(0, edge);
+			push(sw - 1, edge);
+		}
+		var head = 0;
+		while (head < queue.length) {
+			var pixel = queue[head++];
+			var cx = pixel % sw;
+			var cy = (pixel / sw) | 0;
+			push(cx - 1, cy);
+			push(cx + 1, cy);
+			push(cx, cy - 1);
+			push(cx, cy + 1);
+		}
+		var pass;
+		for (pass = 0; pass < 4; pass++) {
+			var extra = [];
+			var index;
+			for (index = 0; index < count; index++) {
+				if (fringe[index] || isCore(index) || isMatte(index)) {
+					continue;
+				}
+				var ex = index % sw;
+				var ey = (index / sw) | 0;
+				var near = (ex > 0 && fringe[index - 1]) || (ex + 1 < sw && fringe[index + 1]) || (ey > 0 && fringe[index - sw]) || (ey + 1 < sh && fringe[index + sw]);
+				if (near) {
+					extra.push(index);
+				}
+			}
+			for (index = 0; index < extra.length; index++) {
+				fringe[extra[index]] = 1;
+			}
+		}
+		var out = new Uint8ClampedArray(data);
+		for (pixel = 0; pixel < count; pixel++) {
+			if (!fringe[pixel] || data[pixel * 4 + 3] < 20) {
+				continue;
+			}
+			out[pixel * 4] = 0;
+			out[pixel * 4 + 1] = 51;
+			out[pixel * 4 + 2] = 153;
+		}
+		var halo = new Uint8Array(count);
+		var grow;
+		for (grow = 0; grow < 6; grow++) {
+			for (pixel = 0; pixel < count; pixel++) {
+				if (halo[pixel]) {
+					continue;
+				}
+				var ho = pixel * 4;
+				var hr = out[ho];
+				var hg = out[ho + 1];
+				var hb = out[ho + 2];
+				var ha = out[ho + 3];
+				var hmax = Math.max(hr, hg, hb);
+				var hmin = Math.min(hr, hg, hb);
+				var lightBlue = hb >= hr && hb >= hg && hb > 150 && hr > 40 && hr < 210 && hg > 70;
+				var pale = hmin >= 140 && (hmax - hmin) <= 90 && !(hr > 245 && hg > 245 && hb > 245);
+				if (ha < 200 || (!lightBlue && !pale) || touchesGlyph(pixel)) {
+					continue;
+				}
+				var hx = pixel % sw;
+				var hy = (pixel / sw) | 0;
+				var touch = (hx > 0 && (halo[pixel - 1] || isBlueOut(pixel - 1))) || (hx + 1 < sw && (halo[pixel + 1] || isBlueOut(pixel + 1))) || (hy > 0 && (halo[pixel - sw] || isBlueOut(pixel - sw))) || (hy + 1 < sh && (halo[pixel + sw] || isBlueOut(pixel + sw)));
+				if (touch) {
+					halo[pixel] = 1;
+				}
+			}
+		}
+		for (pixel = 0; pixel < count; pixel++) {
+			if (!halo[pixel]) {
+				continue;
+			}
+			out[pixel * 4] = 0;
+			out[pixel * 4 + 1] = 51;
+			out[pixel * 4 + 2] = 153;
+		}
+		for (pixel = 0; pixel < count; pixel++) {
+			var flatAt = pixel * 4;
+			var flatRed = out[flatAt];
+			var flatGreen = out[flatAt + 1];
+			var flatBlue = out[flatAt + 2];
+			if (out[flatAt + 3] < 200 || !(flatBlue > 130 && flatRed < 60 && flatGreen < 100)) {
+				continue;
+			}
+			if (flatRed === 0 && flatGreen === 51 && flatBlue === 153) {
+				continue;
+			}
+			if (touchesGlyph(pixel)) {
+				continue;
+			}
+			out[flatAt] = 0;
+			out[flatAt + 1] = 51;
+			out[flatAt + 2] = 153;
+		}
+		return out;
+		function touchesGlyph(index) {
+			var x = index % sw;
+			var y = (index / sw) | 0;
+			return (x > 0 && isGlyph(index - 1)) || (x + 1 < sw && isGlyph(index + 1)) || (y > 0 && isGlyph(index - sw)) || (y + 1 < sh && isGlyph(index + sw));
+		}
+		function isGlyph(index) {
+			var red = out[index * 4];
+			var green = out[index * 4 + 1];
+			var blue = out[index * 4 + 2];
+			if (out[index * 4 + 3] < 200) {
+				return false;
+			}
+			if (red > 230 && green > 230 && blue > 230) {
+				return true;
+			}
+			var max = Math.max(red, green, blue);
+			var min = Math.min(red, green, blue);
+			return (max - min) > 110 && max < 250 && !(blue > 130 && red < 60 && green < 100);
+		}
+		function isBlueOut(index) {
+			return out[index * 4 + 3] > 200 && out[index * 4 + 2] > 130 && out[index * 4] < 60 && out[index * 4 + 1] < 100;
+		}
+	}
+
+	function euroBandImage(img) {
+		if (!img || img._apdBandClean) {
+			return img && img._apdBandClean ? img._apdBandClean : img;
+		}
+		var sw = img.naturalWidth || img.width;
+		var sh = img.naturalHeight || img.height;
+		if (!(sw > 1) || !(sh > 1) || typeof document === 'undefined') {
+			return img;
+		}
+		try {
+			var canvas = document.createElement('canvas');
+			canvas.width = sw;
+			canvas.height = sh;
+			var sample = canvas.getContext('2d', { willReadFrequently: true });
+			if (!sample) {
+				return img;
+			}
+			sample.drawImage(img, 0, 0, sw, sh);
+			var imageData = sample.getImageData(0, 0, sw, sh);
+			var next = bleedEuroBandPixels(imageData.data, sw, sh);
+			var changed = false;
+			var index;
+			for (index = 0; index < next.length; index += 4) {
+				if (next[index] !== imageData.data[index] || next[index + 1] !== imageData.data[index + 1] || next[index + 2] !== imageData.data[index + 2]) {
+					changed = true;
+					break;
+				}
+			}
+			if (!changed) {
+				img._apdBandClean = img;
+				return img;
+			}
+			imageData.data.set(next);
+			sample.putImageData(imageData, 0, 0);
+			img._apdBandClean = canvas;
+			return canvas;
+		} catch (err) {
+			return img;
+		}
+	}
+
+	function detectEuroBandSplit(img) {
+		var sw = img.naturalWidth || img.width;
+		var sh = img.naturalHeight || img.height;
+		if (!(sw > 0) || !(sh > 0) || typeof document === 'undefined') {
+			return 0;
+		}
+		var probe = document.createElement('canvas');
+		probe.width = sw;
+		probe.height = sh;
+		var probeCtx = probe.getContext('2d', { willReadFrequently: true });
+		if (!probeCtx) {
+			return 0;
+		}
+		var data;
+		try {
+			probeCtx.drawImage(img, 0, 0, sw, sh);
+			data = probeCtx.getImageData(0, 0, sw, sh).data;
+		} catch (err) {
+			return 0;
+		}
+		var ink = new Array(sh);
+		var y;
+		var x;
+		for (y = 0; y < sh; y++) {
+			var count = 0;
+			for (x = 0; x < sw; x++) {
+				var i = (y * sw + x) * 4;
+				var red = data[i];
+				var green = data[i + 1];
+				var blue = data[i + 2];
+				var alpha = data[i + 3];
+				if (alpha > 20 && !(blue > 120 && red < 90 && green < 120)) {
+					count++;
+				}
+			}
+			ink[y] = count > 2;
+		}
+		var minGap = Math.max(4, sh * 0.06);
+		var groups = [];
+		var start = -1;
+		var empty = 0;
+		for (y = 0; y <= sh; y++) {
+			if (y < sh && ink[y]) {
+				if (start < 0) {
+					start = y;
+				}
+				empty = 0;
+			} else if (start >= 0) {
+				empty++;
+				if (empty >= minGap || y === sh) {
+					groups.push([start, y - empty]);
+					start = -1;
+				}
+			}
+		}
+		if (groups.length < 2) {
+			return 0;
+		}
+		return (groups[0][1] + groups[groups.length - 1][0]) / 2;
+	}
+
+	function euroBandSplit(img) {
+		if (!img) {
+			return 0;
+		}
+		if (img._apdBandSplit > 0) {
+			return img._apdBandSplit;
+		}
+		var sample = (typeof euroBandImage === 'function') ? euroBandImage(img) : img;
+		var sh = sample.naturalHeight || sample.height || img.naturalHeight || img.height || 0;
+		var split = detectEuroBandSplit(sample);
+		if (!(split > 0) || split >= sh) {
+			split = sh * 0.57;
+		}
+		img._apdBandSplit = split;
+		return split;
+	}
+
+	function drawEuroBand(ctx, img, dx, dy, dw, dh) {
+		var source = (typeof euroBandImage === 'function') ? euroBandImage(img) : img;
+		var sw = source.naturalWidth || source.width;
+		var sh = source.naturalHeight || source.height;
+		if (!(sw > 0) || !(sh > 0) || !(dw > 0) || !(dh > 0)) {
+			return;
+		}
+		var scale = Math.min(dw / sw, dh / sh);
+		var tw = sw * scale;
+		var th = sh * scale;
+		var x = dx + (dw - tw) / 2;
+		var split = euroBandSplit(img);
+		if (dh - th < 0.5 || !(split > 1) || split >= sh - 1) {
+			ctx.drawImage(source, x, dy + (dh - th) / 2, tw, th);
+			return;
+		}
+		var topH = split * scale;
+		var botH = (sh - split) * scale;
+		ctx.drawImage(source, 0, 0, sw, split, x, dy, tw, topH);
+		ctx.drawImage(source, 0, split, sw, sh - split, x, dy + dh - botH, tw, botH);
+	}
+
+	function clipCountryBand(ctx, band, plateH, plateW) {
 		if (!band || !(band.width > 0) || !(band.height > 0)) {
 			return;
 		}
-		var radius = plateCornerRadius(plateH);
 		var left = band.side !== 'right';
+		var sideInset = left ? band.x : Math.max(0, (plateW || 0) - (band.x + band.width));
+		var top = bandCornerRadius(plateH, sideInset, band.y);
+		var bottom = bandCornerRadius(plateH, sideInset, plateH - (band.y + band.height));
 		clipRoundedBox(
 			ctx,
 			band.x,
 			band.y,
 			band.width,
 			band.height,
-			left ? radius : 0,
-			left ? 0 : radius,
-			left ? 0 : radius,
-			left ? radius : 0
+			left ? top : 0,
+			left ? 0 : top,
+			left ? 0 : bottom,
+			left ? bottom : 0
 		);
 	}
 
@@ -3350,7 +4137,7 @@
 					ctx.fillStyle = style.backgroundColor;
 					ctx.fillRect(dx, dy, dw, dh);
 				}
-				drawImageCover(ctx, band, dx, dy, dw, dh);
+				drawEuroBand(ctx, band, dx, dy, dw, dh);
 				ctx.restore();
 			}
 			return copy.toDataURL('image/png');
@@ -3372,6 +4159,9 @@
 
 	function upperPlateControl(input) {
 		if (!input || input.type === 'hidden') {
+			return;
+		}
+		if (cfg.format && isHolderFamily(cfg.format.type)) {
 			return;
 		}
 		var next = String(input.value || '').toLocaleUpperCase('bg');
@@ -3707,12 +4497,12 @@
 	}
 
 	function bind(root, cache) {
-		function resetFieldsAfterScript() {
+		function resetFieldsAfterScript(textOnly) {
 			if (!cfg.scripts || cfg.scripts.length < 2) {
 				return;
 			}
 			scriptWarning = false;
-			var sample = currentScript() === 'cyrillic' ? (cfg.default_text_cyrillic || '') : (cfg.default_text || '');
+			var sample = currentScript() === 'cyrillic' ? (cfg.default_text_cyrillic || '') : (currentScript() === 'combined' ? (cfg.default_text_combined || '') : (cfg.default_text || ''));
 			sample = String(sample).replace(/\r\n/g, '\n').replace(/\r/g, '\n');
 			var rows = root.querySelectorAll('[data-apd-plate-row]');
 			if (rows.length >= 2) {
@@ -3735,6 +4525,10 @@
 			}
 			syncSuvRows(root);
 			syncSideFields(root);
+			if (textOnly) {
+				updateCount(root);
+				return;
+			}
 			root.querySelectorAll('[data-apd-color]').forEach(restoreInitialValue);
 			root.querySelectorAll('[data-apd-swatch]').forEach(function (btn) {
 				var name = btn.getAttribute('data-apd-swatch');
@@ -3750,9 +4544,20 @@
 		}
 		rememberInitialValues(root);
 		upperPlateFields(root);
-		root.querySelectorAll('[name="apd_text"], [data-apd-plate-row], [data-apd-plate-side]').forEach(function (input) {
-			if (stripWrongScript(input)) {
-				scriptWarning = true;
+		if (plateTextMismatchesScript(root)) {
+			resetFieldsAfterScript(true);
+		} else {
+			root.querySelectorAll('[name="apd_text"], [data-apd-plate-row], [data-apd-plate-side]').forEach(function (input) {
+				if (stripWrongScript(input)) {
+					scriptWarning = true;
+				}
+			});
+		}
+		window.addEventListener('pageshow', function () {
+			if (plateTextMismatchesScript(root)) {
+				resetFieldsAfterScript(true);
+				syncLetterChrome();
+				scheduleDraw(root, cache);
 			}
 		});
 		syncSuvRows(root);
@@ -3776,6 +4581,36 @@
 			scheduleDraw(root, cache);
 		});
 		syncFrameColors();
+		if (cfg.cart_item_key) {
+			var cartForm = root.closest('form');
+			var cartEditButton = cartForm ? cartForm.querySelector('.single_add_to_cart_button') : null;
+			var cartEditSaved = cartEditSignature(root);
+			if (cartEditButton) {
+				paintCartEdit = function () {
+					syncCartEditButton(cartEditButton, cartEditSaved, cartEditSignature(root));
+				};
+				paintCartEdit();
+				cartEditButton.addEventListener('click', function (event) {
+					if (cartEditButton.getAttribute('data-apd-cart-back') !== '1') {
+						return;
+					}
+					event.preventDefault();
+					if (cfg.cart_url) {
+						window.location.href = cfg.cart_url;
+					}
+				});
+				cartForm.addEventListener('submit', function (event) {
+					if (cartEditButton.getAttribute('data-apd-cart-back') !== '1') {
+						return;
+					}
+					event.preventDefault();
+					event.stopPropagation();
+					if (cfg.cart_url) {
+						window.location.href = cfg.cart_url;
+					}
+				}, true);
+			}
+		}
 		root.addEventListener('change', function (event) {
 			if (keepsPreviewStage(event.target)) {
 				holdPreviewStage();
@@ -3785,6 +4620,7 @@
 			}
 			if (event.target && event.target.hasAttribute('data-apd-script')) {
 				resetFieldsAfterScript();
+				syncLetterChrome();
 			}
 			syncFrameColors();
 			scheduleDraw(root, cache, keepsPreviewStage(event.target));
@@ -3805,6 +4641,7 @@
 					btn.setAttribute('aria-pressed', btn === swatch ? 'true' : 'false');
 				});
 				scheduleDraw(root, cache, true);
+				paintCartEdit();
 				return;
 			}
 
@@ -3826,6 +4663,7 @@
 				applyCountry(root, presetBtn);
 				scheduleDraw(root, cache);
 				closeCountryDialog(root);
+				paintCartEdit();
 			}
 		});
 
@@ -3902,6 +4740,7 @@
 				}
 			});
 		}
+		syncLetterChrome();
 	}
 
 	ready(function () {

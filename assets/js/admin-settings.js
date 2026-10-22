@@ -41,8 +41,12 @@
 		return !!typeCaps(type).baseImage;
 	}
 
+	function isCompactPlate(type) {
+		return type === 'mini' || type === 'mini_plain' || type === 'super_mini' || type === 'super_mini_plain';
+	}
+
 	function lettersFollowCount(type) {
-		return type === 'eu' || type === 'eu_plain' || type === 'moto' || type === 'moto_240' || type === 'moto_plain' || type === 'moto_plain_240' || type === 'suv' || type === 'suv_340' || type === 'suv_eu' || type === 'suv_eu_340' || type === 'eu_300' || type === 'atyp_300' || type === 'mini' || type === 'mini_plain';
+		return type === 'eu' || type === 'eu_plain' || type === 'moto' || type === 'moto_240' || type === 'moto_plain' || type === 'moto_plain_240' || type === 'suv' || type === 'suv_340' || type === 'suv_eu' || type === 'suv_eu_340' || type === 'eu_300' || type === 'atyp_300' || isCompactPlate(type);
 	}
 
 	function typingDefaults(type) {
@@ -167,6 +171,8 @@
 			paintedSample = adminCfg().adminSampleEnglish || 'LKOO FDN';
 		} else if (type === 'mini' || type === 'mini_plain') {
 			paintedSample = adminCfg().adminSampleMini || 'GUNTHER';
+		} else if (type === 'super_mini' || type === 'super_mini_plain') {
+			paintedSample = adminCfg().adminSampleSuper || 'FDN';
 		}
 		if (type === 'fr' || type === 'fr_ww' || type === 'fr_region' || type === 'austria') {
 			var groupLabels = type === 'austria' ? ['WE', '000 CF'] : (type === 'fr_ww' ? ['WW', '000', 'AA'] : ['AA', '000', 'AA']);
@@ -501,6 +507,8 @@
 				}
 				event.preventDefault();
 				if (note) {
+					var shareNote = formatSharesTextFrame(type);
+					note.textContent = shareNote ? (note.getAttribute('data-apd-error-share') || note.textContent) : (note.getAttribute('data-apd-error-slots') || note.textContent);
 					note.hidden = false;
 				}
 			});
@@ -512,6 +520,7 @@
 		if (!root) {
 			return;
 		}
+		toggleSeparateTextFrame(type);
 		var slots = usesPaletteSlots(type);
 		var photo = isPhotoHolder(type);
 		var slotRoot = root.querySelector('[data-apd-palette-slots]');
@@ -521,15 +530,23 @@
 		var checkHelp = root.querySelector('[data-apd-palette-check-help]');
 		var photoHelp = root.querySelector('[data-apd-palette-photo-help]');
 		var caps = (adminCfg().colorCaps && adminCfg().colorCaps[type]) || [];
+		var canShare = !!typeCaps(type).sharesTextFrame;
+		var split = formatSplitsTextFrame();
+		var share = formatSharesTextFrame(type);
 		root.hidden = !type;
 		if (slotRoot) {
 			slotRoot.hidden = !slots;
 			var englishSlots = type === 'uk' || type === 'uk_plain';
-			var slotKeys = type === 'us' ? ['text'] : (englishSlots ? ['text', 'background', 'border', 'slogan'] : ['text', 'background', 'border']);
+			var slotKeys = type === 'us' ? ['text'] : (englishSlots ? ['text', 'background', 'border', 'slogan'] : ((canShare && !split) ? ['text', 'background'] : ['text', 'background', 'border']));
 			slotRoot.querySelectorAll('[data-apd-palette-menu]').forEach(function (menu) {
 				var slot = menu.getAttribute('data-apd-palette-slot') || '';
 				var on = slots && slotKeys.indexOf(slot) !== -1;
 				menu.hidden = !on;
+				var heading = menu.querySelector('.apd-palette-menu__heading');
+				if (heading) {
+					var slotLabel = heading.getAttribute('data-apd-label') || heading.textContent;
+					heading.textContent = (share && slot === 'text' && adminCfg().inkFrameColor) ? adminCfg().inkFrameColor : slotLabel;
+				}
 				menu.querySelectorAll('[data-apd-palette-slot-input]').forEach(function (input) {
 					input.disabled = !on;
 				});
@@ -537,7 +554,11 @@
 		}
 		var englishSlots = type === 'uk' || type === 'uk_plain';
 		if (slotHelp) {
-			slotHelp.hidden = !slots || type === 'us' || englishSlots;
+			slotHelp.hidden = !slots || type === 'us' || englishSlots || (canShare && !split);
+		}
+		var shareHelp = root.querySelector('[data-apd-palette-share-help]');
+		if (shareHelp) {
+			shareHelp.hidden = !(slots && share);
 		}
 		var ukPaletteHelp = root.querySelector('[data-apd-palette-uk-help]');
 		if (ukPaletteHelp) {
@@ -564,13 +585,26 @@
 		}
 		root.querySelectorAll('[data-apd-color-cap]').forEach(function (row) {
 			var field = row.getAttribute('data-apd-color-cap');
-			var allowed = !slots && !photo && caps.indexOf(field) !== -1;
+			var hideBorder = canShare && !split && (field === 'border' || field === 'color_border');
+			var allowed = !slots && !photo && caps.indexOf(field) !== -1 && !hideBorder;
 			row.hidden = !allowed;
+			var title = row.querySelector('strong');
+			if (title) {
+				var capLabel = title.getAttribute('data-apd-label') || title.textContent;
+				title.textContent = (share && field === 'text' && adminCfg().inkFrameColor) ? adminCfg().inkFrameColor : capLabel;
+			}
 			row.querySelectorAll('input[type="checkbox"]').forEach(function (input) {
 				input.disabled = !allowed;
-				if (!allowed) {
+				if (!allowed && !hideBorder) {
 					input.checked = false;
 				}
+			});
+		});
+		document.querySelectorAll('[data-apd-digital-palette]').forEach(function (row) {
+			var on = lettersFollowCount(type) && !formatSharesTextFrame(type) && !formatSplitsTextFrame();
+			row.hidden = !on;
+			row.querySelectorAll('select').forEach(function (input) {
+				input.disabled = !on;
 			});
 		});
 	}
@@ -886,7 +920,7 @@
 		}
 		setGroupEnabled('.apd-image-fields', usesBaseImage(type));
 		setGroupEnabled('.apd-eu-fields', paintedPlate(type));
-		setGroupEnabled('.apd-border-fields', !isHolderType(type) && type !== 'fr' && type !== 'fr_ww' && type !== 'fr_region' && type !== 'austria' && type !== 'uk' && type !== 'uk_plain' && type !== 'mini' && type !== 'mini_plain');
+		setGroupEnabled('.apd-border-fields', !isHolderType(type) && type !== 'fr' && type !== 'fr_ww' && type !== 'fr_region' && type !== 'austria' && type !== 'uk' && type !== 'uk_plain');
 		setGroupEnabled('.apd-band-fields, .apd-band-box-fields', usesCountryBand(type));
 		setGroupEnabled('.apd-preset-choice', !!typeCaps(type).countryChoice);
 		syncPresetChoice();
@@ -994,6 +1028,14 @@
 				input.disabled = !english;
 			});
 		});
+		var fillTypes = (window.apdAdmin && apdAdmin.initialFillTypes) || [];
+		var fillOn = fillTypes.indexOf(type) !== -1;
+		document.querySelectorAll('[data-apd-initial-fill-row]').forEach(function (row) {
+			row.hidden = !fillOn;
+			row.querySelectorAll('input').forEach(function (input) {
+				input.disabled = !fillOn;
+			});
+		});
 		var sideLimits = type === 'us' && splitActive();
 		document.querySelectorAll('[data-apd-max-sides]').forEach(function (row) {
 			row.hidden = !sideLimits;
@@ -1079,13 +1121,6 @@
 				}
 			});
 		});
-		document.querySelectorAll('[data-apd-digital-palette]').forEach(function (row) {
-			var on = embossed && type !== 'mini' && type !== 'mini_plain';
-			row.hidden = !on;
-			row.querySelectorAll('select').forEach(function (input) {
-				input.disabled = !on;
-			});
-		});
 	}
 
 	function formatMm() {
@@ -1105,6 +1140,39 @@
 	function wantsNoFrame() {
 		var cb = document.querySelector('[data-apd-no-frame]');
 		return !!(cb && cb.checked);
+	}
+
+	function formatHasAssignedFrame() {
+		var box = document.querySelector('[data-apd-no-frame]');
+		if (!box || box.disabled || box.checked) {
+			return false;
+		}
+		var width = document.querySelector('[name="apd_format[border_width]"]');
+		return !!width && !width.disabled && (parseInt(width.value, 10) || 0) > 0;
+	}
+
+	function formatSplitsTextFrame() {
+		var box = document.querySelector('[data-apd-separate-text-frame]');
+		return !!(box && !box.disabled && box.checked);
+	}
+
+	function toggleSeparateTextFrame(type) {
+		var row = document.querySelector('[data-apd-separate-text-frame-row]');
+		if (!row) {
+			return;
+		}
+		var on = !!typeCaps(type).sharesTextFrame && formatHasAssignedFrame();
+		row.hidden = !on;
+		row.querySelectorAll('input[type="checkbox"]').forEach(function (input) {
+			if (!typeCaps(type).sharesTextFrame) {
+				input.checked = false;
+			}
+			input.disabled = !on;
+		});
+	}
+
+	function formatSharesTextFrame(type) {
+		return !!typeCaps(type).sharesTextFrame && formatHasAssignedFrame() && !formatSplitsTextFrame();
 	}
 
 	function syncFrameFields() {
@@ -1427,6 +1495,12 @@
 		if (mm.width > 0 && mm.height > 0) {
 			stage.style.aspectRatio = String(mm.width) + ' / ' + String(mm.height);
 		}
+		if (isCompactPlate(type) && mm.width > 0 && mm.height > 0) {
+			var radiusMm = Math.min(10, mm.height * 0.12);
+			stage.style.borderRadius = (radiusMm / mm.width * 100).toFixed(3) + '% / ' + (radiusMm / mm.height * 100).toFixed(3) + '%';
+		} else {
+			stage.style.borderRadius = '';
+		}
 		var studio = stage.closest('[data-apd-plate-studio]');
 		if (studio) {
 			var previewMax = 500;
@@ -1439,6 +1513,8 @@
 				basis = 305;
 			} else if (type === 'eu_300' || type === 'atyp_300') {
 				basis = 199;
+			} else if (isCompactPlate(type)) {
+				basis = 520;
 			}
 			if (basis && mm.width > 0) {
 				previewMax = Math.max(80, Math.round(500 * (mm.width / basis)));
@@ -1568,6 +1644,54 @@
 		rightSample.style.fontSize = String(shared) + 'px';
 	}
 
+	function paintPresetPreview(img) {
+		if (!img || img.dataset.apdClean === '1') {
+			return;
+		}
+		function drawClean() {
+			if (!img.naturalWidth || !img.parentNode) {
+				return;
+			}
+			var cssW = img.clientWidth || Math.min(220, img.naturalWidth);
+			var cssH = img.clientHeight || Math.max(1, Math.round(cssW * img.naturalHeight / img.naturalWidth));
+			if (cssW < 2 || cssH < 2) {
+				return;
+			}
+			var canvas = img.parentNode.querySelector('canvas.apd-preset-clean');
+			if (!canvas) {
+				canvas = document.createElement('canvas');
+				canvas.className = 'apd-preset-clean';
+				img.parentNode.insertBefore(canvas, img);
+			}
+			var dpr = window.devicePixelRatio || 1;
+			canvas.width = Math.max(1, Math.round(cssW * dpr));
+			canvas.height = Math.max(1, Math.round(cssH * dpr));
+			canvas.style.width = cssW + 'px';
+			canvas.style.height = cssH + 'px';
+			var ctx = canvas.getContext('2d');
+			ctx.setTransform(canvas.width / cssW, 0, 0, canvas.height / cssH, 0, 0);
+			ctx.imageSmoothingEnabled = true;
+			if ('imageSmoothingQuality' in ctx) {
+				ctx.imageSmoothingQuality = 'high';
+			}
+			ctx.clearRect(0, 0, cssW, cssH);
+			var source = euroBandImage(img);
+			var sw = source.naturalWidth || source.width;
+			var sh = source.naturalHeight || source.height;
+			var scale = Math.min(cssW / sw, cssH / sh);
+			var tw = sw * scale;
+			var th = sh * scale;
+			ctx.drawImage(source, (cssW - tw) / 2, (cssH - th) / 2, tw, th);
+			img.dataset.apdClean = '1';
+			img.hidden = true;
+		}
+		if (img.complete && img.naturalWidth) {
+			drawClean();
+		} else {
+			img.addEventListener('load', drawClean);
+		}
+	}
+
 	function openMedia(button) {
 		if (typeof wp === 'undefined' || !wp.media) {
 			return;
@@ -1602,6 +1726,9 @@
 				img.src = src;
 				img.alt = '';
 				preview.appendChild(img);
+				if (field.querySelector('[name="apd_preset[image_id]"]')) {
+					paintPresetPreview(img);
+				}
 			} else {
 				preview.textContent = attachment.filename || '';
 			}
@@ -1717,6 +1844,10 @@
 		}
 		if (event.target && event.target.hasAttribute('data-apd-no-frame')) {
 			syncFrameFields();
+			toggleFormatPalettes(currentFormatType());
+		}
+		if (event.target && event.target.hasAttribute('data-apd-separate-text-frame')) {
+			toggleFormatPalettes(currentFormatType());
 		}
 		if (event.target && (event.target.getAttribute('name') === 'apd_format[border_width]' || event.target.getAttribute('name') === 'apd_format[border_color]')) {
 			applyFrameOverlay();
@@ -1729,6 +1860,9 @@
 		}
 		if (event.target && (event.target.getAttribute('name') === 'apd_format[width]' || event.target.getAttribute('name') === 'apd_format[height]' || event.target.getAttribute('name') === 'apd_format[border_width]' || event.target.getAttribute('name') === 'apd_format[border_color]')) {
 			updateFormatStage();
+		}
+		if (event.target && event.target.getAttribute('name') === 'apd_format[border_width]') {
+			toggleFormatPalettes(currentFormatType());
 		}
 	});
 
@@ -2739,6 +2873,374 @@
 		el.style.borderBottomLeftRadius = graphic.style.borderBottomLeftRadius;
 		el.style.borderTopRightRadius = graphic.style.borderTopRightRadius;
 		el.style.borderBottomRightRadius = graphic.style.borderBottomRightRadius;
+		paintAdminEuroBand(graphic);
+	}
+
+	function bleedEuroBandPixels(data, sw, sh) {
+		var count = sw * sh;
+		var fringe = new Uint8Array(count);
+		var queue = [];
+		// Edge matte is transparent, a near-black export rim, or the white corners a JPEG
+		// uses where a PNG would be transparent. Interior white (a flag stripe, "BG") is
+		// not connected to that edge, so it stays.
+		function isMatte(pixel) {
+			var offset = pixel * 4;
+			var red = data[offset];
+			var green = data[offset + 1];
+			var blue = data[offset + 2];
+			var alpha = data[offset + 3];
+			if (alpha < 20) {
+				return true;
+			}
+			if (red < 48 && green < 48 && blue < 48) {
+				return true;
+			}
+			return red > 200 && green > 200 && blue > 200;
+		}
+		function isCore(pixel) {
+			var offset = pixel * 4;
+			var red = data[offset];
+			var green = data[offset + 1];
+			var blue = data[offset + 2];
+			var alpha = data[offset + 3];
+			if (alpha < 200) {
+				return false;
+			}
+			if (blue > 130 && red < 60 && green < 100) {
+				return true;
+			}
+			var max = Math.max(red, green, blue);
+			var min = Math.min(red, green, blue);
+			return (max - min) > 110 && max < 250;
+		}
+		function push(x, y) {
+			if (x < 0 || y < 0 || x >= sw || y >= sh) {
+				return;
+			}
+			var pixel = y * sw + x;
+			if (fringe[pixel] || !isMatte(pixel)) {
+				return;
+			}
+			fringe[pixel] = 1;
+			queue.push(pixel);
+		}
+		var edge;
+		for (edge = 0; edge < sw; edge++) {
+			push(edge, 0);
+			push(edge, sh - 1);
+		}
+		for (edge = 0; edge < sh; edge++) {
+			push(0, edge);
+			push(sw - 1, edge);
+		}
+		var head = 0;
+		while (head < queue.length) {
+			var pixel = queue[head++];
+			var cx = pixel % sw;
+			var cy = (pixel / sw) | 0;
+			push(cx - 1, cy);
+			push(cx + 1, cy);
+			push(cx, cy - 1);
+			push(cx, cy + 1);
+		}
+		var pass;
+		for (pass = 0; pass < 4; pass++) {
+			var extra = [];
+			var index;
+			for (index = 0; index < count; index++) {
+				if (fringe[index] || isCore(index) || isMatte(index)) {
+					continue;
+				}
+				var ex = index % sw;
+				var ey = (index / sw) | 0;
+				var near = (ex > 0 && fringe[index - 1]) || (ex + 1 < sw && fringe[index + 1]) || (ey > 0 && fringe[index - sw]) || (ey + 1 < sh && fringe[index + sw]);
+				if (near) {
+					extra.push(index);
+				}
+			}
+			for (index = 0; index < extra.length; index++) {
+				fringe[extra[index]] = 1;
+			}
+		}
+		var out = new Uint8ClampedArray(data);
+		for (pixel = 0; pixel < count; pixel++) {
+			if (!fringe[pixel] || data[pixel * 4 + 3] < 20) {
+				continue;
+			}
+			out[pixel * 4] = 0;
+			out[pixel * 4 + 1] = 51;
+			out[pixel * 4 + 2] = 153;
+		}
+		var halo = new Uint8Array(count);
+		var grow;
+		for (grow = 0; grow < 6; grow++) {
+			for (pixel = 0; pixel < count; pixel++) {
+				if (halo[pixel]) {
+					continue;
+				}
+				var ho = pixel * 4;
+				var hr = out[ho];
+				var hg = out[ho + 1];
+				var hb = out[ho + 2];
+				var ha = out[ho + 3];
+				var hmax = Math.max(hr, hg, hb);
+				var hmin = Math.min(hr, hg, hb);
+				var lightBlue = hb >= hr && hb >= hg && hb > 150 && hr > 40 && hr < 210 && hg > 70;
+				var pale = hmin >= 140 && (hmax - hmin) <= 90 && !(hr > 245 && hg > 245 && hb > 245);
+				if (ha < 200 || (!lightBlue && !pale) || touchesGlyph(pixel)) {
+					continue;
+				}
+				var hx = pixel % sw;
+				var hy = (pixel / sw) | 0;
+				var touch = (hx > 0 && (halo[pixel - 1] || isBlueOut(pixel - 1))) || (hx + 1 < sw && (halo[pixel + 1] || isBlueOut(pixel + 1))) || (hy > 0 && (halo[pixel - sw] || isBlueOut(pixel - sw))) || (hy + 1 < sh && (halo[pixel + sw] || isBlueOut(pixel + sw)));
+				if (touch) {
+					halo[pixel] = 1;
+				}
+			}
+		}
+		for (pixel = 0; pixel < count; pixel++) {
+			if (!halo[pixel]) {
+				continue;
+			}
+			out[pixel * 4] = 0;
+			out[pixel * 4 + 1] = 51;
+			out[pixel * 4 + 2] = 153;
+		}
+		for (pixel = 0; pixel < count; pixel++) {
+			var flatAt = pixel * 4;
+			var flatRed = out[flatAt];
+			var flatGreen = out[flatAt + 1];
+			var flatBlue = out[flatAt + 2];
+			if (out[flatAt + 3] < 200 || !(flatBlue > 130 && flatRed < 60 && flatGreen < 100)) {
+				continue;
+			}
+			if (flatRed === 0 && flatGreen === 51 && flatBlue === 153) {
+				continue;
+			}
+			if (touchesGlyph(pixel)) {
+				continue;
+			}
+			out[flatAt] = 0;
+			out[flatAt + 1] = 51;
+			out[flatAt + 2] = 153;
+		}
+		return out;
+		function touchesGlyph(index) {
+			var x = index % sw;
+			var y = (index / sw) | 0;
+			return (x > 0 && isGlyph(index - 1)) || (x + 1 < sw && isGlyph(index + 1)) || (y > 0 && isGlyph(index - sw)) || (y + 1 < sh && isGlyph(index + sw));
+		}
+		function isGlyph(index) {
+			var red = out[index * 4];
+			var green = out[index * 4 + 1];
+			var blue = out[index * 4 + 2];
+			if (out[index * 4 + 3] < 200) {
+				return false;
+			}
+			if (red > 230 && green > 230 && blue > 230) {
+				return true;
+			}
+			var max = Math.max(red, green, blue);
+			var min = Math.min(red, green, blue);
+			return (max - min) > 110 && max < 250 && !(blue > 130 && red < 60 && green < 100);
+		}
+		function isBlueOut(index) {
+			return out[index * 4 + 3] > 200 && out[index * 4 + 2] > 130 && out[index * 4] < 60 && out[index * 4 + 1] < 100;
+		}
+	}
+
+	function euroBandImage(img) {
+		if (!img || img._apdBandClean) {
+			return img && img._apdBandClean ? img._apdBandClean : img;
+		}
+		var sw = img.naturalWidth || img.width;
+		var sh = img.naturalHeight || img.height;
+		if (!(sw > 1) || !(sh > 1) || typeof document === 'undefined') {
+			return img;
+		}
+		try {
+			var canvas = document.createElement('canvas');
+			canvas.width = sw;
+			canvas.height = sh;
+			var sample = canvas.getContext('2d', { willReadFrequently: true });
+			if (!sample) {
+				return img;
+			}
+			sample.drawImage(img, 0, 0, sw, sh);
+			var imageData = sample.getImageData(0, 0, sw, sh);
+			var next = bleedEuroBandPixels(imageData.data, sw, sh);
+			var changed = false;
+			var index;
+			for (index = 0; index < next.length; index += 4) {
+				if (next[index] !== imageData.data[index] || next[index + 1] !== imageData.data[index + 1] || next[index + 2] !== imageData.data[index + 2]) {
+					changed = true;
+					break;
+				}
+			}
+			if (!changed) {
+				img._apdBandClean = img;
+				return img;
+			}
+			imageData.data.set(next);
+			sample.putImageData(imageData, 0, 0);
+			img._apdBandClean = canvas;
+			return canvas;
+		} catch (err) {
+			return img;
+		}
+	}
+
+	function detectEuroBandSplit(img) {
+		var sw = img.naturalWidth || img.width;
+		var sh = img.naturalHeight || img.height;
+		if (!(sw > 0) || !(sh > 0) || typeof document === 'undefined') {
+			return 0;
+		}
+		var probe = document.createElement('canvas');
+		probe.width = sw;
+		probe.height = sh;
+		var probeCtx = probe.getContext('2d', { willReadFrequently: true });
+		if (!probeCtx) {
+			return 0;
+		}
+		var data;
+		try {
+			probeCtx.drawImage(img, 0, 0, sw, sh);
+			data = probeCtx.getImageData(0, 0, sw, sh).data;
+		} catch (err) {
+			return 0;
+		}
+		var ink = new Array(sh);
+		var y;
+		var x;
+		for (y = 0; y < sh; y++) {
+			var count = 0;
+			for (x = 0; x < sw; x++) {
+				var i = (y * sw + x) * 4;
+				var red = data[i];
+				var green = data[i + 1];
+				var blue = data[i + 2];
+				var alpha = data[i + 3];
+				if (alpha > 20 && !(blue > 120 && red < 90 && green < 120)) {
+					count++;
+				}
+			}
+			ink[y] = count > 2;
+		}
+		var minGap = Math.max(4, sh * 0.06);
+		var groups = [];
+		var start = -1;
+		var empty = 0;
+		for (y = 0; y <= sh; y++) {
+			if (y < sh && ink[y]) {
+				if (start < 0) {
+					start = y;
+				}
+				empty = 0;
+			} else if (start >= 0) {
+				empty++;
+				if (empty >= minGap || y === sh) {
+					groups.push([start, y - empty]);
+					start = -1;
+				}
+			}
+		}
+		if (groups.length < 2) {
+			return 0;
+		}
+		return (groups[0][1] + groups[groups.length - 1][0]) / 2;
+	}
+
+	function euroBandSplit(img) {
+		if (!img) {
+			return 0;
+		}
+		if (img._apdBandSplit > 0) {
+			return img._apdBandSplit;
+		}
+		var sample = (typeof euroBandImage === 'function') ? euroBandImage(img) : img;
+		var sh = sample.naturalHeight || sample.height || img.naturalHeight || img.height || 0;
+		var split = detectEuroBandSplit(sample);
+		if (!(split > 0) || split >= sh) {
+			split = sh * 0.57;
+		}
+		img._apdBandSplit = split;
+		return split;
+	}
+
+	function drawEuroBand(ctx, img, dx, dy, dw, dh) {
+		var source = (typeof euroBandImage === 'function') ? euroBandImage(img) : img;
+		var sw = source.naturalWidth || source.width;
+		var sh = source.naturalHeight || source.height;
+		if (!(sw > 0) || !(sh > 0) || !(dw > 0) || !(dh > 0)) {
+			return;
+		}
+		var scale = Math.min(dw / sw, dh / sh);
+		var tw = sw * scale;
+		var th = sh * scale;
+		var x = dx + (dw - tw) / 2;
+		var split = euroBandSplit(img);
+		if (dh - th < 0.5 || !(split > 1) || split >= sh - 1) {
+			ctx.drawImage(source, x, dy + (dh - th) / 2, tw, th);
+			return;
+		}
+		var topH = split * scale;
+		var botH = (sh - split) * scale;
+		ctx.drawImage(source, 0, 0, sw, split, x, dy, tw, topH);
+		ctx.drawImage(source, 0, split, sw, sh - split, x, dy + dh - botH, tw, botH);
+	}
+
+	function paintAdminEuroBand(graphic) {
+		if (!graphic || graphic.tagName !== 'IMG') {
+			return;
+		}
+		var box = graphic.parentElement;
+		if (!box) {
+			return;
+		}
+		var canvas = box.querySelector('canvas.apd-band-euro');
+		if (!graphic.naturalWidth) {
+			if (canvas) {
+				canvas.hidden = true;
+			}
+			graphic.style.visibility = '';
+			if (!graphic.dataset.apdEuroLoad) {
+				graphic.dataset.apdEuroLoad = '1';
+				graphic.addEventListener('load', function () {
+					fitBandCorners(box);
+				});
+			}
+			return;
+		}
+		if (!canvas) {
+			canvas = document.createElement('canvas');
+			canvas.className = 'apd-band-euro';
+			box.insertBefore(canvas, graphic);
+		}
+		var w = box.clientWidth;
+		var h = box.clientHeight;
+		if (!(w > 0) || !(h > 0)) {
+			return;
+		}
+		var dpr = window.devicePixelRatio || 1;
+		var bufW = Math.max(1, Math.round(w * dpr));
+		var bufH = Math.max(1, Math.round(h * dpr));
+		if (canvas.width !== bufW || canvas.height !== bufH) {
+			canvas.width = bufW;
+			canvas.height = bufH;
+		}
+		var ctx = canvas.getContext('2d');
+		ctx.setTransform(bufW / w, 0, 0, bufH / h, 0, 0);
+		ctx.clearRect(0, 0, w, h);
+		ctx.fillStyle = '#003399';
+		ctx.fillRect(0, 0, w, h);
+		drawEuroBand(ctx, graphic, 0, 0, w, h);
+		canvas.style.borderTopLeftRadius = graphic.style.borderTopLeftRadius;
+		canvas.style.borderTopRightRadius = graphic.style.borderTopRightRadius;
+		canvas.style.borderBottomRightRadius = graphic.style.borderBottomRightRadius;
+		canvas.style.borderBottomLeftRadius = graphic.style.borderBottomLeftRadius;
+		canvas.hidden = false;
+		graphic.style.visibility = 'hidden';
 	}
 
 	function applyBandOverlay(box) {
@@ -2985,6 +3487,7 @@
 		toggleProductScripts();
 		toggleProductTextRows();
 		toggleProductDesign();
+		toggleProductPreset();
 		toggleProductOptions();
 		toggleDesignFormats();
 		toggleSwatchRadius();
@@ -2992,8 +3495,17 @@
 		bindSelectAllFonts();
 		bindBandBoxEditor();
 		bindFrameEditor();
+		bindPresetOrder();
+		bindFormatOrder();
 		syncFrameFields();
 		updateFormatStage();
+		document.querySelectorAll('[name="apd_preset[image_id]"]').forEach(function (input) {
+			var field = closest(input, '.apd-media-field');
+			var previewImg = field ? field.querySelector('.apd-media-preview img') : null;
+			if (previewImg) {
+				paintPresetPreview(previewImg);
+			}
+		});
 		document.querySelectorAll('form.apd-form [type="submit"]').forEach(function (btn) {
 			btn.addEventListener('click', function () {
 				toggleFormatFields();
@@ -3007,6 +3519,74 @@
 				if (designImg && designImg.getAttribute('src')) {
 					fitDesignArtwork(designImg);
 				}
+			}
+		});
+	}
+
+	function toggleProductPreset() {
+		var formatSelect = document.getElementById('apd_format_id');
+		var field = document.querySelector('[data-apd-product-preset]');
+		var select = document.getElementById('apd_default_preset_id');
+		var data = document.getElementById('apd_product_preset_choices');
+		if (!formatSelect || !field || !select || !data) {
+			return;
+		}
+		var map;
+		try {
+			map = JSON.parse(data.textContent || '{}');
+		} catch (error) {
+			return;
+		}
+		if (!map || typeof map !== 'object') {
+			return;
+		}
+		var rows = map[formatSelect.value] || [];
+		var current = select.value;
+		var blank = select.getAttribute('data-apd-blank') || '';
+		select.textContent = '';
+		var empty = document.createElement('option');
+		empty.value = '';
+		empty.textContent = blank;
+		select.appendChild(empty);
+		rows.forEach(function (row) {
+			if (!row || !row.id) {
+				return;
+			}
+			var option = document.createElement('option');
+			option.value = String(row.id);
+			option.textContent = row.label || row.id;
+			select.appendChild(option);
+		});
+		var known = rows.some(function (row) {
+			return row && String(row.id) === current;
+		});
+		select.value = known ? current : '';
+		field.hidden = rows.length < 1;
+		select.disabled = rows.length < 1;
+	}
+
+	function bindPresetOrder() {
+		bindRowOrder('[data-apd-preset-sortable]');
+	}
+
+	function bindFormatOrder() {
+		bindRowOrder('[data-apd-format-sortable]');
+	}
+
+	function bindRowOrder(selector) {
+		var body = document.querySelector(selector);
+		if (!body || !window.jQuery || !window.jQuery.fn || !window.jQuery.fn.sortable) {
+			return;
+		}
+		window.jQuery(body).sortable({
+			items: '> tr',
+			axis: 'y',
+			handle: '.apd-preset-handle',
+			helper: function (event, row) {
+				row.children().each(function () {
+					window.jQuery(this).width(window.jQuery(this).width());
+				});
+				return row;
 			}
 		});
 	}
@@ -3212,6 +3792,46 @@
 				}
 			});
 		}
+		var fillRow = document.querySelector('[data-apd-default-fill]');
+		if (fillRow && select) {
+			var fillOption = select.options[select.selectedIndex];
+			var fillOpen = !!(fillOption && fillOption.getAttribute('data-apd-initial-fill') === '1');
+			fillRow.hidden = !fillOpen;
+			var fillSelect = fillRow.querySelector('select');
+			if (fillSelect) {
+				fillSelect.disabled = !fillOpen;
+				var fillFormat = fillOption ? fillOption.value : '';
+				if (fillOpen && fillRow.getAttribute('data-apd-fill-format') !== fillFormat) {
+					var fillColors = [];
+					try {
+						fillColors = JSON.parse(fillOption.getAttribute('data-apd-fills') || '[]');
+					} catch (fillError) {
+						fillColors = [];
+					}
+					var fillCurrent = fillSelect.value;
+					var fillBlank = fillSelect.querySelector('option[value=""]');
+					var fillBlankLabel = fillBlank ? fillBlank.textContent : 'Default';
+					fillSelect.innerHTML = '';
+					var fillEmpty = document.createElement('option');
+					fillEmpty.value = '';
+					fillEmpty.textContent = fillBlankLabel;
+					fillSelect.appendChild(fillEmpty);
+					fillColors.forEach(function (color) {
+						if (!color || !color.hex) {
+							return;
+						}
+						var fillChoice = document.createElement('option');
+						fillChoice.value = color.hex;
+						fillChoice.textContent = color.label || color.hex;
+						if (String(color.hex).toUpperCase() === String(fillCurrent).toUpperCase()) {
+							fillChoice.selected = true;
+						}
+						fillSelect.appendChild(fillChoice);
+					});
+					fillRow.setAttribute('data-apd-fill-format', fillFormat);
+				}
+			}
+		}
 	}
 
 	function toggleProductScripts() {
@@ -3230,7 +3850,9 @@
 		if (!open || !option) {
 			return;
 		}
-		var all = option.getAttribute('data-apd-fonts-all') === '1';
+		var typeName = option.getAttribute('data-apd-type') || '';
+		var holderType = typeName === 'holder' || typeName === 'holder_moto' || typeName === 'holder_d';
+		var all = holderType || option.getAttribute('data-apd-fonts-all') === '1';
 		var ids = (option.getAttribute('data-apd-font-ids') || '').split(',').filter(Boolean);
 		panel.querySelectorAll('[data-apd-product-font]').forEach(function (label) {
 			var id = label.getAttribute('data-apd-product-font') || '';
@@ -3253,8 +3875,17 @@
 		var latin = document.querySelector('[name="apd_script_latin"]');
 		var cyr = document.querySelector('[name="apd_script_cyrillic"]');
 		var open = !!(panel && !panel.hidden && latin && cyr);
-		var both = open && latin.checked && cyr.checked;
-		var onlyCyr = open && cyr.checked && !latin.checked;
+		var formatSelect = document.getElementById('apd_format_id');
+		var formatOption = formatSelect && formatSelect.options[formatSelect.selectedIndex];
+		var formatType = formatOption ? formatOption.getAttribute('data-apd-type') || '' : '';
+		var holder = formatType === 'holder' || formatType === 'holder_moto' || formatType === 'holder_d';
+		var holderChoice = 'latin';
+		var holderPicked = document.querySelector('[name="apd_holder_script"]:checked');
+		if (holderPicked && holderPicked.value) {
+			holderChoice = holderPicked.value;
+		}
+		var both = open && !holder && latin.checked && cyr.checked;
+		var onlyCyr = open && (holder ? holderChoice === 'cyrillic' : (cyr.checked && !latin.checked));
 		document.querySelectorAll('[data-apd-latin-only]').forEach(function (el) {
 			el.hidden = both || onlyCyr;
 		});
@@ -3279,6 +3910,76 @@
 		if (help) {
 			help.hidden = !both;
 		}
+		document.querySelectorAll('[data-apd-plate-scripts]').forEach(function (el) {
+			el.hidden = holder;
+			el.querySelectorAll('input').forEach(function (input) {
+				input.disabled = holder || !open;
+			});
+		});
+		var latinFonts = holder ? (holderChoice === 'latin' || holderChoice === 'combined') : !!(latin && latin.checked);
+		var cyrFonts = holder ? (holderChoice === 'cyrillic' || holderChoice === 'combined') : !!(cyr && cyr.checked);
+		document.querySelectorAll('[data-apd-script-font-block]').forEach(function (block) {
+			var key = block.getAttribute('data-apd-script-font-block');
+			var show = open && (key === 'latin' ? latinFonts : cyrFonts);
+			block.hidden = !show;
+			block.querySelectorAll('input').forEach(function (input) {
+				var fontLabel = input.closest('[data-apd-product-font]');
+				input.disabled = !show || !!(fontLabel && fontLabel.hidden);
+			});
+		});
+		var latinNote = document.querySelector('[data-apd-latin-font-note]');
+		if (latinNote) {
+			latinNote.hidden = holder && holderChoice === 'combined';
+		}
+		var combinedNote = document.querySelector('[data-apd-combined-font-note]');
+		if (combinedNote) {
+			combinedNote.hidden = !(holder && open && holderChoice === 'combined');
+		}
+		document.querySelectorAll('[data-apd-holder-only]').forEach(function (el) {
+			el.hidden = !holder;
+			el.querySelectorAll('input').forEach(function (input) {
+				if (!holder || !open) {
+					input.disabled = true;
+					return;
+				}
+				var fontLabel = input.closest('[data-apd-product-font]');
+				if (fontLabel && fontLabel.hidden) {
+					return;
+				}
+				input.disabled = false;
+			});
+		});
+		document.querySelectorAll('[data-apd-plate-script-note]').forEach(function (el) {
+			el.hidden = holder;
+		});
+		var combinedOn = !!(holder && open && holderChoice === 'combined');
+		var singleLine = !!(singleHost && rowHost && rowHost.hidden);
+		var onlyCombined = combinedOn;
+		var namedLatin = false;
+		document.querySelectorAll('[data-apd-default-single]').forEach(function (el) {
+			if (!holder || !singleLine) {
+				return;
+			}
+			el.hidden = onlyCombined;
+			el.querySelectorAll('input').forEach(function (input) {
+				input.disabled = onlyCombined;
+			});
+		});
+		document.querySelectorAll('[data-apd-holder-latin]').forEach(function (el) {
+			el.hidden = !namedLatin;
+		});
+		document.querySelectorAll('[data-apd-latin-only]').forEach(function (el) {
+			if (namedLatin || onlyCombined) {
+				el.hidden = true;
+			}
+		});
+		document.querySelectorAll('[data-apd-combined-defaults]').forEach(function (box) {
+			var show = combinedOn && singleLine;
+			box.hidden = !show;
+			box.querySelectorAll('input').forEach(function (input) {
+				input.disabled = !show;
+			});
+		});
 	}
 
 	function toggleProductColorFields() {
@@ -3343,6 +4044,7 @@
 		if (event.target.id === 'apd_format_id') {
 			toggleProductColorFields();
 			toggleProductDesign();
+			toggleProductPreset();
 			toggleProductTextRows();
 			toggleProductScripts();
 		}
@@ -3352,8 +4054,30 @@
 		if (event.target.name === 'apd_enabled') {
 			toggleProductOptions();
 		}
-		if (event.target.name === 'apd_script_latin' || event.target.name === 'apd_script_cyrillic') {
+		if (event.target.name === 'apd_script_latin' || event.target.name === 'apd_script_cyrillic' || event.target.name === 'apd_holder_script') {
 			syncProductScriptFields();
+		}
+	});
+
+	document.addEventListener('click', function (event) {
+		var button = event.target && event.target.closest ? event.target.closest('[data-apd-color-move]') : null;
+		if (!button) {
+			return;
+		}
+		var row = button.closest('[data-apd-color-row]');
+		var list = row ? row.parentNode : null;
+		if (!row || !list) {
+			return;
+		}
+		var direction = button.getAttribute('data-apd-color-move');
+		var sibling = direction === 'up' ? row.previousElementSibling : row.nextElementSibling;
+		if (!sibling) {
+			return;
+		}
+		if (direction === 'up') {
+			list.insertBefore(row, sibling);
+		} else {
+			list.insertBefore(sibling, row);
 		}
 	});
 })();

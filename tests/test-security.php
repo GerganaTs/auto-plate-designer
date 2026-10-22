@@ -11,6 +11,7 @@
  */
 
 $candidates = array(
+	dirname( __DIR__, 4 ) . '/wp-load.php',
 	dirname( __DIR__, 3 ) . '/wp-load.php',
 	dirname( __DIR__, 2 ) . '/plate-designer/wp-load.php',
 );
@@ -139,6 +140,8 @@ apd_assert( true === APD_Security::validate_format_type( 'uk' ), 'Accepts Englis
 apd_assert( true === APD_Security::validate_format_type( 'uk_plain' ), 'Accepts English plate without a country preset' );
 apd_assert( true === APD_Security::validate_format_type( 'mini' ), 'Accepts mini plate with a country preset' );
 apd_assert( true === APD_Security::validate_format_type( 'mini_plain' ), 'Accepts mini plate without a country preset' );
+apd_assert( true === APD_Security::validate_format_type( 'super_mini' ), 'Accepts super mini plate with a country preset' );
+apd_assert( true === APD_Security::validate_format_type( 'super_mini_plain' ), 'Accepts super mini plate without a country preset' );
 apd_assert( apd_is_error( APD_Security::validate_format_type( 'custom_52' ) ), 'Rejects removed 52x11 type' );
 apd_assert( apd_is_error( APD_Security::validate_format_type( 'pwn' ) ), 'Rejects unknown format type' );
 

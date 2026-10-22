@@ -445,13 +445,13 @@ final class APD_Security {
 	 * Digits and the existing punctuation stay allowed on both.
 	 *
 	 * @param string $text   Plate text.
-	 * @param string $script latin|cyrillic|empty.
+	 * @param string $script latin|cyrillic|combined|empty.
 	 * @return true|WP_Error
 	 */
 	public static function validate_plate_script( $text, $script ) {
 		$script = (string) $script;
 
-		if ( 'latin' !== $script && 'cyrillic' !== $script ) {
+		if ( 'combined' === $script || ( 'latin' !== $script && 'cyrillic' !== $script ) ) {
 			return true;
 		}
 
@@ -591,7 +591,7 @@ final class APD_Security {
 	 * @return array<int, string>
 	 */
 	public static function allowed_format_types() {
-		$known = array( 'eu', 'eu_plain', 'us', 'moto', 'moto_240', 'moto_plain', 'moto_plain_240', 'suv_eu', 'suv_eu_340', 'suv', 'suv_340', 'eu_300', 'atyp_300', 'fr', 'fr_ww', 'fr_region', 'austria', 'uk', 'uk_plain', 'mini', 'mini_plain', 'custom', 'color', 'holder', 'holder_moto', 'holder_d' );
+		$known = array( 'eu', 'eu_plain', 'us', 'moto', 'moto_240', 'moto_plain', 'moto_plain_240', 'suv_eu', 'suv_eu_340', 'suv', 'suv_340', 'eu_300', 'atyp_300', 'fr', 'fr_ww', 'fr_region', 'austria', 'uk', 'uk_plain', 'mini', 'mini_plain', 'super_mini', 'super_mini_plain', 'custom', 'color', 'holder', 'holder_moto', 'holder_d' );
 
 		/**
 		 * Filter the format types offered in admin and accepted on save.

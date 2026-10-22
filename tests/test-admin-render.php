@@ -6,6 +6,7 @@
  */
 
 $candidates = array(
+	dirname( __DIR__, 4 ) . '/wp-load.php',
 	dirname( __DIR__, 3 ) . '/wp-load.php',
 	dirname( __DIR__, 2 ) . '/plate-designer/wp-load.php',
 );
@@ -96,6 +97,8 @@ $admin->render_page();
 $list_html = ob_get_clean();
 $list_ok = false !== strpos( $list_html, 'Add Format' )
 	&& false !== strpos( $list_html, '>Duplicate<' )
+	&& false !== strpos( $list_html, 'Shop products' )
+	&& false !== strpos( $list_html, 'data-apd-format-products' )
 	&& false === strpos( $list_html, 'data-apd-format-type' )
 	&& false === strpos( $list_html, 'data-apd-plate-studio' )
 	&& false !== strpos( $list_html, 'apd-table-scroll' );
@@ -149,6 +152,8 @@ $format_ok = false !== strpos( $html, 'name="apd_format[no_frame]"' )
 	&& false !== strpos( $html, 'value="uk_plain"' )
 	&& false !== strpos( $html, 'value="mini"' )
 	&& false !== strpos( $html, 'value="mini_plain"' )
+	&& false !== strpos( $html, 'value="super_mini"' )
+	&& false !== strpos( $html, 'value="super_mini_plain"' )
 	&& false !== strpos( $html, 'apd_format[slogan_max]' )
 	&& false !== strpos( $html, 'apd_format[slogan_box][x]' )
 	&& false !== strpos( $html, 'data-apd-extra-box="slogan"' )
@@ -270,6 +275,8 @@ $palette_ok = false !== strpos( $html, 'apd_palette[purpose]' )
 	&& false !== strpos( $html, 'Holder color' )
 	&& false !== strpos( $html, 'apd_palette[name]' )
 	&& false !== strpos( $html, 'apd_palette[color_ids][]' )
+	&& false !== strpos( $html, 'data-apd-color-move="up"' )
+	&& false !== strpos( $html, 'data-apd-color-move="down"' )
 	&& false !== strpos( $html, 'apd_swatch[size]' )
 	&& false === strpos( $html, 'apd_palette[sets][]' )
 	&& false === strpos( $html, 'name="apd_palette[sets]' );
